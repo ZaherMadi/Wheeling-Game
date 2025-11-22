@@ -8,7 +8,9 @@
   <meta name="apple-mobile-web-app-capable" content="yes">
   <meta name="mobile-web-app-capable" content="yes">
   <title>Wheelie King - Banlieue Edition</title>
-  <link rel="stylesheet" href="style.css">://fonts.googleapis.com">
+  <link rel="icon" type="image/png" href="logo.png">
+  <link rel="stylesheet" href="style.css">
+  <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=Russo+One&family=Roboto:wght@400;700&display=swap"
     rel="stylesheet">
@@ -498,8 +500,10 @@
     </div>
   </div>
 
-  <!-- Screens -->
+  <!-- START SCREEN -->
   <div id="start-screen" class="screen active">
+    <img src="logo.png" alt="Wheelie King Logo"
+      style="width: 150px; margin-bottom: 20px; filter: drop-shadow(0 0 10px rgba(255,215,0,0.5));">
     <h1>WHEELIE KING</h1>
     <p>Banlieue Edition</p>
     <button id="start-btn">JOUER</button>
@@ -537,9 +541,12 @@
     <button id="back-btn" style="margin-top: 30px;">← RETOUR</button>
   </div>
 
+  <!-- GAME OVER SCREEN -->
   <div id="game-over-screen" class="screen">
-    <h1 style="color: #FF0000; text-shadow: 0 0 20px rgba(255,0,0,0.5);">GAME OVER</h1>
-    <p>Score Final: <span id="final-score">0</span></p>
+    <img src="logo.png" alt="Wheelie King Logo" style="width: 100px; margin-bottom: 20px; filter: grayscale(100%);">
+    <h1 style="color: #ff4444;">GAME OVER</h1>
+    <p>Score: <span id="final-score">0</span></p>
+    <p id="high-score-display">Meilleur Score: <span id="best-score-gameover">0</span></p>
     <button id="restart-btn">REJOUER</button>
   </div>
 
