@@ -192,6 +192,238 @@
       transform: translateY(4px);
       box-shadow: none;
     }
+
+    /* Wheelie Icon */
+    #wheelie-icon {
+      position: absolute;
+      top: 20px;
+      right: 180px;
+      width: 60px;
+      height: 60px;
+      background: rgba(0, 0, 0, 0.7);
+      border: 2px solid #FFD700;
+      border-radius: 50%;
+      padding: 8px;
+      z-index: 15;
+      animation: pulse 2s infinite;
+    }
+
+    @keyframes pulse {
+
+      0%,
+      100% {
+        transform: scale(1);
+      }
+
+      50% {
+        transform: scale(1.1);
+      }
+    }
+
+    /* Settings Screen */
+    .settings-group {
+      margin: 30px 0;
+      text-align: center;
+    }
+
+    .settings-group h3 {
+      color: #FFD700;
+      margin-bottom: 15px;
+      font-size: 20px;
+    }
+
+    .setting-btn {
+      padding: 10px 25px;
+      margin: 5px;
+      font-size: 18px;
+      background: rgba(255, 255, 255, 0.2);
+      border: 2px solid #888;
+      color: white;
+      cursor: pointer;
+      border-radius: 8px;
+      transition: all 0.2s;
+    }
+
+    .setting-btn.active {
+      background: #FFD700;
+      color: #000;
+      border-color: #FFD700;
+      box-shadow: 0 0 20px rgba(255, 215, 0, 0.5);
+    }
+
+    .mode-description {
+      margin-top: 15px;
+      font-size: 16px;
+      color: #ccc;
+      font-style: italic;
+    }
+
+    /* Mobile Controls */
+    #mobile-controls {
+      position: fixed;
+      bottom: 0;
+      left: 0;
+      width: 100%;
+      height: 100%;
+      pointer-events: none;
+      z-index: 5;
+    }
+
+    /* Arrow Controls */
+    #arrow-controls {
+      position: absolute;
+      bottom: 30px;
+      left: 0;
+      width: 100%;
+      height: 200px;
+      pointer-events: none;
+    }
+
+    .arrow-btn {
+      position: absolute;
+      width: 60px;
+      height: 60px;
+      background: rgba(255, 215, 0, 0.8);
+      border: 3px solid #fff;
+      border-radius: 10px;
+      font-size: 24px;
+      color: #000;
+      cursor: pointer;
+      pointer-events: auto;
+      box-shadow: 0 4px 0 rgba(0, 0, 0, 0.5);
+      transition: transform 0.1s;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      font-weight: bold;
+    }
+
+    .arrow-btn:active {
+      transform: translateY(4px);
+      box-shadow: none;
+    }
+
+    .arrow-btn.special {
+      width: 80px;
+      height: 80px;
+      background: rgba(255, 69, 0, 0.9);
+      font-size: 14px;
+      line-height: 1.2;
+    }
+
+    #btn-left {
+      bottom: 60px;
+      left: 20px;
+    }
+
+    #btn-right {
+      bottom: 60px;
+      left: 100px;
+    }
+
+    #btn-up {
+      bottom: 130px;
+      left: 60px;
+    }
+
+    #btn-down {
+      bottom: 10px;
+      left: 60px;
+    }
+
+    #btn-wheelie {
+      bottom: 60px;
+      right: 20px;
+    }
+
+    /* Analog Controls */
+    #analog-controls {
+      position: absolute;
+      bottom: 30px;
+      left: 0;
+      width: 100%;
+      height: 200px;
+      pointer-events: none;
+    }
+
+    #analog-stick-container {
+      position: absolute;
+      bottom: 30px;
+      left: 40px;
+      width: 140px;
+      height: 140px;
+      pointer-events: auto;
+    }
+
+    #analog-stick-base {
+      position: relative;
+      width: 140px;
+      height: 140px;
+      background: rgba(0, 0, 0, 0.5);
+      border: 4px solid rgba(255, 255, 255, 0.6);
+      border-radius: 50%;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+    }
+
+    #analog-stick-knob {
+      width: 60px;
+      height: 60px;
+      background: radial-gradient(circle, #FFD700, #FFA500);
+      border: 3px solid #fff;
+      border-radius: 50%;
+      cursor: pointer;
+      box-shadow: 0 4px 8px rgba(0, 0, 0, 0.5);
+      transition: transform 0.1s;
+    }
+
+    .action-btn {
+      position: absolute;
+      width: 70px;
+      height: 70px;
+      background: rgba(255, 215, 0, 0.8);
+      border: 3px solid #fff;
+      border-radius: 50%;
+      font-size: 18px;
+      color: #000;
+      cursor: pointer;
+      pointer-events: auto;
+      box-shadow: 0 4px 0 rgba(0, 0, 0, 0.5);
+      transition: transform 0.1s;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      font-weight: bold;
+      line-height: 1.2;
+    }
+
+    .action-btn:active {
+      transform: translateY(4px);
+      box-shadow: none;
+    }
+
+    .action-btn.special {
+      width: 85px;
+      height: 85px;
+      background: rgba(255, 69, 0, 0.9);
+      font-size: 14px;
+    }
+
+    #analog-gas {
+      bottom: 110px;
+      right: 100px;
+    }
+
+    #analog-brake {
+      bottom: 30px;
+      right: 100px;
+    }
+
+    #analog-wheelie {
+      bottom: 70px;
+      right: 20px;
+    }
   </style>
 </head>
 
@@ -202,18 +434,61 @@
   <div id="ui-layer">
     <div id="score-container">Score: <span id="score">0</span></div>
 
-    <div id="balance-meter">
-      <div id="balance-bar"></div>
-    </div>
-
-    <!-- Speedometer -->
+    <!-- Sports Car Speedometer -->
     <div id="speedometer">
-      <div id="speed-needle"></div>
-      <div id="speed-text">0 km/h</div>
+      <svg viewBox="0 0 200 110" class="gauge">
+        <defs>
+          <linearGradient id="grad1" x1="0%" y1="0%" x2="100%" y2="0%">
+            <stop offset="0%" style="stop-color:#00ff00;stop-opacity:1" />
+            <stop offset="50%" style="stop-color:#ffff00;stop-opacity:1" />
+            <stop offset="100%" style="stop-color:#ff0000;stop-opacity:1" />
+          </linearGradient>
+        </defs>
+        <!-- Background Arc -->
+        <path d="M 30 100 A 70 70 0 0 1 170 100" fill="none" stroke="#222" stroke-width="15" stroke-linecap="round" />
+        <!-- Ticks -->
+        <path d="M 30 100 A 70 70 0 0 1 170 100" fill="none" stroke="url(#grad1)" stroke-width="2"
+          stroke-dasharray="5,5" />
+
+        <!-- Needle Group -->
+        <g id="gauge-needle"
+          style="transform-origin: 100px 100px; transform: rotate(-90deg); transition: transform 0.1s cubic-bezier(0.4, 0.0, 0.2, 1);">
+          <path d="M 100 100 L 35 100" stroke="#ff3333" stroke-width="4" stroke-linecap="round" />
+          <circle cx="100" cy="100" r="5" fill="#fff" />
+        </g>
+      </svg>
+      <div id="speed-readout">
+        <div id="speed-text">0</div>
+        <div id="speed-unit">KM/H</div>
+      </div>
     </div>
 
     <!-- Pause Button -->
-    <button id="pause-btn">⏸️</button>
+    <button id="pause-btn">PAUSE</button>
+
+    <!-- Mobile Controls (Hidden by default) -->
+    <div id="mobile-controls" style="display: none;">
+      <!-- Arrow Controls -->
+      <div id="arrow-controls" style="display: none;">
+        <button class="arrow-btn" id="btn-left">◄</button>
+        <button class="arrow-btn" id="btn-right">►</button>
+        <button class="arrow-btn" id="btn-up">▲</button>
+        <button class="arrow-btn" id="btn-down">▼</button>
+        <button class="arrow-btn special" id="btn-wheelie">⬆️<br>WHEELIE</button>
+      </div>
+
+      <!-- Analog Controls -->
+      <div id="analog-controls" style="display: none;">
+        <div id="analog-stick-container">
+          <div id="analog-stick-base">
+            <div id="analog-stick-knob"></div>
+          </div>
+        </div>
+        <button class="action-btn" id="analog-gas">⚡<br>GAZ</button>
+        <button class="action-btn" id="analog-brake">🛑<br>FREIN</button>
+        <button class="action-btn special" id="analog-wheelie">⬆️<br>WHEELIE</button>
+      </div>
+    </div>
   </div>
 
   <!-- Screens -->
@@ -221,13 +496,73 @@
     <h1>WHEELIE KING</h1>
     <p>Banlieue Edition</p>
     <button id="start-btn">JOUER</button>
+    <button id="settings-btn" style="margin-top: 10px; background: #888;">⚙️ PARAMÈTRES</button>
     <p class="controls">Haut: Gaz | Espace: Lever | Bas: Frein</p>
   </div>
 
+  <div id="settings-screen" class="screen">
+    <h1>PARAMÈTRES</h1>
+
+    <div class="settings-group">
+      <h3>TYPE DE CONTRÔLES</h3>
+      <button id="control-keyboard" class="setting-btn active">⌨️ CLAVIER</button>
+      <button id="control-arrows" class="setting-btn">➡️ FLÈCHES</button>
+      <button id="control-analog" class="setting-btn">🕹️ ANALOG</button>
+    </div>
+
+    <div class="settings-group">
+      <h3>MODE DE JEU</h3>
+      <button id="mode-linear" class="setting-btn active">🏁 LINÉAIRE</button>
+      <button id="mode-free" class="setting-btn">🌍 LIBRE</button>
+      <p class="mode-description">
+        <span id="desc-linear">Mode classique: avancez tout droit</span>
+        <span id="desc-free" style="display:none;">Mode libre: déplacez-vous librement dans toutes les directions</span>
+      </p>
+    </div>
+
+    <button id="back-btn" style="margin-top: 30px;">← RETOUR</button>
+  </div>
+
   <div id="game-over-screen" class="screen">
-    <h1>T'ES TOMBÉ !</h1>
+    <h1 style="color: #FF0000; text-shadow: 0 0 20px rgba(255,0,0,0.5);">GAME OVER</h1>
     <p>Score Final: <span id="final-score">0</span></p>
     <button id="restart-btn">REJOUER</button>
+  </div>
+
+  <!-- Mobile Touch Controls -->
+  <div id="mobile-controls" style="display: none;">
+    <!-- Arrow Controls -->
+    <div id="arrow-controls" style="display: none;">
+      <button id="btn-left" class="arrow-btn"
+        style="position: fixed; bottom: 80px; left: 20px; width: 70px; height: 70px; background: rgba(255,215,0,0.3); border: 3px solid #FFD700; border-radius: 50%; font-size: 30px; color: #FFD700; z-index: 1000; touch-action: none;">◄</button>
+      <button id="btn-right" class="arrow-btn"
+        style="position: fixed; bottom: 80px; left: 110px; width: 70px; height: 70px; background: rgba(255,215,0,0.3); border: 3px solid #FFD700; border-radius: 50%; font-size: 30px; color: #FFD700; z-index: 1000; touch-action: none;">►</button>
+      <button id="btn-up" class="arrow-btn"
+        style="position: fixed; bottom: 160px; left: 65px; width: 70px; height: 70px; background: rgba(255,215,0,0.3); border: 3px solid #FFD700; border-radius: 50%; font-size: 30px; color: #FFD700; z-index: 1000; touch-action: none;">▲</button>
+      <button id="btn-down" class="arrow-btn"
+        style="position: fixed; bottom: 10px; left: 65px; width: 70px; height: 70px; background: rgba(255,215,0,0.3); border: 3px solid #FFD700; border-radius: 50%; font-size: 30px; color: #FFD700; z-index: 1000; touch-action: none;">▼</button>
+      <button id="btn-wheelie" class="arrow-btn"
+        style="position: fixed; bottom: 80px; right: 30px; width: 100px; height: 100px; background: rgba(255,140,0,0.4); border: 3px solid #FF8C00; border-radius: 50%; font-size: 14px; font-weight: bold; color: #FFD700; z-index: 1000; touch-action: none;">WHEELIE</button>
+    </div>
+
+    <!-- Analog Controls -->
+    <div id="analog-controls" style="display: none;">
+      <!-- Joystick -->
+      <div id="analog-stick-base"
+        style="position: fixed; bottom: 60px; left: 60px; width: 120px; height: 120px; background: rgba(0,0,0,0.5); border: 3px solid #FFD700; border-radius: 50%; z-index: 1000; touch-action: none;">
+        <div id="analog-stick-knob"
+          style="position: absolute; top: 50%; left: 50%; transform: translate(-50%, -50%); width: 60px; height: 60px; background: linear-gradient(145deg, #FFD700, #FFA500); border-radius: 50%; border: 2px solid #FFF; box-shadow: 0 4px 8px rgba(0,0,0,0.3); transition: transform 0.05s;">
+        </div>
+      </div>
+
+      <!-- Action Buttons -->
+      <button id="analog-gas" class="analog-btn"
+        style="position: fixed; bottom: 140px; right: 30px; width: 80px; height: 80px; background: rgba(0,255,0,0.3); border: 3px solid #00FF00; border-radius: 50%; font-size: 12px; font-weight: bold; color: #FFF; z-index: 1000; touch-action: none;">GAZ</button>
+      <button id="analog-brake" class="analog-btn"
+        style="position: fixed; bottom: 50px; right: 90px; width: 80px; height: 80px; background: rgba(255,0,0,0.3); border: 3px solid #FF0000; border-radius: 50%; font-size: 12px; font-weight: bold; color: #FFF; z-index: 1000; touch-action: none;">FREIN</button>
+      <button id="analog-wheelie" class="analog-btn"
+        style="position: fixed; bottom: 50px; right: 30px; width: 80px; height: 80px; background: rgba(255,140,0,0.4); border: 3px solid #FF8C00; border-radius: 50%; font-size: 11px; font-weight: bold; color: #FFD700; z-index: 1000; touch-action: none;">WHEELIE</button>
+    </div>
   </div>
 
   <script type="module" src="/main.js"></script>
