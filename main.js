@@ -42,6 +42,7 @@ let state = {
         space: false,
     },
     obstacles: [],
+    animatedObjects: [], // For hazard lights etc.
     graffitiList: [],
     trafficLightState: 0,
     trafficTimer: 0,
@@ -96,6 +97,9 @@ const matJersey = new THREE.MeshStandardMaterial({ color: 0xFFD700 });
 const matPants = new THREE.MeshStandardMaterial({ color: 0x1a1a1a });
 const matShoes = new THREE.MeshStandardMaterial({ color: 0xFFFFFF });
 const matBillboardFrame = new THREE.MeshStandardMaterial({ color: 0x333333, metalness: 0.7 });
+const matHazardLight = new THREE.MeshBasicMaterial({ color: 0xffaa00 });
+const matConstructionStripe = new THREE.MeshStandardMaterial({ color: 0xffcc00 }); // Yellow/Black stripes would be better but simple yellow for now
+const matHole = new THREE.MeshBasicMaterial({ color: 0x000000 });
 
 let bikeGroup, bikePivot;
 let groundChunks = [];
@@ -112,6 +116,31 @@ function createTextTexture(text, bgColor, textColor) {
     ctx.textAlign = 'center';
     ctx.textBaseline = 'middle';
     ctx.fillText(text, 256, 128);
+    return new THREE.CanvasTexture(canvas);
+}
+
+function createSpeedLimitTexture(limit) {
+    const canvas = document.createElement('canvas');
+    canvas.width = 256;
+    canvas.height = 256;
+    const ctx = canvas.getContext('2d');
+
+    // Red circle
+    ctx.beginPath();
+    ctx.arc(128, 128, 120, 0, 2 * Math.PI);
+    ctx.fillStyle = 'white';
+    ctx.fill();
+    ctx.lineWidth = 25;
+    ctx.strokeStyle = 'red';
+    ctx.stroke();
+
+    // Text
+    ctx.font = 'bold 100px Arial';
+    ctx.fillStyle = 'black';
+    ctx.textAlign = 'center';
+    ctx.textBaseline = 'middle';
+    ctx.fillText(limit, 128, 135);
+
     return new THREE.CanvasTexture(canvas);
 }
 
@@ -354,36 +383,151 @@ function createDetailedBuilding(width, height, depth, colorMat) {
 function createSidewalkBillboard(text) {
     const group = new THREE.Group();
 
-    // Legs
-    const legGeo = new THREE.BoxGeometry(0.1, 1.5, 0.1);
+    // Legs - Scaled up
+    const legGeo = new THREE.BoxGeometry(0.15, 2.5, 0.15);
     const leg1 = new THREE.Mesh(legGeo, matBillboardFrame);
-    leg1.position.set(-1.4, 0.75, 0);
+    leg1.position.set(-2.0, 1.25, 0);
     group.add(leg1);
 
     const leg2 = new THREE.Mesh(legGeo, matBillboardFrame);
-    leg2.position.set(1.4, 0.75, 0);
+    leg2.position.set(2.0, 1.25, 0);
     group.add(leg2);
 
-    // Board Frame
-    const frameGeo = new THREE.BoxGeometry(3, 2, 0.2);
+    // Board Frame - Scaled up
+    const frameGeo = new THREE.BoxGeometry(4.5, 3, 0.3);
     const frame = new THREE.Mesh(frameGeo, matBillboardFrame);
-    frame.position.set(0, 1.8, 0);
+    frame.position.set(0, 2.8, 0);
     group.add(frame);
 
     // Board Face (Text)
     const randomColor = '#' + Math.floor(Math.random() * 16777215).toString(16).padStart(6, '0');
     const tex = createTextTexture(text, '#ffffff', randomColor);
-    const faceGeo = new THREE.PlaneGeometry(2.8, 1.8);
+    const faceGeo = new THREE.PlaneGeometry(4.2, 2.7);
     const faceMat = new THREE.MeshBasicMaterial({ map: tex });
     const face = new THREE.Mesh(faceGeo, faceMat);
-    face.position.set(0, 1.8, 0.11);
+    face.position.set(0, 2.8, 0.16);
     group.add(face);
 
     // Back Face
     const backFace = new THREE.Mesh(faceGeo, new THREE.MeshStandardMaterial({ color: 0x555555 }));
-    backFace.position.set(0, 1.8, -0.11);
+    backFace.position.set(0, 2.8, -0.16);
     backFace.rotation.y = Math.PI;
     group.add(backFace);
+
+    return group;
+}
+
+function createOverheadSign(text) {
+    const group = new THREE.Group();
+
+    // Pillars
+    const poleGeo = new THREE.CylinderGeometry(0.3, 0.3, 8);
+    const poleLeft = new THREE.Mesh(poleGeo, matPole);
+    poleLeft.position.set(-12, 4, 0);
+    group.add(poleLeft);
+
+    const poleRight = new THREE.Mesh(poleGeo, matPole);
+    poleRight.position.set(12, 4, 0);
+    group.add(poleRight);
+
+    // Crossbeam
+    const beamGeo = new THREE.BoxGeometry(26, 0.5, 0.5);
+    const beam = new THREE.Mesh(beamGeo, matPole);
+    beam.position.set(0, 7, 0);
+    group.add(beam);
+
+    // Sign Board
+    const boardW = 14;
+    const boardH = 4;
+    const boardGeo = new THREE.BoxGeometry(boardW, boardH, 0.2);
+    const board = new THREE.Mesh(boardGeo, new THREE.MeshStandardMaterial({ color: 0x003399 })); // Blue highway sign color
+    board.position.set(0, 7.5, 0.3);
+    group.add(board);
+
+    // Text
+    const tex = createTextTexture(text, '#003399', '#ffffff');
+    const faceGeo = new THREE.PlaneGeometry(boardW - 0.5, boardH - 0.5);
+    const faceMat = new THREE.MeshBasicMaterial({ map: tex });
+    const face = new THREE.Mesh(faceGeo, faceMat);
+    face.position.set(0, 7.5, 0.41);
+    group.add(face);
+
+    return group;
+}
+
+function createSpeedLimitSign(limit) {
+    const group = new THREE.Group();
+
+    const poleGeo = new THREE.CylinderGeometry(0.1, 0.1, 4);
+    const pole = new THREE.Mesh(poleGeo, matPole);
+    pole.position.set(0, 2, 0);
+    group.add(pole);
+
+    const signGeo = new THREE.CylinderGeometry(0.8, 0.8, 0.1, 32);
+    signGeo.rotateX(Math.PI / 2);
+    const tex = createSpeedLimitTexture(limit);
+    const signMat = new THREE.MeshBasicMaterial({ map: tex });
+    const sign = new THREE.Mesh(signGeo, [new THREE.MeshBasicMaterial({ color: 0xcccccc }), new THREE.MeshBasicMaterial({ color: 0xcccccc }), signMat]);
+    sign.position.set(0, 3.5, 0.1);
+    group.add(sign);
+
+    return group;
+}
+
+function createHazardCar() {
+    const group = new THREE.Group();
+
+    // Car Body
+    const bodyGeo = new THREE.BoxGeometry(4, 1.2, 2);
+    const color = Math.random() * 0xffffff;
+    const bodyMat = new THREE.MeshStandardMaterial({ color: color });
+    const body = new THREE.Mesh(bodyGeo, bodyMat);
+    body.position.y = 0.6;
+    group.add(body);
+
+    // Cabin
+    const cabinGeo = new THREE.BoxGeometry(2.5, 0.8, 1.8);
+    const cabinMat = new THREE.MeshStandardMaterial({ color: 0x333333 });
+    const cabin = new THREE.Mesh(cabinGeo, cabinMat);
+    cabin.position.set(-0.2, 1.6, 0);
+    group.add(cabin);
+
+    // Wheels
+    const wheelGeo = new THREE.CylinderGeometry(0.4, 0.4, 0.2);
+    const wheelMat = new THREE.MeshStandardMaterial({ color: 0x111111 });
+
+    const w1 = new THREE.Mesh(wheelGeo, wheelMat); w1.rotation.x = Math.PI / 2; w1.position.set(-1.2, 0.4, 1); group.add(w1);
+    const w2 = new THREE.Mesh(wheelGeo, wheelMat); w2.rotation.x = Math.PI / 2; w2.position.set(1.2, 0.4, 1); group.add(w2);
+    const w3 = new THREE.Mesh(wheelGeo, wheelMat); w3.rotation.x = Math.PI / 2; w3.position.set(-1.2, 0.4, -1); group.add(w3);
+    const w4 = new THREE.Mesh(wheelGeo, wheelMat); w4.rotation.x = Math.PI / 2; w4.position.set(1.2, 0.4, -1); group.add(w4);
+
+    // Hazard Lights (Blinkers)
+    const lightGeo = new THREE.SphereGeometry(0.15);
+    const l1 = new THREE.Mesh(lightGeo, matHazardLight); l1.position.set(-1.9, 0.8, 0.8); group.add(l1);
+    const l2 = new THREE.Mesh(lightGeo, matHazardLight); l2.position.set(-1.9, 0.8, -0.8); group.add(l2);
+    const l3 = new THREE.Mesh(lightGeo, matHazardLight); l3.position.set(1.9, 0.8, 0.8); group.add(l3);
+    const l4 = new THREE.Mesh(lightGeo, matHazardLight); l4.position.set(1.9, 0.8, -0.8); group.add(l4);
+
+    group.userData.lights = [l1, l2, l3, l4];
+    state.animatedObjects.push(group);
+
+    return group;
+}
+
+function createConstructionZone() {
+    const group = new THREE.Group();
+
+    // Barrier
+    const barrierGeo = new THREE.BoxGeometry(3, 1, 0.2);
+    const barrier = new THREE.Mesh(barrierGeo, matConstructionStripe);
+    barrier.position.set(0, 0.5, 0);
+    group.add(barrier);
+
+    // Hole
+    const holeGeo = new THREE.CylinderGeometry(1.5, 1.5, 0.1, 16);
+    const hole = new THREE.Mesh(holeGeo, matHole);
+    hole.position.set(0, 0.05, 2); // Hole in front of barrier
+    group.add(hole);
 
     return group;
 }
@@ -433,22 +577,47 @@ function createGroundChunk(zPos) {
         chunk.add(bRight);
     }
 
+    // --- NEW ELEMENTS SPAWNING ---
+
+    // Overhead Sign (Rare)
+    if (Math.random() > 0.9 && state.graffitiList.length > 0) {
+        const text = state.graffitiList[Math.floor(Math.random() * state.graffitiList.length)];
+        const sign = createOverheadSign(text);
+        sign.position.set(0, 0, 0);
+        chunk.add(sign);
+    }
+
+    // Speed Limit Sign (Occasional)
+    if (Math.random() > 0.8) {
+        const limit = Math.random() > 0.5 ? "90" : "110";
+        const sign = createSpeedLimitSign(limit);
+        sign.position.set(12, 0, (Math.random() - 0.5) * 40);
+        sign.rotation.y = -Math.PI / 2;
+        chunk.add(sign);
+    }
+
+    // Hazard Car (Occasional, on shoulder)
+    if (Math.random() > 0.85) {
+        const car = createHazardCar();
+        car.position.set(13, 0, (Math.random() - 0.5) * 60);
+        car.rotation.y = Math.random() * 0.5 - 0.25; // Slightly angled
+        chunk.add(car);
+    }
+
     // Sidewalk Billboards (Graffiti replacement)
     if (state.graffitiList && state.graffitiList.length > 0) {
-        // Left side billboard
         if (Math.random() > 0.6) {
             const text = state.graffitiList[Math.floor(Math.random() * state.graffitiList.length)];
             const bb = createSidewalkBillboard(text);
             bb.position.set(-13, 0, (Math.random() - 0.5) * 80);
-            bb.rotation.y = Math.PI / 2; // Face the road
+            bb.rotation.y = Math.PI / 2;
             chunk.add(bb);
         }
-        // Right side billboard
         if (Math.random() > 0.6) {
             const text = state.graffitiList[Math.floor(Math.random() * state.graffitiList.length)];
             const bb = createSidewalkBillboard(text);
             bb.position.set(13, 0, (Math.random() - 0.5) * 80);
-            bb.rotation.y = -Math.PI / 2; // Face the road
+            bb.rotation.y = -Math.PI / 2;
             chunk.add(bb);
         }
     }
@@ -489,7 +658,11 @@ function spawnObstacle(zPos) {
     const type = Math.random();
     let obs;
 
-    if (type < 0.4) {
+    if (type < 0.2) {
+        // Construction Zone (New)
+        obs = createConstructionZone();
+        obs.position.set((Math.random() - 0.5) * 14, 0, zPos);
+    } else if (type < 0.5) {
         const geo = new THREE.BoxGeometry(1, 1, 1);
         obs = new THREE.Mesh(geo, matBox);
         obs.position.set((Math.random() - 0.5) * 16, 0.5, zPos);
@@ -543,7 +716,7 @@ function init() {
     // Initial ground
     for (let i = 0; i < 5; i++) {
         const chunk = createGroundChunk(-i * 100);
-        scene.add(chunk); // FIX: Add to scene
+        scene.add(chunk);
         groundChunks.push(chunk);
     }
 
@@ -597,13 +770,14 @@ function resetGame() {
     // Clear obstacles
     state.obstacles.forEach(obs => scene.remove(obs.mesh));
     state.obstacles = [];
+    state.animatedObjects = []; // Clear animated objects
 
     // Reset Ground
     groundChunks.forEach(chunk => scene.remove(chunk));
     groundChunks = [];
     for (let i = 0; i < 5; i++) {
         const chunk = createGroundChunk(-i * 100);
-        scene.add(chunk); // FIX: Add to scene
+        scene.add(chunk);
         groundChunks.push(chunk);
     }
 
@@ -680,6 +854,21 @@ function animate() {
             bikeGroup.userData.backWheel.rotation.x -= rotationSpeed;
         }
 
+        // Animate Hazard Lights
+        if (Math.floor(state.gameTime * 2) % 2 === 0) {
+            state.animatedObjects.forEach(obj => {
+                if (obj.userData.lights) {
+                    obj.userData.lights.forEach(l => l.visible = true);
+                }
+            });
+        } else {
+            state.animatedObjects.forEach(obj => {
+                if (obj.userData.lights) {
+                    obj.userData.lights.forEach(l => l.visible = false);
+                }
+            });
+        }
+
         state.clouds.forEach(cloud => {
             cloud.position.x += cloud.userData.speed;
             if (cloud.position.x > 150) cloud.position.x = -150;
@@ -740,8 +929,6 @@ function animate() {
                 // Acceleration via Analog UP (negative Y)
                 if (analogData.y < -0.1) {
                     isAccelerating = true;
-                    // Optional: modulate acceleration based on how far up you push
-                    // But for now, simple boolean is safer for wheelie logic
                 }
                 // Braking via Analog DOWN (positive Y)
                 if (analogData.y > 0.5) {
@@ -843,7 +1030,7 @@ function animate() {
         if (bikeGroup.position.z < lastChunk.position.z + 50) {
             const newZ = lastChunk.position.z - 100;
             const chunk = createGroundChunk(newZ);
-            scene.add(chunk); // FIX: Add to scene
+            scene.add(chunk);
             groundChunks.push(chunk);
             if (groundChunks.length > 6) {
                 const old = groundChunks.shift();
