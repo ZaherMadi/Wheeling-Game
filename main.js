@@ -1200,7 +1200,14 @@ function animate() {
 
 function updateCamera() {
     if (!bikeGroup) return;
+
+    // Adjust FOV for portrait vs landscape
+    const isPortrait = window.innerHeight > window.innerWidth;
+    const targetBaseFOV = isPortrait ? 75 : 60;  // Wider FOV for portrait
+
     if (GAME_SETTINGS.gameMode === 'free') {
+        camera.fov = targetBaseFOV;
+        camera.updateProjectionMatrix();
         const targetX = bikeGroup.position.x;
         const targetZ = bikeGroup.position.z + 15;
         const targetY = 8;
@@ -1209,7 +1216,7 @@ function updateCamera() {
         camera.position.y += (targetY - camera.position.y) * 0.15;
         camera.lookAt(bikeGroup.position.x, 1, bikeGroup.position.z - 5);
     } else {
-        const targetFOV = 60 + (state.speed * 10);
+        const targetFOV = targetBaseFOV + (state.speed * 10);
         camera.fov += (targetFOV - camera.fov) * 0.1;
         camera.updateProjectionMatrix();
         const shake = state.speed * 0.05;
@@ -1375,6 +1382,11 @@ window.addEventListener('resize', () => {
     camera.aspect = window.innerWidth / window.innerHeight;
     camera.updateProjectionMatrix();
     renderer.setSize(window.innerWidth, window.innerHeight);
+
+    // Force camera update for orientation change
+    if (bikeGroup) {
+        updateCamera();
+    }
 });
 
 document.addEventListener('keydown', (e) => {
@@ -1382,16 +1394,26 @@ document.addEventListener('keydown', (e) => {
     if (e.code === 'ArrowRight') state.keys.right = true;
     if (e.code === 'ArrowUp') state.keys.up = true;
     if (e.code === 'ArrowDown') state.keys.down = true;
+
+    // Space ONLY for wheelie (no restart functionality)
     if (e.code === 'Space') {
-        if (!state.isPlaying && !document.getElementById('start-screen').classList.contains('active') && !document.getElementById('game-over-screen').classList.contains('active')) {
-            // In game, space is wheelie
-            state.keys.space = true;
-        } else if (document.getElementById('start-screen').classList.contains('active')) {
+        e.preventDefault();
+        state.keys.space = true;
+    }
+
+    // R key for restart/start game
+    if (e.code === 'KeyR') {
+        if (document.getElementById('start-screen').classList.contains('active') ||
+            document.getElementById('game-over-screen').classList.contains('active')) {
             startGame();
-        } else if (document.getElementById('game-over-screen').classList.contains('active')) {
-            startGame();
-        } else {
-            state.keys.space = true;
+        }
+    }
+
+    // Escape for pause
+    if (e.code === 'Escape') {
+        e.preventDefault();
+        if (state.isPlaying && !state.isPaused) {
+            togglePause();
         }
     }
 });

@@ -8,9 +8,8 @@
     content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover">
   <meta name="apple-mobile-web-app-capable" content="yes">
   <meta name="mobile-web-app-capable" content="yes">
-  <meta name="screen-orientation" content="landscape">
   <title>Wheelie King - Banlieue Edition</title>
-  <link rel="icon" type="image/png" href="logo1.png">
+  <link rel="icon" type="image/x-icon" href="Logo.ico">
   <link rel="stylesheet" href="style.css">
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
@@ -20,12 +19,14 @@
   <style>
     html {
       font-size: 16px;
+      background-color: #000;
     }
 
     body {
       margin: 0;
       overflow: hidden;
       font-family: 'Roboto', sans-serif;
+      background-color: #000;
     }
 
     /* Height-responsive adjustments */
@@ -82,6 +83,133 @@
 
       .logo-image {
         width: 80px !important;
+      }
+    }
+
+    /* Portrait orientation adjustments */
+    @media screen and (orientation: portrait) {
+
+      /* Score positioning for portrait */
+      #score-container {
+        top: 10px;
+        font-size: 24px;
+      }
+
+      /* Speedometer positioning for portrait */
+      #speedometer {
+        right: 10px;
+        bottom: 200px;
+        width: 70px;
+        height: 70px;
+      }
+
+      #gauge-circle {
+        width: 60px;
+        height: 60px;
+      }
+
+      #gauge-needle {
+        width: 2px;
+        height: 25px;
+      }
+
+      #speed-text {
+        font-size: 12px;
+      }
+
+      /* High score display */
+      #high-score-display {
+        top: 40px;
+        font-size: 14px;
+      }
+
+      /* Mobile controls for portrait */
+      #mobile-controls {
+        bottom: 20px !important;
+      }
+
+      /* Analog stick positioning */
+      #analog-stick-base {
+        width: 100px;
+        height: 100px;
+      }
+
+      #analog-stick-knob {
+        width: 40px;
+        height: 40px;
+      }
+
+      /* Buttons for portrait */
+      #btn-gas,
+      #btn-wheelie,
+      #btn-brake {
+        width: 60px;
+        height: 60px;
+        font-size: 18px;
+      }
+
+      /* Arrow controls for portrait */
+      .arrow-btn {
+        width: 50px;
+        height: 50px;
+        font-size: 20px;
+      }
+
+      .arrow-btn.special {
+        width: 65px;
+        height: 65px;
+        font-size: 12px;
+      }
+
+      /* Pause button */
+      #pause-btn {
+        top: 10px;
+        left: 10px;
+        width: 35px;
+        height: 35px;
+        font-size: 18px;
+      }
+    }
+
+    /* Portrait - wider phones */
+    @media screen and (orientation: portrait) and (min-width: 400px) {
+      #score-container {
+        font-size: 28px;
+      }
+
+      #speedometer {
+        width: 80px;
+        height: 80px;
+        bottom: 220px;
+      }
+
+      #gauge-circle {
+        width: 70px;
+        height: 70px;
+      }
+
+      #gauge-needle {
+        height: 30px;
+      }
+
+      #speed-text {
+        font-size: 14px;
+      }
+    }
+
+    /* Hide mobile controls on desktop (>800px width) */
+    @media screen and (min-width: 801px) {
+      #mobile-controls {
+        display: none !important;
+      }
+
+      #analog-controls {
+        display: none !important;
+      }
+
+      /* Keep speedometer visible */
+      #speedometer {
+        display: flex !important;
       }
     }
 
@@ -259,6 +387,12 @@
       text-shadow: 0 2px 4px rgba(0, 0, 0, 0.2);
       position: relative;
       overflow: hidden;
+      /* Fix text alignment on PC */
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      text-align: center;
+      line-height: 1;
     }
 
     button::before {
