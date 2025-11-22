@@ -2,9 +2,9 @@ import * as THREE from 'three';
 
 const CONFIG = {
     laneWidth: 10,
-    maxSpeed: 2.8,
+    maxSpeed: 4.0, // Increased for 200 km/h
     minSpeed: 0.0,
-    baseAcceleration: 0.012,
+    baseAcceleration: 0.0025, // Reduced for 13s to 100km/h
     deceleration: 0.005,
     brakeForce: 0.03,
     lateralAccel: 0.05,
@@ -532,6 +532,55 @@ function createConstructionZone() {
     return group;
 }
 
+function createBench() {
+    const group = new THREE.Group();
+
+    // Legs
+    const legGeo = new THREE.BoxGeometry(0.1, 0.5, 0.4);
+    const legMat = new THREE.MeshStandardMaterial({ color: 0x222222, metalness: 0.8 });
+    const l1 = new THREE.Mesh(legGeo, legMat); l1.position.set(-0.8, 0.25, 0); group.add(l1);
+    const l2 = new THREE.Mesh(legGeo, legMat); l2.position.set(0.8, 0.25, 0); group.add(l2);
+
+    // Slats
+    const slatGeo = new THREE.BoxGeometry(1.8, 0.05, 0.1);
+    const slatMat = new THREE.MeshStandardMaterial({ color: 0x8B4513 });
+
+    for (let i = 0; i < 3; i++) {
+        const seat = new THREE.Mesh(slatGeo, slatMat);
+        seat.position.set(0, 0.5, -0.15 + i * 0.15);
+        group.add(seat);
+    }
+
+    for (let i = 0; i < 2; i++) {
+        const back = new THREE.Mesh(slatGeo, slatMat);
+        back.position.set(0, 0.8 + i * 0.15, -0.2);
+        back.rotation.x = 0.2;
+        group.add(back);
+    }
+
+    return group;
+}
+
+function createDetailedTrashCan() {
+    const group = new THREE.Group();
+
+    // Body
+    const bodyGeo = new THREE.CylinderGeometry(0.3, 0.25, 0.8, 16);
+    const bodyMat = new THREE.MeshStandardMaterial({ color: 0x006400, metalness: 0.3 }); // Dark Green
+    const body = new THREE.Mesh(bodyGeo, bodyMat);
+    body.position.y = 0.4;
+    group.add(body);
+
+    // Lid
+    const lidGeo = new THREE.CylinderGeometry(0.32, 0.32, 0.1, 16);
+    const lidMat = new THREE.MeshStandardMaterial({ color: 0x111111 });
+    const lid = new THREE.Mesh(lidGeo, lidMat);
+    lid.position.y = 0.85;
+    group.add(lid);
+
+    return group;
+}
+
 function createGroundChunk(zPos) {
     const chunk = new THREE.Group();
     chunk.position.z = zPos;
@@ -575,6 +624,19 @@ function createGroundChunk(zPos) {
         const bRight = createDetailedBuilding(width, height, depth, mat);
         bRight.position.set(25 + Math.random() * 5, height / 2, (Math.random() - 0.5) * 80);
         chunk.add(bRight);
+    }
+
+    // Benches and Trash Cans (New)
+    if (Math.random() > 0.7) {
+        const bench = createBench();
+        bench.position.set(-13, 0, (Math.random() - 0.5) * 80);
+        bench.rotation.y = Math.PI / 2;
+        chunk.add(bench);
+    }
+    if (Math.random() > 0.7) {
+        const trash = createDetailedTrashCan();
+        trash.position.set(14, 0, (Math.random() - 0.5) * 80);
+        chunk.add(trash);
     }
 
     // --- NEW ELEMENTS SPAWNING ---
@@ -924,7 +986,12 @@ function animate() {
 
             // ANALOG CONTROL LOGIC
             if (GAME_SETTINGS.controlMode === 'analog' && analogData.active) {
-                state.bike.lateralVelocity = analogData.x * CONFIG.maxLateralSpeed;
+                // Sensitivity Logic: 50% below 200 km/h
+                let sensitivity = 1.0;
+                const kmh = state.speed * 50;
+                if (kmh < 200) sensitivity = 0.5;
+
+                state.bike.lateralVelocity = analogData.x * CONFIG.maxLateralSpeed * sensitivity;
 
                 // Acceleration via Analog UP (negative Y)
                 if (analogData.y < -0.1) {
@@ -1063,10 +1130,11 @@ function animate() {
             }
         }
     }
+}
 
-    updateCamera();
-    updateUI();
-    renderer.render(scene, camera);
+updateCamera();
+updateUI();
+renderer.render(scene, camera);
 }
 
 function updateCamera() {
@@ -1093,11 +1161,16 @@ function updateCamera() {
         const shakeY = (Math.random() - 0.5) * shake;
 
         const targetX = bikeGroup.position.x * 0.5;
-        const targetZ = bikeGroup.position.z + 10 + (state.speed * 1);
+        // Dynamic Zoom: Get closer and lower as speed increases
+        const zoomZ = state.speed * 3.0;
+        const zoomY = state.speed * 0.8;
+
+        const targetZ = bikeGroup.position.z + 10 + (state.speed * 1) - zoomZ;
+        const targetY = 5 - zoomY;
 
         camera.position.x += (targetX - camera.position.x) * 0.2;
         camera.position.z += (targetZ - camera.position.z) * 0.3;
-        camera.position.y = 5 + shakeY;
+        camera.position.y += (Math.max(2, targetY) - camera.position.y) * 0.1; // Smooth Y transition
         camera.position.x += shakeX;
 
         camera.lookAt(bikeGroup.position.x * 0.5, 2, bikeGroup.position.z - 20);
@@ -1116,8 +1189,8 @@ function updateUI() {
         const kmh = Math.max(0, Math.floor(state.speed * 50));
         speedText.innerText = `${kmh}`;
 
-        // Map 0-140kmh to -135deg to +135deg
-        const maxKmh = CONFIG.maxSpeed * 50;
+        // Map 0-200kmh to -135deg to +135deg
+        const maxKmh = 200;
         const pct = Math.min(1, kmh / maxKmh);
         const deg = -135 + (pct * 270);
         speedNeedle.style.transform = `translateX(-50%) rotate(${deg}deg)`;
