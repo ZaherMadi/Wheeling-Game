@@ -1,0 +1,236 @@
+<!DOCTYPE html>
+<html lang="fr">
+
+<head>
+  <meta charset="UTF-8" />
+  <link rel="icon" type="image/svg+xml" href="/vite.svg" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Wheelie King - Banlieue Edition</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Russo+One&family=Roboto:wght@400;700&display=swap"
+    rel="stylesheet">
+  <!-- <link rel="stylesheet" href="./style.css" /> -->
+  <style>
+    body {
+      margin: 0;
+      overflow: hidden;
+      font-family: 'Roboto', sans-serif;
+    }
+
+    #game-container {
+      width: 100vw;
+      height: 100vh;
+    }
+
+    /* UI Layer */
+    #ui-layer {
+      position: absolute;
+      top: 0;
+      left: 0;
+      width: 100%;
+      height: 100%;
+      pointer-events: none;
+    }
+
+    #score-container {
+      position: absolute;
+      top: 20px;
+      left: 50%;
+      transform: translateX(-50%);
+      font-family: 'Russo One', sans-serif;
+      font-size: 32px;
+      color: #FFD700;
+      text-shadow: 2px 2px 0px #000;
+      z-index: 10;
+    }
+
+    /* Balance Meter - Top Right */
+    #balance-meter {
+      position: absolute;
+      top: 20px;
+      right: 20px;
+      width: 20px;
+      height: 150px;
+      background: rgba(0, 0, 0, 0.5);
+      border: 2px solid white;
+      border-radius: 10px;
+      overflow: hidden;
+      display: flex;
+      flex-direction: column-reverse;
+      /* Fill from bottom */
+    }
+
+    #balance-bar {
+      width: 100%;
+      height: 0%;
+      background: #FFD700;
+      transition: height 0.1s, background 0.2s;
+    }
+
+    /* Speedometer */
+    #speedometer {
+      position: absolute;
+      bottom: 20px;
+      right: 20px;
+      width: 120px;
+      height: 60px;
+      /* Semicircle */
+      background: rgba(0, 0, 0, 0.5);
+      border-top-left-radius: 60px;
+      border-top-right-radius: 60px;
+      border: 2px solid white;
+      border-bottom: 0;
+      display: flex;
+      justify-content: center;
+      align-items: flex-end;
+      overflow: hidden;
+    }
+
+    #speed-needle {
+      width: 4px;
+      height: 50px;
+      background: red;
+      position: absolute;
+      bottom: 0;
+      left: 50%;
+      transform-origin: bottom center;
+      transform: rotate(-90deg);
+      /* Start at 0 */
+      transition: transform 0.1s;
+      z-index: 2;
+    }
+
+    #speed-text {
+      position: absolute;
+      bottom: 5px;
+      color: white;
+      font-size: 14px;
+      font-weight: bold;
+      z-index: 3;
+      text-shadow: 1px 1px 2px black;
+    }
+
+    /* Pause Button - Top Left */
+    #pause-btn {
+      position: absolute;
+      top: 20px;
+      left: 20px;
+      background: rgba(0, 0, 0, 0.5);
+      border: 2px solid white;
+      color: white;
+      font-size: 20px;
+      width: 40px;
+      height: 40px;
+      border-radius: 50%;
+      cursor: pointer;
+      display: flex;
+      justify-content: center;
+      align-items: center;
+      z-index: 100;
+      pointer-events: auto;
+      padding: 0;
+      line-height: 1;
+    }
+
+    #pause-btn:hover {
+      background: rgba(255, 255, 255, 0.2);
+    }
+
+    .screen {
+      position: absolute;
+      top: 0;
+      left: 0;
+      width: 100%;
+      height: 100%;
+      background: rgba(0, 0, 0, 0.85);
+      display: flex;
+      flex-direction: column;
+      justify-content: center;
+      align-items: center;
+      color: white;
+      z-index: 20;
+      opacity: 0;
+      pointer-events: none;
+      transition: opacity 0.3s;
+    }
+
+    .screen.active {
+      opacity: 1;
+      pointer-events: auto;
+    }
+
+    h1 {
+      font-family: 'Russo One', sans-serif;
+      font-size: 64px;
+      color: #FFD700;
+      text-transform: uppercase;
+      margin: 0;
+      text-shadow: 4px 4px 0px #d35400;
+    }
+
+    p {
+      font-size: 24px;
+      margin: 10px 0;
+    }
+
+    button {
+      background: #FFD700;
+      border: none;
+      padding: 15px 40px;
+      font-size: 24px;
+      font-family: 'Russo One', sans-serif;
+      color: #000;
+      cursor: pointer;
+      margin-top: 20px;
+      border-radius: 5px;
+      box-shadow: 0 4px 0 #d35400;
+      transition: transform 0.1s;
+    }
+
+    button:active {
+      transform: translateY(4px);
+      box-shadow: none;
+    }
+  </style>
+</head>
+
+<body>
+  <div id="game-container"></div>
+
+  <!-- HUD -->
+  <div id="ui-layer">
+    <div id="score-container">Score: <span id="score">0</span></div>
+
+    <div id="balance-meter">
+      <div id="balance-bar"></div>
+    </div>
+
+    <!-- Speedometer -->
+    <div id="speedometer">
+      <div id="speed-needle"></div>
+      <div id="speed-text">0 km/h</div>
+    </div>
+
+    <!-- Pause Button -->
+    <button id="pause-btn">⏸️</button>
+  </div>
+
+  <!-- Screens -->
+  <div id="start-screen" class="screen active">
+    <h1>WHEELIE KING</h1>
+    <p>Banlieue Edition</p>
+    <button id="start-btn">JOUER</button>
+    <p class="controls">Haut: Gaz | Espace: Lever | Bas: Frein</p>
+  </div>
+
+  <div id="game-over-screen" class="screen">
+    <h1>T'ES TOMBÉ !</h1>
+    <p>Score Final: <span id="final-score">0</span></p>
+    <button id="restart-btn">REJOUER</button>
+  </div>
+
+  <script type="module" src="/main.js"></script>
+</body>
+
+</html>
