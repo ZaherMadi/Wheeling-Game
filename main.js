@@ -300,7 +300,16 @@ function createBike() {
     // FIX: Rotate bike 180 degrees to face correct direction
     bikeGroup.rotation.y = Math.PI;
 
-    // FIX: Scale bike wider (x1.5)
+    // FIX: Scale bike wider (x1.5) AND larger overall (x1.5)
+    // Previous scale was (1.5, 1, 1) for width. Now we want EVERYTHING 1.5x bigger.
+    // So we scale the GROUP uniformly.
+    bikeGroup.scale.set(1.5, 1.5, 1.5);
+    // And keep the pivot scale for extra width if needed, or reset it?
+    // User said "1.5 fois plus gros" (1.5x bigger). 
+    // If I scale the group, everything grows.
+    // Let's reset pivot scale to (1,1,1) to avoid distortion, or keep (1.5, 1, 1) if "wider" was a separate request.
+    // The user previously asked for "plus large" (wider). Now "plus gros" (bigger).
+    // I'll keep the width scaling on pivot and apply uniform scaling on group.
     bikePivot.scale.set(1.5, 1, 1);
 
     return bikeGroup;
@@ -786,19 +795,95 @@ function createGroundChunk(zPos) {
     return chunk;
 }
 
+function createTriangleSign() {
+    const group = new THREE.Group();
+
+    // Pole
+    const poleGeo = new THREE.CylinderGeometry(0.05, 0.05, 2);
+    const pole = new THREE.Mesh(poleGeo, matPole);
+    pole.position.y = 1;
+    group.add(pole);
+
+    // Triangle
+    const shape = new THREE.Shape();
+    shape.moveTo(0, 0.6);
+    shape.lineTo(0.5, -0.3);
+    shape.lineTo(-0.5, -0.3);
+    shape.lineTo(0, 0.6);
+
+    const geom = new THREE.ShapeGeometry(shape);
+    const mat = new THREE.MeshBasicMaterial({ color: 0xffcc00, side: THREE.DoubleSide }); // Yellow warning
+    const triangle = new THREE.Mesh(geom, mat);
+    triangle.position.y = 2;
+    group.add(triangle);
+
+    // Exclamation Mark
+    const markGeo = new THREE.PlaneGeometry(0.1, 0.4);
+    const markMat = new THREE.MeshBasicMaterial({ color: 0x000000 });
+    const mark = new THREE.Mesh(markGeo, markMat);
+    mark.position.set(0, 2.1, 0.01);
+    group.add(mark);
+
+    const dotGeo = new THREE.PlaneGeometry(0.1, 0.1);
+    const dot = new THREE.Mesh(dotGeo, markMat);
+    dot.position.set(0, 1.8, 0.01);
+    group.add(dot);
+
+    return group;
+}
+
+function createBarrier() {
+    const group = new THREE.Group();
+
+    // Feet
+    const footGeo = new THREE.BoxGeometry(0.4, 0.1, 0.4);
+    const footMat = new THREE.MeshStandardMaterial({ color: 0x333333 });
+    const f1 = new THREE.Mesh(footGeo, footMat); f1.position.set(-1, 0.05, 0); group.add(f1);
+    const f2 = new THREE.Mesh(footGeo, footMat); f2.position.set(1, 0.05, 0); group.add(f2);
+
+    // Panel
+    const panelGeo = new THREE.BoxGeometry(2.2, 0.8, 0.1);
+    const panelMat = new THREE.MeshStandardMaterial({ color: 0xffffff });
+    const panel = new THREE.Mesh(panelGeo, panelMat);
+    panel.position.set(0, 0.5, 0);
+    group.add(panel);
+
+    // Stripes
+    const stripeGeo = new THREE.PlaneGeometry(0.3, 0.8);
+    const stripeMat = new THREE.MeshBasicMaterial({ color: 0xff0000 });
+    for (let i = 0; i < 3; i++) {
+        const s = new THREE.Mesh(stripeGeo, stripeMat);
+        s.position.set(-0.6 + i * 0.6, 0.5, 0.06);
+        s.rotation.z = -0.5;
+        group.add(s);
+    }
+
+    return group;
+}
+
 function spawnObstacle(zPos) {
     const type = Math.random();
     let obs;
 
-    if (type < 0.2) {
+    if (type < 0.15) {
         // Construction Zone (New)
         obs = createConstructionZone();
         obs.position.set((Math.random() - 0.5) * 14, 0, zPos);
-    } else if (type < 0.5) {
+    } else if (type < 0.3) {
+        // Triangle Sign (New)
+        obs = createTriangleSign();
+        obs.position.set((Math.random() - 0.5) * 14, 0, zPos);
+        obs.rotation.y = (Math.random() - 0.5) * 0.5;
+    } else if (type < 0.45) {
+        // Barrier (New)
+        obs = createBarrier();
+        obs.position.set((Math.random() - 0.5) * 14, 0, zPos);
+        obs.rotation.y = (Math.random() - 0.5) * 0.5;
+    } else if (type < 0.6) {
         const geo = new THREE.BoxGeometry(1, 1, 1);
         obs = new THREE.Mesh(geo, matBox);
         obs.position.set((Math.random() - 0.5) * 16, 0.5, zPos);
-    } else if (type < 0.7) {
+    } else if (type < 0.8) {
         const geo = new THREE.SphereGeometry(0.5, 16, 16);
         obs = new THREE.Mesh(geo, matTrashBag);
         obs.position.set((Math.random() - 0.5) * 16, 0.5, zPos);
@@ -846,7 +931,7 @@ function init() {
     createBike();
 
     // Initial ground
-    for (let i = 0; i < 5; i++) {
+    for (let i = 0; i < 10; i++) { // Increased from 5 to 10 for smoother start
         const chunk = createGroundChunk(-i * 100);
         scene.add(chunk);
         groundChunks.push(chunk);
@@ -1208,12 +1293,12 @@ function animate() {
 
         // Terrain generation
         const lastChunk = groundChunks[groundChunks.length - 1];
-        if (bikeGroup.position.z < lastChunk.position.z + 50) {
+        if (bikeGroup.position.z < lastChunk.position.z + 200) { // Increased threshold from 50 to 200
             const newZ = lastChunk.position.z - 100;
             const chunk = createGroundChunk(newZ);
             scene.add(chunk);
             groundChunks.push(chunk);
-            if (groundChunks.length > 6) {
+            if (groundChunks.length > 12) { // Increased buffer from 6 to 12
                 const old = groundChunks.shift();
                 scene.remove(old);
             }
@@ -1523,6 +1608,22 @@ if (autoRaceBtn) {
     autoRaceBtn.addEventListener('click', () => {
         GAME_SETTINGS.autoRace = !GAME_SETTINGS.autoRace;
         autoRaceBtn.classList.toggle('active', GAME_SETTINGS.autoRace);
+    });
+}
+
+// Fullscreen Toggle
+const fullscreenBtn = document.getElementById('fullscreen-btn');
+if (fullscreenBtn) {
+    fullscreenBtn.addEventListener('click', () => {
+        if (!document.fullscreenElement) {
+            document.documentElement.requestFullscreen().catch(err => {
+                console.log(`Error attempting to enable full-screen mode: ${err.message} (${err.name})`);
+            });
+        } else {
+            if (document.exitFullscreen) {
+                document.exitFullscreen();
+            }
+        }
     });
 }
 

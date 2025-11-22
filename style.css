@@ -1,360 +1,329 @@
-body {
-  margin: 0;
-  overflow: hidden;
-  font-family: 'Arial', sans-serif;
-  user-select: none;
-  background-color: #87CEEB;
-}
+    font-weight: bold;
+    color: #FFD700;
+    text-shadow: 2px 2px 0 #000;
+    z-index: 10;
+    }
 
-#game-container {
-  position: absolute;
-  top: 0;
-  left: 0;
-  width: 100%;
-  height: 100%;
-}
+    #high-score-display {
+      display: block;
+      font-size: 18px;
+      color: #fff;
+      margin-top: 5px;
+      text-align: center;
+    }
 
-#ui-layer {
-  position: absolute;
-  top: 0;
-  left: 0;
-  width: 100%;
-  height: 100%;
-  pointer-events: none;
-}
+    /* --- SPORTS CAR SPEEDOMETER --- */
+    #speedometer {
+      position: absolute;
+      bottom: 0;
+      right: 0;
+      width: 250px;
+      height: 140px;
+      background: radial-gradient(circle at bottom right, rgba(0, 0, 0, 0.8) 0%, rgba(0, 0, 0, 0) 70%);
+      padding: 10px;
+      pointer-events: none;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: flex-end;
+    }
 
-#score-container {
-  position: absolute;
-  top: 20px;
-  left: 50%;
-  transform: translateX(-50%);
-  font-size: 32px;
-  font-weight: bold;
-  color: #FFD700;
-  text-shadow: 2px 2px 0 #000;
-  z-index: 10;
-}
+    .gauge {
+      width: 100%;
+      height: 100%;
+      filter: drop-shadow(0 0 5px rgba(0, 0, 0, 0.5));
+    }
 
-#high-score-display {
-  display: block;
-  font-size: 18px;
-  color: #fff;
-  margin-top: 5px;
-  text-align: center;
-}
+    #speed-readout {
+      position: absolute;
+      bottom: 10px;
+      right: 20px;
+      text-align: right;
+    }
 
-/* --- SPORTS CAR SPEEDOMETER --- */
-#speedometer {
-  position: absolute;
-  bottom: 0;
-  right: 0;
-  width: 250px;
-  height: 140px;
-  background: radial-gradient(circle at bottom right, rgba(0, 0, 0, 0.8) 0%, rgba(0, 0, 0, 0) 70%);
-  padding: 10px;
-  pointer-events: none;
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  justify-content: flex-end;
-}
+    #speed-text {
+      font-family: 'Courier New', monospace;
+      font-size: 48px;
+      font-weight: bold;
+      color: #fff;
+      line-height: 1;
+      text-shadow: 0 0 10px rgba(255, 255, 255, 0.5);
+    }
 
-.gauge {
-  width: 100%;
-  height: 100%;
-  filter: drop-shadow(0 0 5px rgba(0, 0, 0, 0.5));
-}
+    #speed-unit {
+      font-size: 14px;
+      color: #aaa;
+      font-weight: bold;
+      letter-spacing: 2px;
+    }
 
-#speed-readout {
-  position: absolute;
-  bottom: 10px;
-  right: 20px;
-  text-align: right;
-}
+    /* --- PAUSE BUTTON (HD) --- */
+    #pause-btn {
+      position: absolute;
+      top: 20px;
+      left: 20px;
+      pointer-events: auto;
+      background: linear-gradient(135deg, #444, #222);
+      border: 2px solid #666;
+      color: #fff;
+      font-family: 'Arial', sans-serif;
+      font-size: 14px;
+      font-weight: bold;
+      letter-spacing: 1px;
+      padding: 10px 24px;
+      border-radius: 8px;
+      cursor: pointer;
+      transition: all 0.2s ease;
+      text-transform: uppercase;
+      box-shadow: 0 4px 6px rgba(0, 0, 0, 0.3);
+      text-shadow: 1px 1px 2px rgba(0, 0, 0, 0.5);
+    }
 
-#speed-text {
-  font-family: 'Courier New', monospace;
-  font-size: 48px;
-  font-weight: bold;
-  color: #fff;
-  line-height: 1;
-  text-shadow: 0 0 10px rgba(255, 255, 255, 0.5);
-}
+    #pause-btn:hover {
+      background: linear-gradient(135deg, #555, #333);
+      border-color: #888;
+      transform: translateY(-1px);
+      box-shadow: 0 6px 8px rgba(0, 0, 0, 0.4);
+    }
 
-#speed-unit {
-  font-size: 14px;
-  color: #aaa;
-  font-weight: bold;
-  letter-spacing: 2px;
-}
+    #pause-btn:active {
+      transform: translateY(1px);
+      box-shadow: 0 2px 4px rgba(0, 0, 0, 0.3);
+    }
 
-/* --- PAUSE BUTTON (HD) --- */
-#pause-btn {
-  position: absolute;
-  top: 20px;
-  left: 20px;
-  pointer-events: auto;
-  background: linear-gradient(135deg, #444, #222);
-  border: 2px solid #666;
-  color: #fff;
-  font-family: 'Arial', sans-serif;
-  font-size: 14px;
-  font-weight: bold;
-  letter-spacing: 1px;
-  padding: 10px 24px;
-  border-radius: 8px;
-  cursor: pointer;
-  transition: all 0.2s ease;
-  text-transform: uppercase;
-  box-shadow: 0 4px 6px rgba(0, 0, 0, 0.3);
-  text-shadow: 1px 1px 2px rgba(0, 0, 0, 0.5);
-}
+    /* --- SCREENS --- */
+    .screen {
+      position: absolute;
+      top: 0;
+      left: 0;
+      width: 100%;
+      height: 100%;
+      background: rgba(0, 0, 0, 0.85);
+      display: flex;
+      flex-direction: column;
+      justify-content: center;
+      align-items: center;
+      color: white;
+      z-index: 20;
+      opacity: 0;
+      pointer-events: none;
+      transition: opacity 0.3s;
+    }
 
-#pause-btn:hover {
-  background: linear-gradient(135deg, #555, #333);
-  border-color: #888;
-  transform: translateY(-1px);
-  box-shadow: 0 6px 8px rgba(0, 0, 0, 0.4);
-}
+    .screen.active {
+      opacity: 1;
+      pointer-events: auto;
+    }
 
-#pause-btn:active {
-  transform: translateY(1px);
-  box-shadow: 0 2px 4px rgba(0, 0, 0, 0.3);
-}
+    .screen h1 {
+      font-size: 64px;
+      margin-bottom: 20px;
+      color: #FFD700;
+      text-transform: uppercase;
+      letter-spacing: 5px;
+      text-shadow: 4px 4px 0 #000;
+    }
 
-/* --- SCREENS --- */
-.screen {
-  position: absolute;
-  top: 0;
-  left: 0;
-  width: 100%;
-  height: 100%;
-  background: rgba(0, 0, 0, 0.85);
-  display: flex;
-  flex-direction: column;
-  justify-content: center;
-  align-items: center;
-  color: white;
-  z-index: 20;
-  opacity: 0;
-  pointer-events: none;
-  transition: opacity 0.3s;
-}
+    .screen p {
+      font-size: 24px;
+      margin-bottom: 40px;
+      color: #ccc;
+    }
 
-.screen.active {
-  opacity: 1;
-  pointer-events: auto;
-}
+    /* --- HD BUTTONS --- */
+    .btn {
+      padding: 15px 40px;
+      font-size: 24px;
+      background: linear-gradient(180deg, #FFD700 0%, #FFA500 100%);
+      color: #000;
+      border: 2px solid #FFF;
+      border-radius: 50px;
+      cursor: pointer;
+      font-weight: bold;
+      text-transform: uppercase;
+      transition: transform 0.1s, filter 0.2s;
+      box-shadow: 0 6px 0 #B8860B, 0 10px 20px rgba(0, 0, 0, 0.4);
+      margin: 10px;
+      text-shadow: 0 1px 0 rgba(255, 255, 255, 0.4);
+    }
 
-.screen h1 {
-  font-size: 64px;
-  margin-bottom: 20px;
-  color: #FFD700;
-  text-transform: uppercase;
-  letter-spacing: 5px;
-  text-shadow: 4px 4px 0 #000;
-}
+    .btn:hover {
+      transform: translateY(-2px);
+      filter: brightness(1.1);
+    }
 
-.screen p {
-  font-size: 24px;
-  margin-bottom: 40px;
-  color: #ccc;
-}
+    .btn:active {
+      transform: translateY(4px);
+      box-shadow: 0 2px 0 #B8860B, 0 4px 10px rgba(0, 0, 0, 0.4);
+    }
 
-/* --- HD BUTTONS --- */
-.btn {
-  padding: 15px 40px;
-  font-size: 24px;
-  background: linear-gradient(180deg, #FFD700 0%, #FFA500 100%);
-  color: #000;
-  border: 2px solid #FFF;
-  border-radius: 50px;
-  cursor: pointer;
-  font-weight: bold;
-  text-transform: uppercase;
-  transition: transform 0.1s, filter 0.2s;
-  box-shadow: 0 6px 0 #B8860B, 0 10px 20px rgba(0, 0, 0, 0.4);
-  margin: 10px;
-  text-shadow: 0 1px 0 rgba(255, 255, 255, 0.4);
-}
+    /* --- SETTINGS SCREEN --- */
+    .settings-section {
+      margin-bottom: 30px;
+      text-align: center;
+    }
 
-.btn:hover {
-  transform: translateY(-2px);
-  filter: brightness(1.1);
-}
+    .settings-section h3 {
+      color: #FFD700;
+      margin-bottom: 15px;
+      font-size: 20px;
+    }
 
-.btn:active {
-  transform: translateY(4px);
-  box-shadow: 0 2px 0 #B8860B, 0 4px 10px rgba(0, 0, 0, 0.4);
-}
+    .options-row {
+      display: flex;
+      gap: 10px;
+      justify-content: center;
+    }
 
-/* --- SETTINGS SCREEN --- */
-.settings-section {
-  margin-bottom: 30px;
-  text-align: center;
-}
+    .setting-btn {
+      padding: 10px 20px;
+      background: linear-gradient(180deg, #444 0%, #222 100%);
+      border: 2px solid #555;
+      color: #ccc;
+      cursor: pointer;
+      border-radius: 5px;
+      transition: all 0.2s;
+      box-shadow: 0 2px 4px rgba(0, 0, 0, 0.3);
+    }
 
-.settings-section h3 {
-  color: #FFD700;
-  margin-bottom: 15px;
-  font-size: 20px;
-}
+    .setting-btn.active {
+      background: linear-gradient(180deg, #FFD700 0%, #FFA500 100%);
+      color: #000;
+      border-color: #FFF;
+      font-weight: bold;
+      box-shadow: 0 0 10px rgba(255, 215, 0, 0.5);
+    }
 
-.options-row {
-  display: flex;
-  gap: 10px;
-  justify-content: center;
-}
+    .setting-desc {
+      font-size: 14px !important;
+      color: #888 !important;
+      margin-top: 5px !important;
+      margin-bottom: 0 !important;
+      font-style: italic;
+    }
 
-.setting-btn {
-  padding: 10px 20px;
-  background: linear-gradient(180deg, #444 0%, #222 100%);
-  border: 2px solid #555;
-  color: #ccc;
-  cursor: pointer;
-  border-radius: 5px;
-  transition: all 0.2s;
-  box-shadow: 0 2px 4px rgba(0, 0, 0, 0.3);
-}
+    /* --- MOBILE CONTROLS (HD) --- */
+    #mobile-controls {
+      position: absolute;
+      bottom: 20px;
+      left: 0;
+      width: 100%;
+      height: 100%;
+      pointer-events: none;
+      z-index: 15;
+      transition: opacity 0.5s ease-in-out;
+      opacity: 1;
+    }
 
-.setting-btn.active {
-  background: linear-gradient(180deg, #FFD700 0%, #FFA500 100%);
-  color: #000;
-  border-color: #FFF;
-  font-weight: bold;
-  box-shadow: 0 0 10px rgba(255, 215, 0, 0.5);
-}
+    #mobile-controls.controls-hidden {
+      opacity: 0;
+      pointer-events: none;
+    }
 
-.setting-desc {
-  font-size: 14px !important;
-  color: #888 !important;
-  margin-top: 5px !important;
-  margin-bottom: 0 !important;
-  font-style: italic;
-}
+    .control-btn {
+      position: absolute;
+      width: 70px;
+      height: 70px;
+      background: radial-gradient(circle at 30% 30%, rgba(255, 255, 255, 0.3), rgba(0, 0, 0, 0.5));
+      border: 2px solid rgba(255, 255, 255, 0.6);
+      border-radius: 50%;
+      pointer-events: auto;
+      display: flex;
+      justify-content: center;
+      align-items: center;
+      font-size: 30px;
+      color: white;
+      user-select: none;
+      touch-action: none;
+      box-shadow: 0 4px 10px rgba(0, 0, 0, 0.5);
+      backdrop-filter: blur(4px);
+    }
 
-/* --- MOBILE CONTROLS (HD) --- */
-#mobile-controls {
-  position: absolute;
-  bottom: 20px;
-  left: 0;
-  width: 100%;
-  height: 100%;
-  pointer-events: none;
-  z-index: 15;
-  transition: opacity 0.5s ease-in-out;
-  opacity: 1;
-}
+    .control-btn:active {
+      background: radial-gradient(circle at 30% 30%, rgba(255, 255, 255, 0.5), rgba(0, 0, 0, 0.7));
+      transform: scale(0.95);
+    }
 
-#mobile-controls.controls-hidden {
-  opacity: 0;
-  pointer-events: none;
-}
+    /* Arrow Layout */
+    #btn-left {
+      bottom: 30px;
+      left: 20px;
+    }
 
-.control-btn {
-  position: absolute;
-  width: 70px;
-  height: 70px;
-  background: radial-gradient(circle at 30% 30%, rgba(255, 255, 255, 0.3), rgba(0, 0, 0, 0.5));
-  border: 2px solid rgba(255, 255, 255, 0.6);
-  border-radius: 50%;
-  pointer-events: auto;
-  display: flex;
-  justify-content: center;
-  align-items: center;
-  font-size: 30px;
-  color: white;
-  user-select: none;
-  touch-action: none;
-  box-shadow: 0 4px 10px rgba(0, 0, 0, 0.5);
-  backdrop-filter: blur(4px);
-}
+    #btn-right {
+      bottom: 30px;
+      left: 100px;
+    }
 
-.control-btn:active {
-  background: radial-gradient(circle at 30% 30%, rgba(255, 255, 255, 0.5), rgba(0, 0, 0, 0.7));
-  transform: scale(0.95);
-}
+    #btn-up {
+      bottom: 100px;
+      right: 20px;
+      background: radial-gradient(circle at 30% 30%, rgba(0, 255, 0, 0.3), rgba(0, 100, 0, 0.5));
+    }
 
-/* Arrow Layout */
-#btn-left {
-  bottom: 30px;
-  left: 20px;
-}
+    #btn-down {
+      bottom: 20px;
+      right: 20px;
+      background: radial-gradient(circle at 30% 30%, rgba(255, 0, 0, 0.3), rgba(100, 0, 0, 0.5));
+    }
 
-#btn-right {
-  bottom: 30px;
-  left: 100px;
-}
+    #btn-wheelie {
+      bottom: 100px;
+      left: 60px;
+      width: 60px;
+      height: 60px;
+      font-size: 20px;
+      background: radial-gradient(circle at 30% 30%, rgba(255, 215, 0, 0.3), rgba(184, 134, 11, 0.5));
+    }
 
-#btn-up {
-  bottom: 100px;
-  right: 20px;
-  background: radial-gradient(circle at 30% 30%, rgba(0, 255, 0, 0.3), rgba(0, 100, 0, 0.5));
-}
+    /* Analog Layout */
+    #analog-stick-base {
+      position: absolute;
+      bottom: 40px;
+      left: 40px;
+      width: 120px;
+      height: 120px;
+      background: radial-gradient(circle, rgba(255, 255, 255, 0.1) 0%, rgba(0, 0, 0, 0.4) 100%);
+      border: 2px solid rgba(255, 255, 255, 0.4);
+      border-radius: 50%;
+      pointer-events: auto;
+      box-shadow: inset 0 0 20px rgba(0, 0, 0, 0.5);
+    }
 
-#btn-down {
-  bottom: 20px;
-  right: 20px;
-  background: radial-gradient(circle at 30% 30%, rgba(255, 0, 0, 0.3), rgba(100, 0, 0, 0.5));
-}
+    #analog-stick-knob {
+      position: absolute;
+      top: 50%;
+      left: 50%;
+      width: 50px;
+      height: 50px;
+      background: radial-gradient(circle at 30% 30%, #FFD700, #B8860B);
+      border-radius: 50%;
+      transform: translate(-50%, -50%);
+      pointer-events: none;
+      box-shadow: 0 4px 10px rgba(0, 0, 0, 0.6);
+      border: 1px solid rgba(255, 255, 255, 0.5);
+    }
 
-#btn-wheelie {
-  bottom: 100px;
-  left: 60px;
-  width: 60px;
-  height: 60px;
-  font-size: 20px;
-  background: radial-gradient(circle at 30% 30%, rgba(255, 215, 0, 0.3), rgba(184, 134, 11, 0.5));
-}
+    #analog-gas {
+      bottom: 100px;
+      right: 30px;
+      width: 80px;
+      height: 80px;
+      background: radial-gradient(circle at 30% 30%, rgba(0, 255, 0, 0.4), rgba(0, 100, 0, 0.6));
+    }
 
-/* Analog Layout */
-#analog-stick-base {
-  position: absolute;
-  bottom: 40px;
-  left: 40px;
-  width: 120px;
-  height: 120px;
-  background: radial-gradient(circle, rgba(255, 255, 255, 0.1) 0%, rgba(0, 0, 0, 0.4) 100%);
-  border: 2px solid rgba(255, 255, 255, 0.4);
-  border-radius: 50%;
-  pointer-events: auto;
-  box-shadow: inset 0 0 20px rgba(0, 0, 0, 0.5);
-}
+    #analog-brake {
+      bottom: 20px;
+      right: 120px;
+      width: 60px;
+      height: 60px;
+      background: radial-gradient(circle at 30% 30%, rgba(255, 0, 0, 0.4), rgba(100, 0, 0, 0.6));
+    }
 
-#analog-stick-knob {
-  position: absolute;
-  top: 50%;
-  left: 50%;
-  width: 50px;
-  height: 50px;
-  background: radial-gradient(circle at 30% 30%, #FFD700, #B8860B);
-  border-radius: 50%;
-  transform: translate(-50%, -50%);
-  pointer-events: none;
-  box-shadow: 0 4px 10px rgba(0, 0, 0, 0.6);
-  border: 1px solid rgba(255, 255, 255, 0.5);
-}
-
-#analog-gas {
-  bottom: 100px;
-  right: 30px;
-  width: 80px;
-  height: 80px;
-  background: radial-gradient(circle at 30% 30%, rgba(0, 255, 0, 0.4), rgba(0, 100, 0, 0.6));
-}
-
-#analog-brake {
-  bottom: 20px;
-  right: 120px;
-  width: 60px;
-  height: 60px;
-  background: radial-gradient(circle at 30% 30%, rgba(255, 0, 0, 0.4), rgba(100, 0, 0, 0.6));
-}
-
-#analog-wheelie {
-  bottom: 120px;
-  right: 130px;
-  width: 60px;
-  height: 60px;
-  background: radial-gradient(circle at 30% 30%, rgba(255, 215, 0, 0.4), rgba(184, 134, 11, 0.6));
-}
+    #analog-wheelie {
+      bottom: 120px;
+      right: 130px;
+      width: 60px;
+      height: 60px;
+      background: radial-gradient(circle at 30% 30%, rgba(255, 215, 0, 0.4), rgba(184, 134, 11, 0.6));
+    }
