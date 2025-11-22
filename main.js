@@ -107,6 +107,15 @@ const matHole = new THREE.MeshBasicMaterial({ color: 0x000000 });
 let bikeGroup, bikePivot;
 let groundChunks = [];
 
+// Smoke particle pooling for performance
+const smokeParticlePool = {
+    geometry: new THREE.SphereGeometry(0.25, 8, 8),
+    material: new THREE.MeshBasicMaterial({
+        color: 0xaaaaaa,
+        transparent: true
+    })
+};
+
 function createTextTexture(text, bgColor, textColor) {
     const canvas = document.createElement('canvas');
     canvas.width = 512;
@@ -913,20 +922,35 @@ function startSkid() {
     state.skidding = true;
     state.skidTimer = 1.5;
     bikeGroup.rotation.z = Math.PI / 8;
-    for (let i = 0; i < 20; i++) {
+    // Reduced from 20 to 10 for better performance
+    for (let i = 0; i < 10; i++) {
         createSmokeParticle();
     }
 }
 
 function createSmokeParticle() {
-    const geo = new THREE.SphereGeometry(0.2 + Math.random() * 0.3, 8, 8);
-    const mat = new THREE.MeshBasicMaterial({ color: 0xaaaaaa, transparent: true, opacity: 0.6 });
-    const mesh = new THREE.Mesh(geo, mat);
+    // Limit max smoke particles for performance
+    if (state.smokeParticles.length >= 30) {
+        const oldest = state.smokeParticles.shift();
+        scene.remove(oldest.mesh);
+        oldest.mesh.material.dispose();
+    }
+
+    // Reuse pooled geometry and clone material for individual opacity
+    const mat = smokeParticlePool.material.clone();
+    mat.opacity = 0.6;
+    const mesh = new THREE.Mesh(smokeParticlePool.geometry, mat);
+
     const pos = bikeGroup.position.clone();
     pos.y += 0.5;
     pos.z += 0.5;
     pos.x += (Math.random() - 0.5) * 0.5;
     mesh.position.copy(pos);
+
+    // Random scale for variety
+    const scale = 0.8 + Math.random() * 0.4;
+    mesh.scale.set(scale, scale, scale);
+
     scene.add(mesh);
     state.smokeParticles.push({
         mesh: mesh,
@@ -1015,7 +1039,10 @@ function animate() {
                 state.skidding = false;
                 bikeGroup.rotation.z = 0;
             } else {
-                if (Math.random() > 0.5) createSmokeParticle();
+                // Reduced continuous smoke: every 3rd frame instead of 50% chance
+                if (Math.floor(state.gameTime * 60) % 3 === 0) {
+                    createSmokeParticle();
+                }
                 bikeGroup.rotation.z = (Math.PI / 8) + Math.sin(Date.now() * 0.02) * 0.1;
                 state.speed *= 0.98;
                 bikeGroup.position.z -= state.speed;
@@ -1144,6 +1171,27 @@ function animate() {
             }
         }
         checkCollisions();
+
+        // Performance: Clean up old obstacles periodically
+        obstacleCleanupCounter++;
+        if (obstacleCleanupCounter > 300) {  // Every ~5 seconds at 60fps
+            state.obstacles = state.obstacles.filter(obs => {
+                if (!obs.active && obs.mesh.position.z > bikeGroup.position.z + 100) {
+                    scene.remove(obs.mesh);
+                    if (obs.mesh.geometry) obs.mesh.geometry.dispose();
+                    if (obs.mesh.material) {
+                        if (Array.isArray(obs.mesh.material)) {
+                            obs.mesh.material.forEach(m => m.dispose());
+                        } else {
+                            obs.mesh.material.dispose();
+                        }
+                    }
+                    return false;
+                }
+                return true;
+            });
+            obstacleCleanupCounter = 0;
+        }
     }
     updateCamera();
     updateUI();
@@ -1206,6 +1254,7 @@ let mobileControlsInitialized = false;
 let analogData = { x: 0, y: 0, active: false };
 let autoRaceCountdown = 0;
 let autoRaceActive = false;
+let obstacleCleanupCounter = 0;  // Performance: periodic obstacle cleanup
 
 function setupMobileControls() {
     const mobileControls = document.getElementById('mobile-controls');
