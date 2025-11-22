@@ -849,6 +849,13 @@ function startGame() {
 
     setupMobileControls();
 
+    // Auto-fullscreen on mobile devices
+    if (isMobile() && !document.fullscreenElement) {
+        document.documentElement.requestFullscreen().catch(err => {
+            console.log('Auto-fullscreen failed:', err);
+        });
+    }
+
     if (GAME_SETTINGS.autoRace) {
         autoRaceActive = false;
         state.isPaused = true;
@@ -904,7 +911,7 @@ function checkCollisions() {
 
 function startSkid() {
     state.skidding = true;
-    state.skidTimer = 4.0;
+    state.skidTimer = 1.5;
     bikeGroup.rotation.z = Math.PI / 8;
     for (let i = 0; i < 20; i++) {
         createSmokeParticle();
@@ -1183,6 +1190,10 @@ function updateUI() {
         const deg = -135 + (pct * 270);
         speedNeedle.style.transform = `translateX(-50%) rotate(${deg}deg)`;
     }
+}
+
+function isMobile() {
+    return /Android|webOS|iPhone|iPad|iPod|BlackBerry|IEMobile|Opera Mini/i.test(navigator.userAgent);
 }
 
 const GAME_SETTINGS = {
