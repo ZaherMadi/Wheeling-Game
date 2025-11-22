@@ -4,7 +4,7 @@ const CONFIG = {
     laneWidth: 10,
     maxSpeed: 2.8,
     minSpeed: 0.0,
-    baseAcceleration: 0.012, // Reduced by 20%
+    baseAcceleration: 0.012,
     deceleration: 0.005,
     brakeForce: 0.03,
     lateralAccel: 0.05,
@@ -95,6 +95,7 @@ const matSkin = new THREE.MeshStandardMaterial({ color: 0xF4C2A0 });
 const matJersey = new THREE.MeshStandardMaterial({ color: 0xFFD700 });
 const matPants = new THREE.MeshStandardMaterial({ color: 0x1a1a1a });
 const matShoes = new THREE.MeshStandardMaterial({ color: 0xFFFFFF });
+const matBillboardFrame = new THREE.MeshStandardMaterial({ color: 0x333333, metalness: 0.7 });
 
 let bikeGroup, bikePivot;
 let groundChunks = [];
@@ -347,28 +348,44 @@ function createDetailedBuilding(width, height, depth, colorMat) {
         }
     }
 
-    // Graffiti
-    if (state.graffitiList && state.graffitiList.length > 0 && Math.random() > 0.75) {
-        const text = state.graffitiList[Math.floor(Math.random() * state.graffitiList.length)];
-        const bgHex = '#' + colorMat.color.getHexString();
-        const randomColor = '#' + Math.floor(Math.random() * 16777215).toString(16).padStart(6, '0');
-
-        const tex = createTextTexture(text, bgHex, randomColor);
-        const grafGeo = new THREE.PlaneGeometry(10, 5);
-        const grafMat = new THREE.MeshBasicMaterial({ map: tex, transparent: false });
-
-        const grafLeft = new THREE.Mesh(grafGeo, grafMat);
-        grafLeft.position.set(-width / 2 - 0.1, height * 0.35, 0);
-        grafLeft.rotation.y = Math.PI / 2;
-        building.add(grafLeft);
-
-        const grafRight = new THREE.Mesh(grafGeo, grafMat.clone());
-        grafRight.position.set(width / 2 + 0.1, height * 0.35, 0);
-        grafRight.rotation.y = -Math.PI / 2;
-        building.add(grafRight);
-    }
-
     return building;
+}
+
+function createSidewalkBillboard(text) {
+    const group = new THREE.Group();
+
+    // Legs
+    const legGeo = new THREE.BoxGeometry(0.1, 1.5, 0.1);
+    const leg1 = new THREE.Mesh(legGeo, matBillboardFrame);
+    leg1.position.set(-1.4, 0.75, 0);
+    group.add(leg1);
+
+    const leg2 = new THREE.Mesh(legGeo, matBillboardFrame);
+    leg2.position.set(1.4, 0.75, 0);
+    group.add(leg2);
+
+    // Board Frame
+    const frameGeo = new THREE.BoxGeometry(3, 2, 0.2);
+    const frame = new THREE.Mesh(frameGeo, matBillboardFrame);
+    frame.position.set(0, 1.8, 0);
+    group.add(frame);
+
+    // Board Face (Text)
+    const randomColor = '#' + Math.floor(Math.random() * 16777215).toString(16).padStart(6, '0');
+    const tex = createTextTexture(text, '#ffffff', randomColor);
+    const faceGeo = new THREE.PlaneGeometry(2.8, 1.8);
+    const faceMat = new THREE.MeshBasicMaterial({ map: tex });
+    const face = new THREE.Mesh(faceGeo, faceMat);
+    face.position.set(0, 1.8, 0.11);
+    group.add(face);
+
+    // Back Face
+    const backFace = new THREE.Mesh(faceGeo, new THREE.MeshStandardMaterial({ color: 0x555555 }));
+    backFace.position.set(0, 1.8, -0.11);
+    backFace.rotation.y = Math.PI;
+    group.add(backFace);
+
+    return group;
 }
 
 function createGroundChunk(zPos) {
@@ -414,6 +431,26 @@ function createGroundChunk(zPos) {
         const bRight = createDetailedBuilding(width, height, depth, mat);
         bRight.position.set(25 + Math.random() * 5, height / 2, (Math.random() - 0.5) * 80);
         chunk.add(bRight);
+    }
+
+    // Sidewalk Billboards (Graffiti replacement)
+    if (state.graffitiList && state.graffitiList.length > 0) {
+        // Left side billboard
+        if (Math.random() > 0.6) {
+            const text = state.graffitiList[Math.floor(Math.random() * state.graffitiList.length)];
+            const bb = createSidewalkBillboard(text);
+            bb.position.set(-13, 0, (Math.random() - 0.5) * 80);
+            bb.rotation.y = Math.PI / 2; // Face the road
+            chunk.add(bb);
+        }
+        // Right side billboard
+        if (Math.random() > 0.6) {
+            const text = state.graffitiList[Math.floor(Math.random() * state.graffitiList.length)];
+            const bb = createSidewalkBillboard(text);
+            bb.position.set(13, 0, (Math.random() - 0.5) * 80);
+            bb.rotation.y = -Math.PI / 2; // Face the road
+            chunk.add(bb);
+        }
     }
 
     // Street lights
@@ -532,6 +569,12 @@ function init() {
         highScoreEl.innerText = `MEILLEUR: ${state.highScore}`;
         highScoreEl.style.display = 'block';
     }
+
+    // Set default control mode to analog
+    GAME_SETTINGS.controlMode = 'analog';
+    document.querySelectorAll('.setting-btn').forEach(b => b.classList.remove('active'));
+    const analogBtn = document.getElementById('control-analog');
+    if (analogBtn) analogBtn.classList.add('active');
 
     animate();
 }
@@ -687,8 +730,23 @@ function animate() {
 
         } else {
             // LINEAR MODE
+            let isAccelerating = state.keys.up;
+            let isBraking = state.keys.down;
+
+            // ANALOG CONTROL LOGIC
             if (GAME_SETTINGS.controlMode === 'analog' && analogData.active) {
                 state.bike.lateralVelocity = analogData.x * CONFIG.maxLateralSpeed;
+
+                // Acceleration via Analog UP (negative Y)
+                if (analogData.y < -0.1) {
+                    isAccelerating = true;
+                    // Optional: modulate acceleration based on how far up you push
+                    // But for now, simple boolean is safer for wheelie logic
+                }
+                // Braking via Analog DOWN (positive Y)
+                if (analogData.y > 0.5) {
+                    isBraking = true;
+                }
             } else {
                 if (state.keys.left) state.bike.lateralVelocity -= CONFIG.lateralAccel;
                 if (state.keys.right) state.bike.lateralVelocity += CONFIG.lateralAccel;
@@ -715,7 +773,8 @@ function animate() {
             const kmh = state.speed * 50;
             let lift = 0;
 
-            if (state.keys.space && state.keys.up) {
+            // Wheelie Logic: Needs Space + Acceleration
+            if (state.keys.space && isAccelerating) {
                 if (kmh > 110) {
                     lift = CONFIG.wheelieLiftFast;
                 } else if (kmh > 0) {
@@ -730,7 +789,7 @@ function animate() {
                 }
             }
 
-            if (state.keys.down) {
+            if (isBraking) {
                 lift -= CONFIG.wheelieLift * 2;
                 const brakePower = CONFIG.brakeForce * (1 + state.speed * 2);
                 state.speed = Math.max(0, state.speed - brakePower);
@@ -753,7 +812,7 @@ function animate() {
             // FIX: Inverted rotation for correct wheelie direction (nose up)
             bikePivot.rotation.x = -state.bike.angle;
 
-            if (state.keys.up) {
+            if (isAccelerating) {
                 let accel = CONFIG.baseAcceleration;
                 if (kmh > 130) accel *= 0.15;
                 else if (kmh > 120) accel *= 0.3;
@@ -761,8 +820,13 @@ function animate() {
                 else if (kmh > 80) accel *= 0.7;
                 else if (kmh > 60) accel *= 0.85;
 
+                // Modulate acceleration with analog stick if available
+                if (GAME_SETTINGS.controlMode === 'analog' && analogData.active && analogData.y < -0.1) {
+                    accel *= Math.min(1, Math.abs(analogData.y) * 1.5);
+                }
+
                 if (state.speed < CONFIG.maxSpeed) state.speed += accel;
-            } else if (!state.keys.down) {
+            } else if (!isBraking) {
                 if (state.speed > CONFIG.minSpeed) state.speed -= CONFIG.deceleration;
             }
 
@@ -877,8 +941,8 @@ function updateUI() {
 // GAME SETTINGS & MODE MANAGEMENT
 // ================================
 const GAME_SETTINGS = {
-    controlMode: 'keyboard', // 'keyboard', 'arrows', 'analog'
-    gameMode: 'linear' // 'linear', 'free'
+    controlMode: 'analog', // Default to analog
+    gameMode: 'linear'
 };
 
 // ================================
@@ -1061,6 +1125,9 @@ window.addEventListener('resize', () => {
     renderer.setSize(window.innerWidth, window.innerHeight);
 });
 
+// DYNAMIC UI FADING LOGIC
+const mobileControls = document.getElementById('mobile-controls');
+
 window.addEventListener('keydown', (e) => {
     if (e.code === 'ArrowLeft') state.keys.left = true;
     if (e.code === 'ArrowRight') state.keys.right = true;
@@ -1069,6 +1136,11 @@ window.addEventListener('keydown', (e) => {
     if (e.code === 'Space') {
         e.preventDefault();
         state.keys.space = true;
+    }
+
+    // Fade OUT mobile controls on keyboard input
+    if (mobileControls && !mobileControls.classList.contains('controls-hidden')) {
+        mobileControls.classList.add('controls-hidden');
     }
 });
 
@@ -1080,6 +1152,18 @@ window.addEventListener('keyup', (e) => {
     if (e.code === 'Space') {
         e.preventDefault();
         state.keys.space = false;
+    }
+});
+
+// Fade IN mobile controls on click/touch
+window.addEventListener('mousedown', () => {
+    if (mobileControls && mobileControls.classList.contains('controls-hidden')) {
+        mobileControls.classList.remove('controls-hidden');
+    }
+});
+window.addEventListener('touchstart', () => {
+    if (mobileControls && mobileControls.classList.contains('controls-hidden')) {
+        mobileControls.classList.remove('controls-hidden');
     }
 });
 
