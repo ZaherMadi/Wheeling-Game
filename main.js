@@ -56,10 +56,14 @@ let state = {
 
 const scene = new THREE.Scene();
 scene.background = new THREE.Color(0x87CEEB);
-scene.fog = new THREE.Fog(0x87CEEB, 50, 300);
 
+// Graphics quality will be set after GAME_SETTINGS initialization
 const camera = new THREE.PerspectiveCamera(60, window.innerWidth / window.innerHeight, 0.1, 1000);
-const renderer = new THREE.WebGLRenderer({ antialias: true });
+const renderer = new THREE.WebGLRenderer({
+    antialias: true,
+    powerPreference: 'high-performance',
+    precision: 'highp'
+});
 renderer.setSize(window.innerWidth, window.innerHeight);
 renderer.shadowMap.enabled = true;
 renderer.shadowMap.type = THREE.PCFSoftShadowMap;
@@ -76,8 +80,7 @@ scene.add(ambientLight);
 const dirLight = new THREE.DirectionalLight(0xffffff, 0.8);
 dirLight.position.set(50, 100, 50);
 dirLight.castShadow = true;
-dirLight.shadow.mapSize.width = 2048;
-dirLight.shadow.mapSize.height = 2048;
+// Shadow quality will be set based on graphics quality
 scene.add(dirLight);
 
 // Materials
@@ -1254,8 +1257,26 @@ function isMobile() {
 const GAME_SETTINGS = {
     controlMode: 'analog',
     gameMode: 'linear',
-    autoRace: false
+    autoRace: false,
+    graphicsQuality: 'high'  // 'high' or 'low'
 };
+
+// Apply graphics quality settings
+function applyGraphicsQuality() {
+    if (GAME_SETTINGS.graphicsQuality === 'high') {
+        // High quality settings
+        scene.fog = new THREE.Fog(0x87CEEB, 70, 400);  // Extended visibility
+        renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));  // Retina support
+        dirLight.shadow.mapSize.width = 4096;  // 4K shadows
+        dirLight.shadow.mapSize.height = 4096;
+    } else {
+        // Low quality settings (original)
+        scene.fog = new THREE.Fog(0x87CEEB, 50, 300);
+        renderer.setPixelRatio(1);  // Standard resolution
+        dirLight.shadow.mapSize.width = 2048;  // 2K shadows
+        dirLight.shadow.mapSize.height = 2048;
+    }
+}
 
 let mobileControlsInitialized = false;
 let analogData = { x: 0, y: 0, active: false };
@@ -1491,6 +1512,21 @@ if (autoRaceToggle) {
     });
 }
 
+// Graphics Quality toggle
+document.getElementById('quality-high').addEventListener('click', () => {
+    GAME_SETTINGS.graphicsQuality = 'high';
+    document.getElementById('quality-high').classList.add('active');
+    document.getElementById('quality-low').classList.remove('active');
+    applyGraphicsQuality();
+});
+
+document.getElementById('quality-low').addEventListener('click', () => {
+    GAME_SETTINGS.graphicsQuality = 'low';
+    document.getElementById('quality-low').classList.add('active');
+    document.getElementById('quality-high').classList.remove('active');
+    applyGraphicsQuality();
+});
+
 // Fullscreen Toggle
 const fullscreenBtn = document.getElementById('fullscreen-btn');
 if (fullscreenBtn) {
@@ -1508,3 +1544,4 @@ if (fullscreenBtn) {
 }
 
 init();
+applyGraphicsQuality();  // Apply default High quality settings

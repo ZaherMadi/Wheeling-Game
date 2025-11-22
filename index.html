@@ -3,12 +3,12 @@
 
 <head>
   <meta charset="UTF-8" />
-  <link rel="icon" type="image/svg+xml" href="/vite.svg" />
+  <link rel="icon" type="image/x-icon" href="Logo51.ico" />
   <meta name="viewport"
     content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover">
   <meta name="apple-mobile-web-app-capable" content="yes">
   <meta name="mobile-web-app-capable" content="yes">
-  <title>Wheelie King - Banlieue Edition</title>
+  <title>Wheelie King - 51Games </title>
   <link rel="icon" type="image/x-icon" href="Logo.ico">
   <link rel="stylesheet" href="style.css">
   <link rel="preconnect" href="https://fonts.googleapis.com">
@@ -194,22 +194,6 @@
 
       #speed-text {
         font-size: 14px;
-      }
-    }
-
-    /* Hide mobile controls on desktop (>800px width) */
-    @media screen and (min-width: 801px) {
-      #mobile-controls {
-        display: none !important;
-      }
-
-      #analog-controls {
-        display: none !important;
-      }
-
-      /* Keep speedometer visible */
-      #speedometer {
-        display: flex !important;
       }
     }
 
@@ -756,7 +740,7 @@
 
   <!-- START SCREEN -->
   <div id="start-screen" class="screen active">
-    <img src="logo.png" alt="Wheelie King Logo"
+    <img src="Logo51.png" alt="Wheelie King Logo"
       style="width: 150px; margin-bottom: 20px; filter: drop-shadow(0 0 10px rgba(255,215,0,0.5));">
     <h1>WHEELIE KING</h1>
     <p>Banlieue Edition</p>
@@ -792,12 +776,19 @@
       <p class="setting-desc">Accélération auto après 3s + Wheeling avec joystick bas</p>
     </div>
 
+    <div class="settings-group">
+      <h3>QUALITÉ GRAPHIQUE</h3>
+      <button id="quality-high" class="setting-btn active">🎨 HAUTE</button>
+      <button id="quality-low" class="setting-btn">⚙️ BASSE</button>
+      <p class="setting-desc">Haute: Meilleure qualité | Basse: Meilleures performances</p>
+    </div>
+
     <button id="back-btn" style="margin-top: 30px;">← RETOUR</button>
   </div>
 
   <!-- GAME OVER SCREEN -->
   <div id="game-over-screen" class="screen">
-    <img src="logo.png" alt="Wheelie King Logo" style="width: 100px; margin-bottom: 20px; filter: grayscale(100%);">
+    <img src="Logo51.png" alt="Wheelie King Logo" style="width: 100px; margin-bottom: 20px; filter: grayscale(100%);">
     <h1 style="color: #ff4444;">GAME OVER</h1>
     <p>Score: <span id="final-score">0</span></p>
     <p id="high-score-display">Meilleur Score: <span id="best-score-gameover">0</span></p>
