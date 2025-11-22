@@ -463,6 +463,11 @@
       </div>
     </div>
 
+    <!-- Countdown Display -->
+    <div id="countdown-display"
+      style="position: absolute; top: 30%; left: 50%; transform: translate(-50%, -50%); font-size: 120px; font-weight: bold; color: #FFD700; text-shadow: 0 0 20px #000; display: none; z-index: 50;">
+      3</div>
+
     <!-- Pause Button -->
     <button id="pause-btn">PAUSE</button>
 
@@ -518,6 +523,12 @@
         <span id="desc-linear">Mode classique: avancez tout droit</span>
         <span id="desc-free" style="display:none;">Mode libre: déplacez-vous librement dans toutes les directions</span>
       </p>
+    </div>
+
+    <div class="settings-group">
+      <h3>OPTIONS</h3>
+      <button id="option-auto-race" class="setting-btn">⚡ COURSE AUTO</button>
+      <p class="setting-desc">Accélération auto après 3s + Wheeling avec joystick bas</p>
     </div>
 
     <button id="back-btn" style="margin-top: 30px;">← RETOUR</button>

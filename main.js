@@ -7,9 +7,9 @@ const CONFIG = {
     baseAcceleration: 0.0025, // Reduced for 13s to 100km/h
     deceleration: 0.005,
     brakeForce: 0.03,
-    lateralAccel: 0.05,
+    lateralAccel: 0.04, // Reduced by 20% (was 0.05)
     lateralFriction: 0.92,
-    maxLateralSpeed: 0.7,
+    maxLateralSpeed: 0.56, // Reduced by 20% (was 0.7)
     wheelieLift: 0.008,
     wheelieLiftFast: 0.012,
     gravity: 0.0015,
@@ -339,8 +339,53 @@ function createBird() {
     return bird;
 }
 
+function createGlassTower(width, height, depth) {
+    const group = new THREE.Group();
+    group.userData.height = height;
+
+    // Main Glass Body
+    const geo = new THREE.BoxGeometry(width, height, depth);
+    const glassMat = new THREE.MeshStandardMaterial({
+        color: 0x88ccff,
+        metalness: 0.1, // Reduced metalness for visibility without env map
+        roughness: 0.2,
+        transparent: true,
+        opacity: 0.7
+    });
+    const mesh = new THREE.Mesh(geo, glassMat);
+    mesh.castShadow = true;
+    mesh.receiveShadow = true;
+    group.add(mesh);
+
+    // Frames / Grid
+    const frameGeo = new THREE.BoxGeometry(width + 0.2, height, depth + 0.2);
+    const frameMat = new THREE.MeshBasicMaterial({ color: 0x000000, wireframe: true, transparent: true, opacity: 0.3 });
+    const frame = new THREE.Mesh(frameGeo, frameMat);
+    group.add(frame);
+
+    // Internal Lights (Emissive boxes instead of real lights)
+    const lightCount = Math.floor(height / 3);
+    const lightGeo = new THREE.BoxGeometry(1, 1, 1);
+    const lightMat = new THREE.MeshBasicMaterial({ color: 0xffaa00 });
+
+    for (let i = 0; i < lightCount; i++) {
+        if (Math.random() > 0.3) {
+            const lightMesh = new THREE.Mesh(lightGeo, lightMat);
+            lightMesh.position.set(
+                (Math.random() - 0.5) * (width - 2),
+                (Math.random() - 0.5) * (height - 2),
+                (Math.random() - 0.5) * (depth - 2)
+            );
+            group.add(lightMesh);
+        }
+    }
+
+    return group;
+}
+
 function createDetailedBuilding(width, height, depth, colorMat) {
     const building = new THREE.Group();
+    building.userData.height = height;
 
     const mainGeo = new THREE.BoxGeometry(width, height, depth);
     const mainMesh = new THREE.Mesh(mainGeo, colorMat);
@@ -601,28 +646,53 @@ function createGroundChunk(zPos) {
     swGeo.rotateX(-Math.PI / 2);
 
     const lSw = new THREE.Mesh(swGeo, matSidewalk);
-    lSw.position.set(-15, 0.01, 0);
+    lSw.position.set(-15, 0.05, 0); // Slightly raised
     lSw.receiveShadow = true;
     chunk.add(lSw);
 
     const rSw = new THREE.Mesh(swGeo, matSidewalk);
-    rSw.position.set(15, 0.01, 0);
+    rSw.position.set(15, 0.05, 0); // Slightly raised
     rSw.receiveShadow = true;
     chunk.add(rSw);
 
-    // Buildings
-    for (let i = 0; i < 4; i++) {
-        const height = 10 + Math.random() * 20;
-        const width = 5 + Math.random() * 5;
-        const depth = 5 + Math.random() * 5;
-        const mat = [matBuilding, matBuilding2, matBuilding3][Math.floor(Math.random() * 3)];
+    // Curbs (Demarcation)
+    const curbGeo = new THREE.BoxGeometry(0.5, 0.15, 100);
+    const curbMat = new THREE.MeshStandardMaterial({ color: 0x888888 }); // Grey concrete curb
 
-        const bLeft = createDetailedBuilding(width, height, depth, mat);
-        bLeft.position.set(-25 - Math.random() * 5, height / 2, (Math.random() - 0.5) * 80);
+    const curbLeft = new THREE.Mesh(curbGeo, curbMat);
+    curbLeft.position.set(-10.25, 0.075, 0);
+    chunk.add(curbLeft);
+
+    const curbRight = new THREE.Mesh(curbGeo, curbMat);
+    curbRight.position.set(10.25, 0.075, 0);
+    chunk.add(curbRight);
+
+    // Buildings
+    for (let i = 0; i < 6; i++) { // Increased count
+        const isTower = Math.random() > 0.7;
+        let bLeft, bRight;
+
+        if (isTower) {
+            // Glass Tower
+            const height = 30 + Math.random() * 30;
+            const width = 8 + Math.random() * 5;
+            const depth = 8 + Math.random() * 5;
+            bLeft = createGlassTower(width, height, depth);
+            bRight = createGlassTower(width, height, depth);
+        } else {
+            // Standard Building
+            const height = 10 + Math.random() * 20;
+            const width = 5 + Math.random() * 5;
+            const depth = 5 + Math.random() * 5;
+            const mat = [matBuilding, matBuilding2, matBuilding3][Math.floor(Math.random() * 3)];
+            bLeft = createDetailedBuilding(width, height, depth, mat);
+            bRight = createDetailedBuilding(width, height, depth, mat);
+        }
+
+        bLeft.position.set(-25 - Math.random() * 10, bLeft.userData.height / 2, (Math.random() - 0.5) * 90);
         chunk.add(bLeft);
 
-        const bRight = createDetailedBuilding(width, height, depth, mat);
-        bRight.position.set(25 + Math.random() * 5, height / 2, (Math.random() - 0.5) * 80);
+        bRight.position.set(25 + Math.random() * 10, bRight.userData.height / 2, (Math.random() - 0.5) * 90);
         chunk.add(bRight);
     }
 
@@ -662,7 +732,7 @@ function createGroundChunk(zPos) {
     if (Math.random() > 0.85) {
         const car = createHazardCar();
         car.position.set(13, 0, (Math.random() - 0.5) * 60);
-        car.rotation.y = Math.random() * 0.5 - 0.25; // Slightly angled
+        car.rotation.y = Math.PI; // Parked facing backward (or forward 0) - Parallel to road
         chunk.add(car);
     }
 
@@ -858,11 +928,36 @@ function startGame() {
 
     const startScreen = document.getElementById('start-screen');
     const gameOverScreen = document.getElementById('game-over-screen');
+    const countdownEl = document.getElementById('countdown-display');
 
     if (startScreen) startScreen.classList.remove('active');
     if (gameOverScreen) gameOverScreen.classList.remove('active');
 
     setupMobileControls();
+
+    if (GAME_SETTINGS.autoRace) {
+        autoRaceActive = false;
+        state.isPaused = true; // Pause game logic during countdown
+        if (countdownEl) {
+            countdownEl.style.display = 'block';
+            let count = 3;
+            countdownEl.innerText = count;
+
+            const timer = setInterval(() => {
+                count--;
+                if (count > 0) {
+                    countdownEl.innerText = count;
+                } else if (count === 0) {
+                    countdownEl.innerText = "GO!";
+                } else {
+                    clearInterval(timer);
+                    countdownEl.style.display = 'none';
+                    state.isPaused = false;
+                    autoRaceActive = true;
+                }
+            }, 1000);
+        }
+    }
 }
 
 function togglePause() {
@@ -993,13 +1088,32 @@ function animate() {
 
                 state.bike.lateralVelocity = analogData.x * CONFIG.maxLateralSpeed * sensitivity;
 
-                // Acceleration via Analog UP (negative Y)
-                if (analogData.y < -0.1) {
-                    isAccelerating = true;
-                }
-                // Braking via Analog DOWN (positive Y)
-                if (analogData.y > 0.5) {
-                    isBraking = true;
+                if (GAME_SETTINGS.autoRace) {
+                    // AUTO RACE MODE
+                    if (autoRaceActive) {
+                        isAccelerating = true; // Auto accelerate
+                    }
+
+                    // Drag Back (Positive Y) -> Wheelie
+                    if (analogData.y > 0.2) {
+                        state.keys.space = true; // Simulate space for wheelie
+                    } else {
+                        state.keys.space = false;
+                    }
+
+                    // Brake is handled by button only (mapped to 'down' key)
+                    if (state.keys.down) isBraking = true;
+
+                } else {
+                    // STANDARD MODE
+                    // Acceleration via Analog UP (negative Y)
+                    if (analogData.y < -0.1) {
+                        isAccelerating = true;
+                    }
+                    // Braking via Analog DOWN (positive Y)
+                    if (analogData.y > 0.5) {
+                        isBraking = true;
+                    }
                 }
             } else {
                 if (state.keys.left) state.bike.lateralVelocity -= CONFIG.lateralAccel;
@@ -1130,11 +1244,10 @@ function animate() {
             }
         }
     }
-}
 
-updateCamera();
-updateUI();
-renderer.render(scene, camera);
+    updateCamera();
+    updateUI();
+    renderer.render(scene, camera);
 }
 
 function updateCamera() {
@@ -1202,7 +1315,8 @@ function updateUI() {
 // ================================
 const GAME_SETTINGS = {
     controlMode: 'analog', // Default to analog
-    gameMode: 'linear'
+    gameMode: 'linear',
+    autoRace: false // New Auto Race option
 };
 
 // ================================
@@ -1210,6 +1324,8 @@ const GAME_SETTINGS = {
 // ================================
 let mobileControlsInitialized = false;
 let analogData = { x: 0, y: 0, active: false };
+let autoRaceCountdown = 0;
+let autoRaceActive = false;
 
 function setupMobileControls() {
     const mobileControls = document.getElementById('mobile-controls');
@@ -1229,6 +1345,28 @@ function setupMobileControls() {
         arrowControls.style.display = 'none';
         analogControls.style.display = 'block';
         if (!mobileControlsInitialized) setupAnalogControls();
+
+        // Update Analog UI for Auto Race
+        const brakeBtn = document.getElementById('analog-brake');
+        const gasBtn = document.getElementById('analog-gas');
+        const wheelieBtn = document.getElementById('analog-wheelie');
+
+        if (GAME_SETTINGS.autoRace) {
+            if (gasBtn) gasBtn.style.display = 'none'; // No gas button needed
+            if (wheelieBtn) wheelieBtn.style.display = 'none'; // Wheelie is on stick
+            if (brakeBtn) {
+                brakeBtn.style.display = 'block';
+                brakeBtn.style.right = '30px'; // Move brake to right
+                brakeBtn.style.bottom = '50px';
+            }
+        } else {
+            if (gasBtn) gasBtn.style.display = 'block';
+            if (wheelieBtn) wheelieBtn.style.display = 'block';
+            if (brakeBtn) {
+                brakeBtn.style.display = 'block';
+                brakeBtn.style.right = '90px';
+            }
+        }
     } else {
         mobileControls.style.display = 'none';
     }
@@ -1379,6 +1517,15 @@ if (backBtn) {
     }
 });
 
+// Auto Race Toggle
+const autoRaceBtn = document.getElementById('option-auto-race');
+if (autoRaceBtn) {
+    autoRaceBtn.addEventListener('click', () => {
+        GAME_SETTINGS.autoRace = !GAME_SETTINGS.autoRace;
+        autoRaceBtn.classList.toggle('active', GAME_SETTINGS.autoRace);
+    });
+}
+
 window.addEventListener('resize', () => {
     camera.aspect = window.innerWidth / window.innerHeight;
     camera.updateProjectionMatrix();
@@ -1389,6 +1536,21 @@ window.addEventListener('resize', () => {
 const mobileControls = document.getElementById('mobile-controls');
 
 window.addEventListener('keydown', (e) => {
+    // Spacebar Shortcuts
+    if (e.code === 'Space') {
+        const startScreen = document.getElementById('start-screen');
+        const gameOverScreen = document.getElementById('game-over-screen');
+
+        if (startScreen && startScreen.classList.contains('active')) {
+            startGame();
+            return;
+        }
+        if (gameOverScreen && gameOverScreen.classList.contains('active')) {
+            startGame(); // Restart
+            return;
+        }
+    }
+
     if (e.code === 'ArrowLeft') state.keys.left = true;
     if (e.code === 'ArrowRight') state.keys.right = true;
     if (e.code === 'ArrowUp') state.keys.up = true;
