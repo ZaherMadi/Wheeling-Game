@@ -720,12 +720,14 @@
 
     .action-btn {
       position: absolute;
-      width: 90px;
-      height: 90px;
+      width: 75px;
+      /* Reduced from 90px */
+      height: 75px;
       background: radial-gradient(circle at 30% 30%, rgba(255, 215, 0, 1), rgba(255, 165, 0, 0.95));
-      border: 4px solid rgba(255, 255, 255, 0.9);
+      border: 3px solid rgba(255, 255, 255, 0.9);
       border-radius: 50%;
-      font-size: 22px;
+      font-size: 32px;
+      /* Increased from 22px */
       color: #000;
       cursor: pointer;
       pointer-events: auto;
@@ -738,7 +740,8 @@
       align-items: center;
       justify-content: center;
       font-weight: bold;
-      line-height: 1.2;
+      line-height: 1;
+      z-index: 20;
     }
 
     .action-btn:active {
@@ -750,24 +753,26 @@
     }
 
     .action-btn.special {
-      width: 100px;
-      height: 100px;
+      width: 85px;
+      /* Reduced from 100px */
+      height: 85px;
       background: radial-gradient(circle at 30% 30%, rgba(255, 69, 0, 1), rgba(255, 30, 0, 0.95));
-      font-size: 16px;
+      font-size: 20px;
     }
 
     #analog-gas {
-      bottom: 110px;
-      right: 100px;
+      bottom: 130px;
+      right: 40px;
     }
 
     #analog-brake {
       bottom: 30px;
-      right: 100px;
+      right: 220px;
+      /* Significantly increased spacing */
     }
 
     #analog-wheelie {
-      bottom: 70px;
+      bottom: 40px;
       right: 20px;
     }
   </style>
@@ -790,17 +795,19 @@
             <stop offset="100%" style="stop-color:#ff0000;stop-opacity:1" />
           </linearGradient>
         </defs>
-        <!-- Background Arc -->
-        <path d="M 30 100 A 70 70 0 0 1 170 100" fill="none" stroke="#222" stroke-width="15" stroke-linecap="round" />
+        <!-- Background Arc (270 degrees) -->
+        <path d="M 50 150 A 80 80 0 1 1 190 90" fill="none" stroke="#222" stroke-width="15" stroke-linecap="round"
+          transform="rotate(135, 100, 100)" />
         <!-- Ticks -->
-        <path d="M 30 100 A 70 70 0 0 1 170 100" fill="none" stroke="url(#grad1)" stroke-width="2"
-          stroke-dasharray="5,5" />
+        <path d="M 50 150 A 80 80 0 1 1 190 90" fill="none" stroke="url(#grad1)" stroke-width="2" stroke-dasharray="5,5"
+          transform="rotate(135, 100, 100)" />
 
         <!-- Needle Group -->
         <g id="gauge-needle"
-          style="transform-origin: 100px 100px; transform: rotate(-90deg); transition: transform 0.1s cubic-bezier(0.4, 0.0, 0.2, 1);">
-          <path d="M 100 100 L 35 100" stroke="#ff3333" stroke-width="4" stroke-linecap="round" />
-          <circle cx="100" cy="100" r="5" fill="#fff" />
+          style="transform-origin: 100px 100px; transition: transform 0.1s cubic-bezier(0.4, 0.0, 0.2, 1);">
+          <!-- Needle pointing RIGHT by default (0 degrees) -->
+          <path d="M 100 100 L 170 100" stroke="#ff3333" stroke-width="4" stroke-linecap="round" />
+          <circle cx="100" cy="100" r="6" fill="#fff" stroke="#333" stroke-width="2" />
         </g>
       </svg>
       <div id="speed-readout">
@@ -883,12 +890,16 @@
       <div class="settings-group">
         <button id="mode-linear" class="setting-btn active">🏁 LINÉAIRE</button>
         <button id="mode-free" class="setting-btn">🌍 LIBRE</button>
-        <p class="mode-description">
-          <span id="desc-linear">Mode classique: avancez tout droit</span>
-          <span id="desc-free" style="display:none;">Mode libre: déplacez-vous librement dans toutes les
-            directions</span>
-        </p>
       </div>
+
+      <h3>DIFFICULTÉ</h3>
+      <div class="settings-group">
+        <button id="diff-easy" class="setting-btn">😌 FACILE</button>
+        <button id="diff-medium" class="setting-btn">😐 MOYEN</button>
+        <button id="diff-hard" class="setting-btn active">😈 DIFFICILE</button>
+        <p class="setting-desc" id="diff-desc">Difficile: Beaucoup d'obstacles !</p>
+      </div>
+
       <button class="back-to-main-btn">← RETOUR</button>
     </div>
 

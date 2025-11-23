@@ -1168,8 +1168,22 @@ function animate() {
             }
             bikeGroup.position.z -= state.speed;
             state.distance += state.speed;
+            state.distance += state.speed;
+
+            // Scoring System Update
+            // Base score accumulates much slower
+            state.score += state.speed * 0.1;
+
+            // Bonus for Wheelie Angle + Difficulty
             if (state.bike.angle > 0.2) {
-                state.score += state.bike.angle * CONFIG.scoreMultiplier;
+                let difficultyMult = 1;
+                if (GAME_SETTINGS.difficulty === 'medium') difficultyMult = 1.5;
+                if (GAME_SETTINGS.difficulty === 'hard') difficultyMult = 2.0;
+
+                // Higher angle = More points
+                const angleBonus = (state.bike.angle - 0.2) * 10;
+
+                state.score += angleBonus * difficultyMult * CONFIG.scoreMultiplier;
             }
         }
 
@@ -1184,7 +1198,14 @@ function animate() {
                 scene.remove(old);
             }
             for (let i = 0; i < 4; i++) {
-                spawnObstacle(newZ + Math.random() * 100);
+                // Difficulty-based spawning
+                let spawnChance = 0.3; // Easy default
+                if (GAME_SETTINGS.difficulty === 'medium') spawnChance = 0.6;
+                if (GAME_SETTINGS.difficulty === 'hard') spawnChance = 0.9;
+
+                if (Math.random() < spawnChance) {
+                    spawnObstacle(newZ + Math.random() * 100);
+                }
             }
         }
         checkCollisions();
@@ -1309,8 +1330,11 @@ function updateUI() {
         speedText.innerText = `${kmh}`;
         const maxKmh = 200;
         const pct = Math.min(1, kmh / maxKmh);
-        const deg = -135 + (pct * 270);
-        speedNeedle.style.transform = `translateX(-50%) rotate(${deg}deg)`;
+        // 270 degree range: Starts at 135deg (bottom left) to 405deg (bottom right)
+        // Or -225 to +45
+        // Let's calibrate: 0 speed = 135deg. Max speed = 405deg.
+        const deg = 135 + (pct * 270);
+        speedNeedle.style.transform = `rotate(${deg}deg)`;
     }
 }
 
@@ -1321,6 +1345,7 @@ function isMobile() {
 const GAME_SETTINGS = {
     controlMode: 'analog',
     gameMode: 'linear',
+    difficulty: 'hard', // easy, medium, hard
     autoRace: false,
     graphicsQuality: 'high'  // 'high' or 'low'
 };
