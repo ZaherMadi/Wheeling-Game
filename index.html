@@ -435,6 +435,104 @@
       }
     }
 
+    /* Settings Menu Styles */
+    #settings-main-menu {
+      display: flex;
+      flex-direction: column;
+      gap: 15px;
+      width: 100%;
+      max-width: 400px;
+    }
+
+    .menu-item-btn {
+      background: rgba(0, 0, 0, 0.6);
+      border: 2px solid #FFD700;
+      color: #FFD700;
+      padding: 15px 20px;
+      font-size: 18px;
+      font-family: 'Russo One', sans-serif;
+      text-align: left;
+      cursor: pointer;
+      border-radius: 8px;
+      transition: all 0.2s;
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+    }
+
+    .menu-item-btn:hover {
+      background: rgba(255, 215, 0, 0.2);
+      transform: translateX(5px);
+    }
+
+    .settings-submenu {
+      width: 100%;
+      max-width: 500px;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+    }
+
+    .back-to-main-btn {
+      margin-top: 20px;
+      background: #444;
+      border: 2px solid #888;
+      color: white;
+      padding: 10px 20px;
+      font-family: 'Russo One', sans-serif;
+      cursor: pointer;
+      border-radius: 8px;
+    }
+
+    /* Settings Menu Styles */
+    #settings-main-menu {
+      display: flex;
+      flex-direction: column;
+      gap: 15px;
+      width: 100%;
+      max-width: 400px;
+    }
+
+    .menu-item-btn {
+      background: rgba(0, 0, 0, 0.6);
+      border: 2px solid #FFD700;
+      color: #FFD700;
+      padding: 15px 20px;
+      font-size: 18px;
+      font-family: 'Russo One', sans-serif;
+      text-align: left;
+      cursor: pointer;
+      border-radius: 8px;
+      transition: all 0.2s;
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+    }
+
+    .menu-item-btn:hover {
+      background: rgba(255, 215, 0, 0.2);
+      transform: translateX(5px);
+    }
+
+    .settings-submenu {
+      width: 100%;
+      max-width: 500px;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+    }
+
+    .back-to-main-btn {
+      margin-top: 20px;
+      background: #444;
+      border: 2px solid #888;
+      color: white;
+      padding: 10px 20px;
+      font-family: 'Russo One', sans-serif;
+      cursor: pointer;
+      border-radius: 8px;
+    }
+
     /* Wheelie Icon */
     #wheelie-icon {
       position: absolute;
@@ -622,17 +720,20 @@
 
     .action-btn {
       position: absolute;
-      width: 70px;
-      height: 70px;
-      background: rgba(255, 215, 0, 0.8);
-      border: 3px solid #fff;
+      width: 90px;
+      height: 90px;
+      background: radial-gradient(circle at 30% 30%, rgba(255, 215, 0, 1), rgba(255, 165, 0, 0.95));
+      border: 4px solid rgba(255, 255, 255, 0.9);
       border-radius: 50%;
-      font-size: 18px;
+      font-size: 22px;
       color: #000;
       cursor: pointer;
       pointer-events: auto;
-      box-shadow: 0 4px 0 rgba(0, 0, 0, 0.5);
-      transition: transform 0.1s;
+      box-shadow:
+        0 6px 0 rgba(211, 84, 0, 0.8),
+        0 8px 20px rgba(0, 0, 0, 0.6),
+        inset 0 2px 8px rgba(255, 255, 255, 0.5);
+      transition: all 0.15s cubic-bezier(0.175, 0.885, 0.32, 1.275);
       display: flex;
       align-items: center;
       justify-content: center;
@@ -641,15 +742,18 @@
     }
 
     .action-btn:active {
-      transform: translateY(4px);
-      box-shadow: none;
+      transform: translateY(6px);
+      box-shadow:
+        0 2px 0 rgba(211, 84, 0, 0.8),
+        0 3px 10px rgba(0, 0, 0, 0.4),
+        inset 0 2px 8px rgba(255, 255, 255, 0.5);
     }
 
     .action-btn.special {
-      width: 85px;
-      height: 85px;
-      background: rgba(255, 69, 0, 0.9);
-      font-size: 14px;
+      width: 100px;
+      height: 100px;
+      background: radial-gradient(circle at 30% 30%, rgba(255, 69, 0, 1), rgba(255, 30, 0, 0.95));
+      font-size: 16px;
     }
 
     #analog-gas {
@@ -711,7 +815,7 @@
       3</div>
 
     <!-- Pause Button -->
-    <button id="pause-btn">PAUSE</button>
+    <button id="pause-btn">⬅️</button>
 
     <!-- Mobile Controls (Hidden by default) -->
     <div id="mobile-controls" style="display: none;">
@@ -744,7 +848,7 @@
     <img src="Logo51.png" alt="Wheelie King Logo"
       style="width: 150px; margin-bottom: 20px; filter: drop-shadow(0 0 10px rgba(255,215,0,0.5));">
     <h1>WHEELIE KING</h1>
-    <p>Banlieue Edition</p>
+    <p>51 Games - V1.0</p>
     <button id="start-btn">JOUER</button>
     <button id="settings-btn" style="margin-top: 10px; background: #888;">⚙️ PARAMÈTRES</button>
     <button id="fullscreen-btn" style="margin-top: 10px; background: #444;">⛶ PLEIN ÉCRAN</button>
@@ -754,37 +858,62 @@
   <div id="settings-screen" class="screen">
     <h1>PARAMÈTRES</h1>
 
-    <div class="settings-group">
+    <!-- Main Settings Menu -->
+    <div id="settings-main-menu">
+      <button class="menu-item-btn" id="btn-cat-controls">TYPE DE CONTRÔLES ➜</button>
+      <button class="menu-item-btn" id="btn-cat-gamemode">MODE DE JEU ➜</button>
+      <button class="menu-item-btn" id="btn-cat-options">OPTIONS ➜</button>
+      <button class="menu-item-btn" id="btn-cat-graphics">QUALITÉ GRAPHIQUE ➜</button>
+    </div>
+
+    <!-- Sub-menu: Controls -->
+    <div id="submenu-controls" class="settings-submenu" style="display: none;">
       <h3>TYPE DE CONTRÔLES</h3>
-      <button id="control-keyboard" class="setting-btn active">⌨️ CLAVIER</button>
-      <button id="control-arrows" class="setting-btn">➡️ FLÈCHES</button>
-      <button id="control-analog" class="setting-btn">🕹️ ANALOG</button>
+      <div class="settings-group">
+        <button id="control-keyboard" class="setting-btn active">⌨️ CLAVIER</button>
+        <button id="control-arrows" class="setting-btn">➡️ FLÈCHES</button>
+        <button id="control-analog" class="setting-btn">🕹️ ANALOG</button>
+      </div>
+      <button class="back-to-main-btn">← RETOUR</button>
     </div>
 
-    <div class="settings-group">
+    <!-- Sub-menu: Game Mode -->
+    <div id="submenu-gamemode" class="settings-submenu" style="display: none;">
       <h3>MODE DE JEU</h3>
-      <button id="mode-linear" class="setting-btn active">🏁 LINÉAIRE</button>
-      <button id="mode-free" class="setting-btn">🌍 LIBRE</button>
-      <p class="mode-description">
-        <span id="desc-linear">Mode classique: avancez tout droit</span>
-        <span id="desc-free" style="display:none;">Mode libre: déplacez-vous librement dans toutes les directions</span>
-      </p>
+      <div class="settings-group">
+        <button id="mode-linear" class="setting-btn active">🏁 LINÉAIRE</button>
+        <button id="mode-free" class="setting-btn">🌍 LIBRE</button>
+        <p class="mode-description">
+          <span id="desc-linear">Mode classique: avancez tout droit</span>
+          <span id="desc-free" style="display:none;">Mode libre: déplacez-vous librement dans toutes les
+            directions</span>
+        </p>
+      </div>
+      <button class="back-to-main-btn">← RETOUR</button>
     </div>
 
-    <div class="settings-group">
+    <!-- Sub-menu: Options -->
+    <div id="submenu-options" class="settings-submenu" style="display: none;">
       <h3>OPTIONS</h3>
-      <button id="option-auto-race" class="setting-btn">⚡ COURSE AUTO</button>
-      <p class="setting-desc">Accélération auto après 3s + Wheeling avec joystick bas</p>
+      <div class="settings-group">
+        <button id="option-auto-race" class="setting-btn">⚡ COURSE AUTO</button>
+        <p class="setting-desc">Accélération auto après 3s + Wheeling avec joystick bas</p>
+      </div>
+      <button class="back-to-main-btn">← RETOUR</button>
     </div>
 
-    <div class="settings-group">
+    <!-- Sub-menu: Graphics -->
+    <div id="submenu-graphics" class="settings-submenu" style="display: none;">
       <h3>QUALITÉ GRAPHIQUE</h3>
-      <button id="quality-high" class="setting-btn active">🎨 HAUTE</button>
-      <button id="quality-low" class="setting-btn">⚙️ BASSE</button>
-      <p class="setting-desc">Haute: Meilleure qualité | Basse: Meilleures performances</p>
+      <div class="settings-group">
+        <button id="quality-high" class="setting-btn active">🎨 HAUTE</button>
+        <button id="quality-low" class="setting-btn">⚙️ BASSE</button>
+        <p class="setting-desc">Haute: Meilleure qualité | Basse: Meilleures performances</p>
+      </div>
+      <button class="back-to-main-btn">← RETOUR</button>
     </div>
 
-    <button id="back-btn" style="margin-top: 30px;">← RETOUR</button>
+    <button id="back-btn" style="margin-top: 30px;">← RETOUR AU JEU</button>
   </div>
 
   <!-- GAME OVER SCREEN -->

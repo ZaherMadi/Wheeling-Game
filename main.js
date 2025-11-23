@@ -2,9 +2,9 @@ import * as THREE from 'three';
 
 const CONFIG = {
     laneWidth: 10,
-    maxSpeed: 4.0,
+    maxSpeed: 6.0,
     minSpeed: 0.0,
-    baseAcceleration: 0.0025,
+    baseAcceleration: 0.004,
     deceleration: 0.005,
     brakeForce: 0.03,
     lateralAccel: 0.04,
@@ -57,7 +57,6 @@ let state = {
 const scene = new THREE.Scene();
 scene.background = new THREE.Color(0x87CEEB);
 
-// Graphics quality will be set after GAME_SETTINGS initialization
 const camera = new THREE.PerspectiveCamera(60, window.innerWidth / window.innerHeight, 0.1, 1000);
 const renderer = new THREE.WebGLRenderer({
     antialias: true,
@@ -80,7 +79,6 @@ scene.add(ambientLight);
 const dirLight = new THREE.DirectionalLight(0xffffff, 0.8);
 dirLight.position.set(50, 100, 50);
 dirLight.castShadow = true;
-// Shadow quality will be set based on graphics quality
 scene.add(dirLight);
 
 // Materials
@@ -110,7 +108,6 @@ const matHole = new THREE.MeshBasicMaterial({ color: 0x000000 });
 let bikeGroup, bikePivot;
 let groundChunks = [];
 
-// Smoke particle pooling for performance
 const smokeParticlePool = {
     geometry: new THREE.SphereGeometry(0.25, 8, 8),
     material: new THREE.MeshBasicMaterial({
@@ -807,6 +804,7 @@ function init() {
     document.querySelectorAll('.setting-btn').forEach(b => b.classList.remove('active'));
     const analogBtn = document.getElementById('control-analog');
     if (analogBtn) analogBtn.classList.add('active');
+    applyGraphicsQuality();
     animate();
 }
 
@@ -1109,7 +1107,15 @@ function animate() {
                 bikeGroup.position.x = -9;
                 state.bike.lateralVelocity = 0;
             }
-            bikeGroup.rotation.z = -state.bike.lateralVelocity * 0.5;
+
+            // Enhanced Wheelie Sway
+            // If in wheelie (angle > 0.2), amplify the lean for realistic balancing
+            let leanFactor = 0.5;
+            if (state.bike.angle > 0.2) {
+                leanFactor = 1.5; // Much more sway during wheelie
+            }
+            bikeGroup.rotation.z = -state.bike.lateralVelocity * leanFactor;
+
             const kmh = state.speed * 50;
             let lift = 0;
             if (state.keys.space && isAccelerating) {
@@ -1219,19 +1225,70 @@ function updateCamera() {
         camera.position.y += (targetY - camera.position.y) * 0.15;
         camera.lookAt(bikeGroup.position.x, 1, bikeGroup.position.z - 5);
     } else {
-        const targetFOV = targetBaseFOV + (state.speed * 10);
-        camera.fov += (targetFOV - camera.fov) * 0.1;
+        // Dynamic FOV based on speed (Visual Acceleration)
+        // Base increase + extra kick when accelerating
+        let fovBoost = state.speed * 15;
+        if (state.keys.up || (GAME_SETTINGS.controlMode === 'analog' && analogData.y < -0.1)) {
+            fovBoost += 5; // Extra FOV kick when gas is pressed
+        }
+
+        const targetFOV = targetBaseFOV + fovBoost;
+        camera.fov += (targetFOV - camera.fov) * 0.05; // Smoother transition
         camera.updateProjectionMatrix();
-        const shake = state.speed * 0.05;
-        const shakeX = (Math.random() - 0.5) * shake;
-        const zoomZ = state.speed * 3.0;
-        const zoomY = state.speed * 0.8;
-        const targetZ = bikeGroup.position.z + 10 + (state.speed * 1) - zoomZ;
-        const targetY = 5 - zoomY;
-        camera.position.x += (bikeGroup.position.x * 0.5 - camera.position.x) * 0.2 + shakeX;
-        camera.position.z += (targetZ - camera.position.z) * 0.3;
-        camera.position.y += (Math.max(2, targetY) - camera.position.y) * 0.1;
-        camera.lookAt(bikeGroup.position.x * 0.5, 2, bikeGroup.position.z - 20);
+
+        // Dynamic Shake & Zoom
+        const kmh = state.speed * 50;
+        let shakeIntensity = 0;
+
+        if (kmh > 150) {
+            // Moderate shake starting at 150km/h
+            shakeIntensity = (kmh - 150) * 0.002;
+        }
+
+        if (kmh > 200) {
+            // Intense shake at 200km/h+
+            shakeIntensity += (kmh - 200) * 0.005;
+        }
+
+        // Cap shake to avoid being unplayable
+        shakeIntensity = Math.min(shakeIntensity, 0.8);
+
+        const shakeX = (Math.random() - 0.5) * shakeIntensity;
+        const shakeY = (Math.random() - 0.5) * shakeIntensity * 0.5;
+
+        // Camera distance logic
+        // CLOSE at low speeds, PULLS BACK only at 110+ km/h
+        let distanceOffset = 7; // Base close distance
+
+        if (kmh > 110) {
+            // Gradually pull back after 110 km/h
+            const speedExcess = (kmh - 110) / 90; // 0 to 1 as speed goes from 110 to 200
+            distanceOffset = 7 + (speedExcess * 8); // Max pulls back to 15 at 200km/h
+        }
+
+        // Track time at high speed for auto-return
+        if (!state.highSpeedTimer) state.highSpeedTimer = 0;
+        if (kmh > 150) {
+            state.highSpeedTimer += 1 / 60; // Increment in seconds
+        } else {
+            state.highSpeedTimer = 0;
+        }
+
+        // After 3 seconds at high speed, gradually return camera closer
+        if (state.highSpeedTimer > 3) {
+            const returnFactor = Math.min((state.highSpeedTimer - 3) / 2, 1); // 0 to 1 over 2 seconds
+            distanceOffset = distanceOffset - (returnFactor * 4); // Bring back closer by 4 units
+        }
+
+        const targetZ = bikeGroup.position.z + distanceOffset;
+        const targetY = 4.5;
+
+        camera.position.x += (bikeGroup.position.x - camera.position.x) * 0.1 + shakeX;
+        camera.position.z += (targetZ - camera.position.z) * 0.1;
+        camera.position.y += (targetY - camera.position.y) * 0.1 + shakeY;
+
+        // Look slightly ahead of the bike
+        camera.lookAt(bikeGroup.position.x, 2, bikeGroup.position.z - 20);
     }
 }
 
@@ -1433,9 +1490,7 @@ document.addEventListener('keydown', (e) => {
     // Escape for pause
     if (e.code === 'Escape') {
         e.preventDefault();
-        if (state.isPlaying && !state.isPaused) {
-            togglePause();
-        }
+        togglePause();
     }
 });
 
@@ -1447,31 +1502,69 @@ document.addEventListener('keyup', (e) => {
     if (e.code === 'Space') state.keys.space = false;
 });
 
-const startBtn = document.getElementById('start-btn');
-if (startBtn) startBtn.addEventListener('click', startGame);
+// Settings Menu Navigation
+const settingsMainMenu = document.getElementById('settings-main-menu');
+const submenus = document.querySelectorAll('.settings-submenu');
 
-const restartBtn = document.getElementById('restart-btn');
-if (restartBtn) restartBtn.addEventListener('click', startGame);
+function showSubmenu(id) {
+    if (settingsMainMenu) settingsMainMenu.style.display = 'none';
+    submenus.forEach(sm => sm.style.display = 'none');
+    const target = document.getElementById(id);
+    if (target) target.style.display = 'flex';
+    // Hide main back button when in submenu
+    if (backBtn) backBtn.style.display = 'none';
+}
 
-const pauseBtn = document.getElementById('pause-btn');
-if (pauseBtn) pauseBtn.addEventListener('click', togglePause);
+function showSettingsMain() {
+    if (settingsMainMenu) settingsMainMenu.style.display = 'flex';
+    submenus.forEach(sm => sm.style.display = 'none');
+    if (backBtn) backBtn.style.display = 'block';
+}
 
+// Category Buttons
+document.getElementById('btn-cat-controls')?.addEventListener('click', () => showSubmenu('submenu-controls'));
+document.getElementById('btn-cat-gamemode')?.addEventListener('click', () => showSubmenu('submenu-gamemode'));
+document.getElementById('btn-cat-options')?.addEventListener('click', () => showSubmenu('submenu-options'));
+document.getElementById('btn-cat-graphics')?.addEventListener('click', () => showSubmenu('submenu-graphics'));
+
+// Back to Main Buttons
+document.querySelectorAll('.back-to-main-btn').forEach(btn => {
+    if (btn) {
+        btn.addEventListener('click', (e) => {
+            e.preventDefault();
+            console.log('Back to main clicked');
+            showSettingsMain();
+        });
+    }
+});
+
+// Reset to main menu when opening settings
 const settingsBtn = document.getElementById('settings-btn');
 const settingsScreen = document.getElementById('settings-screen');
 const backBtn = document.getElementById('back-btn');
 
 if (settingsBtn) {
     settingsBtn.addEventListener('click', () => {
-        document.getElementById('start-screen').classList.remove('active');
-        settingsScreen.classList.add('active');
+        console.log('Settings button clicked');
+        const startScreen = document.getElementById('start-screen');
+        if (startScreen) startScreen.classList.remove('active');
+        if (settingsScreen) {
+            settingsScreen.classList.add('active');
+            showSettingsMain();
+        }
     });
 }
 
 if (backBtn) {
-    backBtn.addEventListener('click', () => {
-        settingsScreen.classList.remove('active');
-        document.getElementById('start-screen').classList.add('active');
+    backBtn.addEventListener('click', (e) => {
+        e.preventDefault();
+        console.log('Back button clicked');
+        if (settingsScreen) settingsScreen.classList.remove('active');
+        const startScreen = document.getElementById('start-screen');
+        if (startScreen) startScreen.classList.add('active');
     });
+} else {
+    console.error('back-btn element not found!');
 }
 
 document.getElementById('control-arrows').addEventListener('click', () => {
@@ -1490,24 +1583,28 @@ document.getElementById('mode-linear').addEventListener('click', () => {
     GAME_SETTINGS.gameMode = 'linear';
     document.getElementById('mode-linear').classList.add('active');
     document.getElementById('mode-free').classList.remove('active');
+    document.getElementById('desc-linear').style.display = 'inline';
+    document.getElementById('desc-free').style.display = 'none';
 });
 
 document.getElementById('mode-free').addEventListener('click', () => {
     GAME_SETTINGS.gameMode = 'free';
     document.getElementById('mode-free').classList.add('active');
     document.getElementById('mode-linear').classList.remove('active');
+    document.getElementById('desc-linear').style.display = 'none';
+    document.getElementById('desc-free').style.display = 'inline';
 });
 
-const autoRaceToggle = document.getElementById('auto-race-toggle');
+const autoRaceToggle = document.getElementById('option-auto-race');
 if (autoRaceToggle) {
     autoRaceToggle.addEventListener('click', () => {
         GAME_SETTINGS.autoRace = !GAME_SETTINGS.autoRace;
         if (GAME_SETTINGS.autoRace) {
             autoRaceToggle.classList.add('active');
-            autoRaceToggle.innerText = "COURSE AUTO: ON";
+            autoRaceToggle.innerText = "⚡ COURSE AUTO: ON";
         } else {
             autoRaceToggle.classList.remove('active');
-            autoRaceToggle.innerText = "COURSE AUTO: OFF";
+            autoRaceToggle.innerText = "⚡ COURSE AUTO";
         }
     });
 }
@@ -1527,21 +1624,8 @@ document.getElementById('quality-low').addEventListener('click', () => {
     applyGraphicsQuality();
 });
 
-// Fullscreen Toggle
-const fullscreenBtn = document.getElementById('fullscreen-btn');
-if (fullscreenBtn) {
-    fullscreenBtn.addEventListener('click', () => {
-        if (!document.fullscreenElement) {
-            document.documentElement.requestFullscreen().catch(err => {
-                console.log(`Error attempting to enable full-screen mode: ${err.message} (${err.name})`);
-            });
-        } else {
-            if (document.exitFullscreen) {
-                document.exitFullscreen();
-            }
-        }
-    });
-}
+document.getElementById('start-btn').addEventListener('click', startGame);
+document.getElementById('restart-btn').addEventListener('click', startGame);
+document.getElementById('pause-btn').addEventListener('click', togglePause);
 
 init();
-applyGraphicsQuality();  // Apply default High quality settings
