@@ -1108,15 +1108,23 @@ function animate() {
                 state.bike.lateralVelocity = 0;
             }
 
-            // Enhanced Wheelie Sway
-            // If in wheelie (angle > 0.2), amplify the lean for realistic balancing
-            let leanFactor = 0.5;
-            if (state.bike.angle > 0.2) {
-                leanFactor = 1.5; // Much more sway during wheelie
-            }
-            bikeGroup.rotation.z = -state.bike.lateralVelocity * leanFactor;
-
+            // Realistic Speed-Based Lean Physics
             const kmh = state.speed * 50;
+            let leanFactor = 0.5;
+
+            if (state.bike.angle > 0.2) {
+                // WHEELIE: Inverse sway for balancing effect
+                leanFactor = -1.5; // Negative = inverse direction
+            } else if (kmh < 70) {
+                // LOW SPEED (<70 km/h): Inverse lean (road tilts opposite to wheel)
+                leanFactor = -0.8; // Negative = inverse direction
+            } else {
+                // HIGH SPEED (>=70 km/h): Normal lean (bike tilts toward turn)
+                leanFactor = 1.2; // Positive = normal direction, amplified for realism
+            }
+
+            bikeGroup.rotation.z = state.bike.lateralVelocity * leanFactor;
+
             let lift = 0;
             if (state.keys.space && isAccelerating) {
                 if (kmh > 110) lift = CONFIG.wheelieLiftFast;
@@ -1256,14 +1264,13 @@ function updateCamera() {
         const shakeX = (Math.random() - 0.5) * shakeIntensity;
         const shakeY = (Math.random() - 0.5) * shakeIntensity * 0.5;
 
-        // Camera distance logic
-        // CLOSE at low speeds, PULLS BACK only at 110+ km/h
-        let distanceOffset = 7; // Base close distance
+        // Camera distance logic - closer at all speeds
+        let distanceOffset = 5; // Base VERY close distance
 
-        if (kmh > 110) {
-            // Gradually pull back after 110 km/h
-            const speedExcess = (kmh - 110) / 90; // 0 to 1 as speed goes from 110 to 200
-            distanceOffset = 7 + (speedExcess * 8); // Max pulls back to 15 at 200km/h
+        if (kmh > 50) {
+            // Gradually pull back a bit after 50 km/h, but stay closer than before
+            const speedExcess = (kmh - 50) / 150; // 0 to 1 as speed goes from 50 to 200
+            distanceOffset = 5 + (speedExcess * 4); // Max pulls back to 9 at 200km/h (vs 15 before)
         }
 
         // Track time at high speed for auto-return
@@ -1277,7 +1284,7 @@ function updateCamera() {
         // After 3 seconds at high speed, gradually return camera closer
         if (state.highSpeedTimer > 3) {
             const returnFactor = Math.min((state.highSpeedTimer - 3) / 2, 1); // 0 to 1 over 2 seconds
-            distanceOffset = distanceOffset - (returnFactor * 4); // Bring back closer by 4 units
+            distanceOffset = distanceOffset - (returnFactor * 2); // Bring back closer by 2 units
         }
 
         const targetZ = bikeGroup.position.z + distanceOffset;
