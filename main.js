@@ -166,121 +166,40 @@ function createJerseyTexture(isFront) {
     return new THREE.CanvasTexture(canvas);
 }
 
+import { GLTFLoader } from 'three/examples/jsm/loaders/GLTFLoader.js';
+
 function createBike() {
     bikeGroup = new THREE.Group();
     bikePivot = new THREE.Group();
     bikeGroup.add(bikePivot);
 
-    const createWheel = () => {
-        const wheelGroup = new THREE.Group();
-        const tireGeo = new THREE.TorusGeometry(0.35, 0.08, 8, 16);
-        const tireMat = new THREE.MeshStandardMaterial({ color: 0x1a1a1a, roughness: 0.9 });
-        const tire = new THREE.Mesh(tireGeo, tireMat);
-        tire.rotation.y = Math.PI / 2;
-        wheelGroup.add(tire);
-        const rimGeo = new THREE.TorusGeometry(0.25, 0.02, 8, 16);
-        const rimMat = new THREE.MeshStandardMaterial({ color: 0xcccccc, metalness: 0.8, roughness: 0.2 });
-        const rim = new THREE.Mesh(rimGeo, rimMat);
-        rim.rotation.y = Math.PI / 2;
-        wheelGroup.add(rim);
-        const spokeGeo = new THREE.CylinderGeometry(0.01, 0.01, 0.5);
-        const spoke1 = new THREE.Mesh(spokeGeo, rimMat);
-        spoke1.rotation.z = Math.PI / 2;
-        wheelGroup.add(spoke1);
-        const spoke2 = new THREE.Mesh(spokeGeo, rimMat);
-        wheelGroup.add(spoke2);
-        const axleGeo = new THREE.CylinderGeometry(0.04, 0.04, 0.2);
-        const axle = new THREE.Mesh(axleGeo, rimMat);
-        axle.rotation.x = Math.PI / 2;
-        wheelGroup.add(axle);
-        return wheelGroup;
-    };
+    const loader = new GLTFLoader();
+    loader.load('wheelie_rider_51.gltf', (gltf) => {
+        const model = gltf.scene;
+        model.traverse((child) => {
+            if (child.isMesh) {
+                child.castShadow = true;
+                child.receiveShadow = true;
+            }
+            // Find wheels for animation
+            if (child.name === 'BackWheel') {
+                bikeGroup.userData.backWheel = child;
+            }
+            if (child.name === 'FrontWheel') {
+                bikeGroup.userData.frontWheel = child;
+            }
+        });
 
-    const backWheel = createWheel();
-    backWheel.position.set(0, 0.35, 0);
-    bikePivot.add(backWheel);
-    bikeGroup.userData.backWheel = backWheel;
+        // Scale and position adjustments
+        model.scale.set(1.5, 1.5, 1.5);
+        model.position.y = -0.3; // Proper ground level - both wheels on road
+        model.rotation.y = 0; // Face forward
 
-    const frontWheel = createWheel();
-    frontWheel.position.set(0, 0.35, 1.3);
-    bikePivot.add(frontWheel);
-    bikeGroup.userData.frontWheel = frontWheel;
+        bikePivot.add(model);
 
-    const frameGeo = new THREE.BoxGeometry(0.15, 0.15, 1.3);
-    const frameMat = new THREE.MeshStandardMaterial({ color: 0x222222, metalness: 0.6 });
-    const frame = new THREE.Mesh(frameGeo, frameMat);
-    frame.position.set(0, 0.6, 0.65);
-    frame.rotation.x = -0.1;
-    bikePivot.add(frame);
-
-    const engineGeo = new THREE.BoxGeometry(0.25, 0.3, 0.3);
-    const engineMat = new THREE.MeshStandardMaterial({ color: 0x444444 });
-    const engine = new THREE.Mesh(engineGeo, engineMat);
-    engine.position.set(0, 0.5, 0.4);
-    bikePivot.add(engine);
-
-    const seatGeo = new THREE.BoxGeometry(0.3, 0.1, 0.6);
-    const seatMat = new THREE.MeshStandardMaterial({ color: 0x111111 });
-    const seat = new THREE.Mesh(seatGeo, seatMat);
-    seat.position.set(0, 0.85, 0.2);
-    bikePivot.add(seat);
-
-    const barGeo = new THREE.CylinderGeometry(0.02, 0.02, 0.8);
-    const barMat = new THREE.MeshStandardMaterial({ color: 0x888888 });
-    const handlebars = new THREE.Mesh(barGeo, barMat);
-    handlebars.rotation.z = Math.PI / 2;
-    handlebars.position.set(0, 1.1, 1.1);
-    bikePivot.add(handlebars);
-
-    const bodyGeo = new THREE.BoxGeometry(0.4, 0.7, 0.25);
-    const body = new THREE.Mesh(bodyGeo, matJersey);
-    body.position.set(0, 1.2, 0.2);
-    body.rotation.x = 0.2;
-    bikePivot.add(body);
-
-    const frontTexture = createJerseyTexture(true);
-    const backTexture = createJerseyTexture(false);
-    const frontNumGeo = new THREE.PlaneGeometry(0.3, 0.3);
-    const frontNumMat = new THREE.MeshBasicMaterial({ map: frontTexture, transparent: true });
-    const frontNum = new THREE.Mesh(frontNumGeo, frontNumMat);
-    frontNum.position.set(0, 1.2, 0.33);
-    frontNum.rotation.x = 0.2;
-    bikePivot.add(frontNum);
-    const backNumGeo = new THREE.PlaneGeometry(0.3, 0.3);
-    const backNumMat = new THREE.MeshBasicMaterial({ map: backTexture, transparent: true });
-    const backNum = new THREE.Mesh(backNumGeo, backNumMat);
-    backNum.position.set(0, 1.3, 0.07);
-    backNum.rotation.x = 0.2;
-    backNum.rotation.y = Math.PI;
-    bikePivot.add(backNum);
-
-    const headGeo = new THREE.BoxGeometry(0.25, 0.25, 0.25);
-    const head = new THREE.Mesh(headGeo, matSkin);
-    head.position.set(0, 1.65, 0.25);
-    bikePivot.add(head);
-
-    const capGeo = new THREE.BoxGeometry(0.26, 0.1, 0.35);
-    const capMat = new THREE.MeshStandardMaterial({ color: 0x111111 });
-    const cap = new THREE.Mesh(capGeo, capMat);
-    cap.position.set(0, 1.75, 0.22);
-    bikePivot.add(cap);
-
-    const armGeo = new THREE.CylinderGeometry(0.04, 0.04, 0.7);
-    const leftArm = new THREE.Mesh(armGeo, matJersey);
-    leftArm.position.set(-0.25, 1.3, 0.7);
-    leftArm.rotation.x = -0.8;
-    leftArm.rotation.z = -0.2;
-    bikePivot.add(leftArm);
-    const rightArm = new THREE.Mesh(armGeo, matJersey);
-    rightArm.position.set(0.25, 1.3, 0.7);
-    rightArm.rotation.x = -0.8;
-    rightArm.rotation.z = 0.2;
-    bikePivot.add(rightArm);
-
-    scene.add(bikeGroup);
-    bikeGroup.rotation.y = Math.PI;
-    bikeGroup.scale.set(1.5, 1.5, 1.5);
-    bikePivot.scale.set(1.5, 1, 1);
+    }, undefined, (error) => {
+        console.error('An error happened loading the bike model:', error);
+    });
 
     return bikeGroup;
 }
@@ -776,7 +695,8 @@ async function loadGraffiti() {
 }
 
 function init() {
-    createBike();
+    const bike = createBike();
+    scene.add(bike);
     for (let i = 0; i < 10; i++) {
         const chunk = createGroundChunk(-i * 100);
         scene.add(chunk);
@@ -1285,13 +1205,13 @@ function updateCamera() {
         const shakeX = (Math.random() - 0.5) * shakeIntensity;
         const shakeY = (Math.random() - 0.5) * shakeIntensity * 0.5;
 
-        // Camera distance logic - closer at all speeds
-        let distanceOffset = 5; // Base VERY close distance
+        // Camera distance logic - comfortable distance
+        let distanceOffset = 8; // Base comfortable distance
 
         if (kmh > 50) {
-            // Gradually pull back a bit after 50 km/h, but stay closer than before
+            // Gradually pull back a bit after 50 km/h
             const speedExcess = (kmh - 50) / 150; // 0 to 1 as speed goes from 50 to 200
-            distanceOffset = 5 + (speedExcess * 4); // Max pulls back to 9 at 200km/h (vs 15 before)
+            distanceOffset = 8 + (speedExcess * 4); // Max pulls back to 12 at 200km/h
         }
 
         // Track time at high speed for auto-return

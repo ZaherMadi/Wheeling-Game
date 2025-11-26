@@ -1,0 +1,349 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>3D Model Generator - Wheelie King</title>
+    <style>
+        body {
+            margin: 0;
+            overflow: hidden;
+            background: #333;
+            font-family: sans-serif;
+        }
+
+        #info {
+            position: absolute;
+            top: 10px;
+            width: 100%;
+            text-align: center;
+            color: white;
+            pointer-events: none;
+        }
+
+        #controls {
+            position: absolute;
+            bottom: 20px;
+            left: 50%;
+            transform: translateX(-50%);
+            background: rgba(0, 0, 0, 0.5);
+            padding: 20px;
+            border-radius: 10px;
+            text-align: center;
+        }
+
+        button {
+            padding: 10px 20px;
+            font-size: 16px;
+            cursor: pointer;
+            background: #FFD700;
+            border: none;
+            border-radius: 5px;
+            font-weight: bold;
+        }
+
+        button:hover {
+            background: #FFA500;
+        }
+    </style>
+</head>
+
+<body>
+    <div id="info">
+        <h1>Model Generator</h1>
+        <p>Generating Low-Poly Sport Bike + Rider</p>
+    </div>
+    <div id="controls">
+        <button id="download-btn">Download GLB</button>
+    </div>
+
+    <script type="module">
+        import * as THREE from 'three';
+        import { GLTFExporter } from 'three/examples/jsm/exporters/GLTFExporter.js';
+        import { OrbitControls } from 'three/examples/jsm/controls/OrbitControls.js';
+        import * as BufferGeometryUtils from 'three/examples/jsm/utils/BufferGeometryUtils.js';
+
+        // Scene Setup
+        const scene = new THREE.Scene();
+        scene.background = new THREE.Color(0x444444);
+
+        const camera = new THREE.PerspectiveCamera(60, window.innerWidth / window.innerHeight, 0.1, 1000);
+        camera.position.set(3, 2, 3);
+
+        const renderer = new THREE.WebGLRenderer({ antialias: true });
+        renderer.setSize(window.innerWidth, window.innerHeight);
+        renderer.shadowMap.enabled = true;
+        document.body.appendChild(renderer.domElement);
+
+        const controls = new OrbitControls(camera, renderer.domElement);
+        controls.enableDamping = true;
+
+        // Lighting
+        const ambientLight = new THREE.AmbientLight(0xffffff, 0.6);
+        scene.add(ambientLight);
+
+        const dirLight = new THREE.DirectionalLight(0xffffff, 1);
+        dirLight.position.set(5, 10, 7);
+        dirLight.castShadow = true;
+        scene.add(dirLight);
+
+        // --- MODEL GENERATION ---
+
+        const materials = {
+            tire: new THREE.MeshStandardMaterial({ color: 0x111111, roughness: 0.9 }),
+            rim: new THREE.MeshStandardMaterial({ color: 0x888888, metalness: 0.8, roughness: 0.2 }),
+            bodyPrimary: new THREE.MeshStandardMaterial({ color: 0x0000FF, roughness: 0.3, metalness: 0.1 }), // Blue
+            bodySecondary: new THREE.MeshStandardMaterial({ color: 0x111111, roughness: 0.5 }), // Black accents
+            metal: new THREE.MeshStandardMaterial({ color: 0xAAAAAA, metalness: 0.7, roughness: 0.3 }),
+            skin: new THREE.MeshStandardMaterial({ color: 0xFFCCAA, roughness: 0.8 }),
+            jersey: new THREE.MeshStandardMaterial({ color: 0xFFD700, roughness: 0.8 }), // Yellow jersey
+            pants: new THREE.MeshStandardMaterial({ color: 0x222222, roughness: 0.9 }),
+            helmet: new THREE.MeshStandardMaterial({ color: 0x111111, roughness: 0.4 }),
+        };
+
+        const modelGroup = new THREE.Group();
+        scene.add(modelGroup);
+
+        function createWheel(radius, width) {
+            const wheelGroup = new THREE.Group();
+
+            // Tire
+            const tireGeo = new THREE.CylinderGeometry(radius, radius, width, 16);
+            tireGeo.rotateZ(Math.PI / 2);
+            const tire = new THREE.Mesh(tireGeo, materials.tire);
+            tire.castShadow = true;
+            wheelGroup.add(tire);
+
+            // Rim
+            const rimGeo = new THREE.CylinderGeometry(radius * 0.7, radius * 0.7, width * 1.05, 16);
+            rimGeo.rotateZ(Math.PI / 2);
+            const rim = new THREE.Mesh(rimGeo, materials.rim);
+            wheelGroup.add(rim);
+
+            // Spokes (simplified as a solid disk for low poly)
+            const spokeGeo = new THREE.CylinderGeometry(radius * 0.6, radius * 0.6, width * 0.2, 8);
+            spokeGeo.rotateZ(Math.PI / 2);
+            const spoke = new THREE.Mesh(spokeGeo, materials.rim);
+            wheelGroup.add(spoke);
+
+            return wheelGroup;
+        }
+
+        function createBike() {
+            const bike = new THREE.Group();
+
+            // Rear Wheel (Larger)
+            const rearWheel = createWheel(0.35, 0.25);
+            rearWheel.position.set(0, 0.35, -0.6);
+            rearWheel.name = 'BackWheel';
+            bike.add(rearWheel);
+
+            // Front Wheel
+            const frontWheel = createWheel(0.3, 0.2);
+            frontWheel.position.set(0, 0.3, 0.8);
+            frontWheel.name = 'FrontWheel';
+            bike.add(frontWheel);
+
+            // Swingarm
+            const swingarmGeo = new THREE.BoxGeometry(0.1, 0.1, 0.7);
+            const swingarm = new THREE.Mesh(swingarmGeo, materials.metal);
+            swingarm.position.set(0, 0.4, -0.3);
+            swingarm.castShadow = true;
+            bike.add(swingarm);
+
+            // Main Body (Chassis + Engine block)
+            const bodyGeo = new THREE.BoxGeometry(0.25, 0.4, 0.6);
+            const body = new THREE.Mesh(bodyGeo, materials.bodySecondary);
+            body.position.set(0, 0.55, 0.1);
+            body.castShadow = true;
+            bike.add(body);
+
+            // Fairing / Tank (Sport bike shape)
+            const tankGeo = new THREE.BoxGeometry(0.3, 0.3, 0.5);
+            const tank = new THREE.Mesh(tankGeo, materials.bodyPrimary);
+            tank.position.set(0, 0.8, 0.1);
+            tank.castShadow = true;
+            bike.add(tank);
+
+            // Tail section
+            const tailGeo = new THREE.BoxGeometry(0.2, 0.15, 0.4);
+            const tail = new THREE.Mesh(tailGeo, materials.bodyPrimary);
+            tail.position.set(0, 0.85, -0.35);
+            tail.castShadow = true;
+            bike.add(tail);
+
+            // Front Fork
+            const forkGeo = new THREE.BoxGeometry(0.15, 0.6, 0.1);
+            const fork = new THREE.Mesh(forkGeo, materials.metal);
+            fork.position.set(0, 0.6, 0.7);
+            fork.rotation.x = -0.4; // Rake angle
+            bike.add(fork);
+
+            // Handlebars
+            const barGeo = new THREE.CylinderGeometry(0.02, 0.02, 0.7, 8);
+            barGeo.rotateZ(Math.PI / 2);
+            const bars = new THREE.Mesh(barGeo, materials.metal);
+            bars.position.set(0, 0.85, 0.6);
+            bike.add(bars);
+
+            // Windshield / Front Fairing
+            const frontFairingGeo = new THREE.BoxGeometry(0.25, 0.3, 0.2);
+            const frontFairing = new THREE.Mesh(frontFairingGeo, materials.bodyPrimary);
+            frontFairing.position.set(0, 0.8, 0.75);
+            frontFairing.rotation.x = -0.2;
+            bike.add(frontFairing);
+
+            return bike;
+        }
+
+        function createNumberTexture() {
+            const canvas = document.createElement('canvas');
+            canvas.width = 256;
+            canvas.height = 256;
+            const ctx = canvas.getContext('2d');
+
+            // Yellow background
+            ctx.fillStyle = '#FFD700';
+            ctx.fillRect(0, 0, 256, 256);
+
+            // Black text
+            ctx.fillStyle = '#000000';
+            ctx.font = 'bold 140px sans-serif';
+            ctx.textAlign = 'center';
+            ctx.textBaseline = 'middle';
+            ctx.fillText('51', 128, 128);
+
+            const tex = new THREE.CanvasTexture(canvas);
+            return tex;
+        }
+
+        function createRider() {
+            const rider = new THREE.Group();
+
+            const numberTex = createNumberTexture();
+            const jerseyMat = new THREE.MeshStandardMaterial({
+                map: numberTex,
+                color: 0xffffff,
+                roughness: 0.8
+            });
+
+            // Torso
+            const torsoGeo = new THREE.BoxGeometry(0.3, 0.45, 0.15);
+            const torso = new THREE.Mesh(torsoGeo, jerseyMat);
+            torso.position.set(0, 0.95, -0.1);
+            torso.rotation.x = 0.3; // Leaning forward
+            torso.castShadow = true;
+            rider.add(torso);
+
+            // Head
+            const headGeo = new THREE.BoxGeometry(0.2, 0.22, 0.22);
+            const head = new THREE.Mesh(headGeo, materials.helmet);
+            head.position.set(0, 1.3, 0.0);
+            head.rotation.x = 0.2; // Looking forward
+            head.castShadow = true;
+            rider.add(head);
+
+            // Arms
+            function createLimb(w, h, d, x, y, z, rx, rz, mat) {
+                const geo = new THREE.BoxGeometry(w, h, d);
+                const mesh = new THREE.Mesh(geo, mat);
+                mesh.position.set(x, y, z);
+                mesh.rotation.x = rx;
+                mesh.rotation.z = rz;
+                mesh.castShadow = true;
+                return mesh;
+            }
+
+            // Arms reaching to handlebars
+            const armL = createLimb(0.08, 0.4, 0.08, -0.2, 1.05, 0.3, -1.2, 0.2, materials.jersey);
+            const armR = createLimb(0.08, 0.4, 0.08, 0.2, 1.05, 0.3, -1.2, -0.2, materials.jersey);
+            rider.add(armL);
+            rider.add(armR);
+
+            // Legs
+            const legL = createLimb(0.1, 0.45, 0.1, -0.15, 0.65, -0.1, -0.2, 0.1, materials.pants);
+            const legR = createLimb(0.1, 0.45, 0.1, 0.15, 0.65, -0.1, -0.2, -0.1, materials.pants);
+            rider.add(legL);
+            rider.add(legR);
+
+            return rider;
+        }
+
+        // Build Scene
+        const bike = createBike();
+        const rider = createRider();
+
+        // Group them
+        const fullModel = new THREE.Group();
+        fullModel.add(bike);
+        fullModel.add(rider);
+
+        // Apply Wheelie Rotation to the whole group? 
+        // Or just pose the bike? The user asked for "wheeling position".
+        // Let's rotate the whole bike group around the rear wheel contact point.
+
+        // Pivot adjustment
+        // Rear wheel contact is approx (0, 0, -0.6)
+        // We want the bike to rotate up around the rear axle/contact patch.
+
+        fullModel.position.y = -0.35; // Lower so rear wheel is on ground
+
+        // Create a pivot wrapper
+        const pivotGroup = new THREE.Group();
+        pivotGroup.add(fullModel);
+
+        // Rotate for wheelie
+        pivotGroup.rotation.x = -0.6; // ~35 degrees wheelie
+        pivotGroup.position.y = 0.35; // Move back up
+
+        // Fix position so rear wheel touches ground at (0,0,0) approx
+        pivotGroup.position.z = 0.5;
+
+        modelGroup.add(pivotGroup);
+
+        // Animation Loop
+        function animate() {
+            requestAnimationFrame(animate);
+            controls.update();
+            renderer.render(scene, camera);
+        }
+        animate();
+
+        // Export Logic
+        document.getElementById('download-btn').addEventListener('click', () => {
+            const exporter = new GLTFExporter();
+
+            // We export the pivotGroup to keep the wheelie pose
+            exporter.parse(
+                pivotGroup,
+                function (gltf) {
+                    const output = JSON.stringify(gltf, null, 2);
+                    // Create a hidden element to store the result for the agent to read
+                    let resultDiv = document.getElementById('export-result');
+                    if (!resultDiv) {
+                        resultDiv = document.createElement('div');
+                        resultDiv.id = 'export-result';
+                        resultDiv.style.display = 'none';
+                        document.body.appendChild(resultDiv);
+                    }
+                    resultDiv.textContent = output;
+                    console.log("Export complete");
+                },
+                function (error) {
+                    console.error('An error happened during export:', error);
+                },
+                { binary: false, embedImages: true } // Export as JSON with embedded assets
+            );
+        });
+
+        // Handle Resize
+        window.addEventListener('resize', () => {
+            camera.aspect = window.innerWidth / window.innerHeight;
+            camera.updateProjectionMatrix();
+            renderer.setSize(window.innerWidth, window.innerHeight);
+        });
+    </script>
+</body>
+
+</html>
