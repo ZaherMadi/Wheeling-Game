@@ -192,8 +192,9 @@ function createBike() {
 
         // Scale and position adjustments
         model.scale.set(1.5, 1.5, 1.5);
-        model.position.y = -0.3; // Proper ground level - both wheels on road
+        model.position.y = 0.1; // Raised to prevent ground clipping
         model.rotation.y = 0; // Face forward
+        model.rotation.x = -0.15; // Tilt forward for dynamic posture
 
         bikePivot.add(model);
 
@@ -991,8 +992,30 @@ function animate() {
             if (bikeGroup.userData.backWheel) bikeGroup.userData.backWheel.rotation.x -= speed * 2;
             if (bikeGroup.position.x > 9) bikeGroup.position.x = 9;
             if (bikeGroup.position.x < -9) bikeGroup.position.x = -9;
-            state.bike.angle = 0;
-            bikePivot.rotation.x = 0;
+
+            // Wheelie mechanics in free mode
+            let lift = 0;
+            if (state.keys.space) {
+                lift = CONFIG.wheelieLift;
+                if (state.bike.angle > CONFIG.balancePoint - CONFIG.sweetSpotWidth &&
+                    state.bike.angle < CONFIG.balancePoint + CONFIG.sweetSpotWidth) {
+                    lift *= 0.5;
+                }
+            }
+            state.bike.angularVelocity += lift;
+            state.bike.angularVelocity -= CONFIG.gravity;
+            state.bike.angularVelocity *= 0.98;
+            state.bike.angle += state.bike.angularVelocity;
+            if (state.bike.angle < 0) {
+                state.bike.angle = 0;
+                state.bike.angularVelocity = 0;
+            }
+            if (state.bike.angle > CONFIG.maxAngle) {
+                state.bike.angle = CONFIG.maxAngle;
+                state.bike.angularVelocity = 0;
+            }
+            bikePivot.rotation.x = -state.bike.angle;
+
             state.distance += Math.abs(moveZ) + Math.abs(moveX);
         } else {
             let isAccelerating = state.keys.up;
