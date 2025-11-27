@@ -749,7 +749,7 @@ function resetGame() {
     bikeGroup.position.set(0, 0, 0);
     // Apply mode-specific rotation
     if (GAME_SETTINGS.gameMode === 'free') {
-        bikeGroup.rotation.set(0, 0, 0); // 0° for free mode (inverted)
+        bikeGroup.rotation.set(0, 0, 0); // 0° for free mode
     } else {
         bikeGroup.rotation.set(0, Math.PI, 0); // 180° for linear mode (inverted)
     }
@@ -989,7 +989,8 @@ function animate() {
             bikeGroup.position.x += moveX;
             bikeGroup.position.z += moveZ;
             if (Math.abs(moveX) > 0.01 || Math.abs(moveZ) > 0.01) {
-                const targetRotation = Math.atan2(moveX, -moveZ);
+                // Normal forward/backward (moveZ positive), inverse left/right (moveX inverted via atan2)
+                const targetRotation = Math.atan2(moveX, moveZ);
                 bikeGroup.rotation.y = targetRotation;
             }
             const speed = Math.sqrt(moveX * moveX + moveZ * moveZ);
@@ -1020,6 +1021,10 @@ function animate() {
                 state.bike.angularVelocity = 0;
             }
             bikePivot.rotation.x = -state.bike.angle;
+
+            // Inverted lateral lean in free mode (opposite of linear mode)
+            const lateralLean = -moveX * 0.5; // Negative to inverse the lean direction
+            bikeGroup.rotation.z = lateralLean;
 
             state.distance += Math.abs(moveZ) + Math.abs(moveX);
         } else {
