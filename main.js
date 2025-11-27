@@ -192,9 +192,9 @@ function createBike() {
 
         // Scale and position adjustments
         model.scale.set(1.5, 1.5, 1.5);
-        model.position.y = 0.1; // Raised to prevent ground clipping
-        model.rotation.y = Math.PI; // Face forward (180 degrees for correct orientation)
-        model.rotation.x = 0.15; // Tilt toward ground for proper balance
+        model.position.y = 0.5; // Raised higher (10cm more)
+        model.rotation.y = 0; // Will be set per mode in resetGame
+        model.rotation.x = 0.55; // 90 degree forward tilt (π/2 radians)
 
         bikePivot.add(model);
 
@@ -747,7 +747,12 @@ function resetGame() {
     });
     state.smokeParticles = [];
     bikeGroup.position.set(0, 0, 0);
-    bikeGroup.rotation.set(0, Math.PI, 0);
+    // Apply mode-specific rotation
+    if (GAME_SETTINGS.gameMode === 'free') {
+        bikeGroup.rotation.set(0, 0, 0); // 0° for free mode (inverted)
+    } else {
+        bikeGroup.rotation.set(0, Math.PI, 0); // 180° for linear mode (inverted)
+    }
     bikePivot.rotation.x = 0;
     state.obstacles.forEach(obs => scene.remove(obs.mesh));
     state.obstacles = [];
@@ -1056,8 +1061,8 @@ function animate() {
             let leanFactor = 0.5;
 
             if (state.bike.angle > 0.2) {
-                // WHEELIE: Normal sway for proper balancing effect
-                leanFactor = 1.5; // Positive = normal direction during wheelie
+                // WHEELIE: Inverse sway for balancing effect
+                leanFactor = -1.5; // Negative = inverse direction (prevents sinking)
             } else if (kmh < 70) {
                 // LOW SPEED (<70 km/h): Inverse lean (road tilts opposite to wheel)
                 leanFactor = -0.8; // Negative = inverse direction
