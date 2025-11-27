@@ -193,8 +193,8 @@ function createBike() {
         // Scale and position adjustments
         model.scale.set(1.5, 1.5, 1.5);
         model.position.y = 0.1; // Raised to prevent ground clipping
-        model.rotation.y = 0; // Face forward
-        model.rotation.x = -0.15; // Tilt forward for dynamic posture
+        model.rotation.y = Math.PI; // Face forward (180 degrees for correct orientation)
+        model.rotation.x = 0.15; // Tilt toward ground for proper balance
 
         bikePivot.add(model);
 
@@ -1056,8 +1056,8 @@ function animate() {
             let leanFactor = 0.5;
 
             if (state.bike.angle > 0.2) {
-                // WHEELIE: Inverse sway for balancing effect
-                leanFactor = -1.5; // Negative = inverse direction
+                // WHEELIE: Normal sway for proper balancing effect
+                leanFactor = 1.5; // Positive = normal direction during wheelie
             } else if (kmh < 70) {
                 // LOW SPEED (<70 km/h): Inverse lean (road tilts opposite to wheel)
                 leanFactor = -0.8; // Negative = inverse direction
