@@ -33,6 +33,7 @@ let state = {
         angle: 0,
         angularVelocity: 0,
         lateralVelocity: 0,
+        maxWheelieTimer: 0, // Timer for max wheelie in free mode
     },
     keys: {
         left: false,
@@ -166,121 +167,41 @@ function createJerseyTexture(isFront) {
     return new THREE.CanvasTexture(canvas);
 }
 
+import { GLTFLoader } from 'three/examples/jsm/loaders/GLTFLoader.js';
+
 function createBike() {
     bikeGroup = new THREE.Group();
     bikePivot = new THREE.Group();
     bikeGroup.add(bikePivot);
 
-    const createWheel = () => {
-        const wheelGroup = new THREE.Group();
-        const tireGeo = new THREE.TorusGeometry(0.35, 0.08, 8, 16);
-        const tireMat = new THREE.MeshStandardMaterial({ color: 0x1a1a1a, roughness: 0.9 });
-        const tire = new THREE.Mesh(tireGeo, tireMat);
-        tire.rotation.y = Math.PI / 2;
-        wheelGroup.add(tire);
-        const rimGeo = new THREE.TorusGeometry(0.25, 0.02, 8, 16);
-        const rimMat = new THREE.MeshStandardMaterial({ color: 0xcccccc, metalness: 0.8, roughness: 0.2 });
-        const rim = new THREE.Mesh(rimGeo, rimMat);
-        rim.rotation.y = Math.PI / 2;
-        wheelGroup.add(rim);
-        const spokeGeo = new THREE.CylinderGeometry(0.01, 0.01, 0.5);
-        const spoke1 = new THREE.Mesh(spokeGeo, rimMat);
-        spoke1.rotation.z = Math.PI / 2;
-        wheelGroup.add(spoke1);
-        const spoke2 = new THREE.Mesh(spokeGeo, rimMat);
-        wheelGroup.add(spoke2);
-        const axleGeo = new THREE.CylinderGeometry(0.04, 0.04, 0.2);
-        const axle = new THREE.Mesh(axleGeo, rimMat);
-        axle.rotation.x = Math.PI / 2;
-        wheelGroup.add(axle);
-        return wheelGroup;
-    };
+    const loader = new GLTFLoader();
+    loader.load('wheelie_rider_51.gltf', (gltf) => {
+        const model = gltf.scene;
+        model.traverse((child) => {
+            if (child.isMesh) {
+                child.castShadow = true;
+                child.receiveShadow = true;
+            }
+            // Find wheels for animation
+            if (child.name === 'BackWheel') {
+                bikeGroup.userData.backWheel = child;
+            }
+            if (child.name === 'FrontWheel') {
+                bikeGroup.userData.frontWheel = child;
+            }
+        });
 
-    const backWheel = createWheel();
-    backWheel.position.set(0, 0.35, 0);
-    bikePivot.add(backWheel);
-    bikeGroup.userData.backWheel = backWheel;
+        // Scale and position adjustments
+        model.scale.set(1.5, 1.5, 1.5);
+        model.position.y = 0.5; // Raised higher (10cm more)
+        model.rotation.y = 0; // Will be set per mode in resetGame
+        model.rotation.x = 0.55; // 90 degree forward tilt (π/2 radians)
 
-    const frontWheel = createWheel();
-    frontWheel.position.set(0, 0.35, 1.3);
-    bikePivot.add(frontWheel);
-    bikeGroup.userData.frontWheel = frontWheel;
+        bikePivot.add(model);
 
-    const frameGeo = new THREE.BoxGeometry(0.15, 0.15, 1.3);
-    const frameMat = new THREE.MeshStandardMaterial({ color: 0x222222, metalness: 0.6 });
-    const frame = new THREE.Mesh(frameGeo, frameMat);
-    frame.position.set(0, 0.6, 0.65);
-    frame.rotation.x = -0.1;
-    bikePivot.add(frame);
-
-    const engineGeo = new THREE.BoxGeometry(0.25, 0.3, 0.3);
-    const engineMat = new THREE.MeshStandardMaterial({ color: 0x444444 });
-    const engine = new THREE.Mesh(engineGeo, engineMat);
-    engine.position.set(0, 0.5, 0.4);
-    bikePivot.add(engine);
-
-    const seatGeo = new THREE.BoxGeometry(0.3, 0.1, 0.6);
-    const seatMat = new THREE.MeshStandardMaterial({ color: 0x111111 });
-    const seat = new THREE.Mesh(seatGeo, seatMat);
-    seat.position.set(0, 0.85, 0.2);
-    bikePivot.add(seat);
-
-    const barGeo = new THREE.CylinderGeometry(0.02, 0.02, 0.8);
-    const barMat = new THREE.MeshStandardMaterial({ color: 0x888888 });
-    const handlebars = new THREE.Mesh(barGeo, barMat);
-    handlebars.rotation.z = Math.PI / 2;
-    handlebars.position.set(0, 1.1, 1.1);
-    bikePivot.add(handlebars);
-
-    const bodyGeo = new THREE.BoxGeometry(0.4, 0.7, 0.25);
-    const body = new THREE.Mesh(bodyGeo, matJersey);
-    body.position.set(0, 1.2, 0.2);
-    body.rotation.x = 0.2;
-    bikePivot.add(body);
-
-    const frontTexture = createJerseyTexture(true);
-    const backTexture = createJerseyTexture(false);
-    const frontNumGeo = new THREE.PlaneGeometry(0.3, 0.3);
-    const frontNumMat = new THREE.MeshBasicMaterial({ map: frontTexture, transparent: true });
-    const frontNum = new THREE.Mesh(frontNumGeo, frontNumMat);
-    frontNum.position.set(0, 1.2, 0.33);
-    frontNum.rotation.x = 0.2;
-    bikePivot.add(frontNum);
-    const backNumGeo = new THREE.PlaneGeometry(0.3, 0.3);
-    const backNumMat = new THREE.MeshBasicMaterial({ map: backTexture, transparent: true });
-    const backNum = new THREE.Mesh(backNumGeo, backNumMat);
-    backNum.position.set(0, 1.3, 0.07);
-    backNum.rotation.x = 0.2;
-    backNum.rotation.y = Math.PI;
-    bikePivot.add(backNum);
-
-    const headGeo = new THREE.BoxGeometry(0.25, 0.25, 0.25);
-    const head = new THREE.Mesh(headGeo, matSkin);
-    head.position.set(0, 1.65, 0.25);
-    bikePivot.add(head);
-
-    const capGeo = new THREE.BoxGeometry(0.26, 0.1, 0.35);
-    const capMat = new THREE.MeshStandardMaterial({ color: 0x111111 });
-    const cap = new THREE.Mesh(capGeo, capMat);
-    cap.position.set(0, 1.75, 0.22);
-    bikePivot.add(cap);
-
-    const armGeo = new THREE.CylinderGeometry(0.04, 0.04, 0.7);
-    const leftArm = new THREE.Mesh(armGeo, matJersey);
-    leftArm.position.set(-0.25, 1.3, 0.7);
-    leftArm.rotation.x = -0.8;
-    leftArm.rotation.z = -0.2;
-    bikePivot.add(leftArm);
-    const rightArm = new THREE.Mesh(armGeo, matJersey);
-    rightArm.position.set(0.25, 1.3, 0.7);
-    rightArm.rotation.x = -0.8;
-    rightArm.rotation.z = 0.2;
-    bikePivot.add(rightArm);
-
-    scene.add(bikeGroup);
-    bikeGroup.rotation.y = Math.PI;
-    bikeGroup.scale.set(1.5, 1.5, 1.5);
-    bikePivot.scale.set(1.5, 1, 1);
+    }, undefined, (error) => {
+        console.error('An error happened loading the bike model:', error);
+    });
 
     return bikeGroup;
 }
@@ -763,6 +684,36 @@ function createCheckpoint() {
     scene.add(group);
 }
 
+function createSparkParticle() {
+    // Create tiny yellow spark particle - mini explosion effect
+    const geo = new THREE.SphereGeometry(0.05, 4, 4); // Very small
+    const mat = new THREE.MeshBasicMaterial({
+        color: 0xffff00, // Yellow
+        transparent: true,
+        opacity: 1
+    });
+    const spark = new THREE.Mesh(geo, mat);
+
+    // Position FIXED in space (not relative to bike) - within wheel width
+    const currentX = bikeGroup.position.x;
+    const currentZ = bikeGroup.position.z;
+    spark.position.set(
+        currentX + (Math.random() - 0.5) * 0.3, // Wheel width only (~30cm)
+        0.1, // Just above ground
+        currentZ + (Math.random() - 0.5) * 0.3
+    );
+
+    scene.add(spark);
+
+    // Remove spark quickly (mini explosion effect)
+    setTimeout(() => {
+        scene.remove(spark);
+        spark.geometry.dispose();
+        spark.material.dispose();
+    }, 150); // 0.15 seconds - disappears faster
+}
+
+
 async function loadGraffiti() {
     try {
         const res = await fetch('graffiti.json');
@@ -776,7 +727,8 @@ async function loadGraffiti() {
 }
 
 function init() {
-    createBike();
+    const bike = createBike();
+    scene.add(bike);
     for (let i = 0; i < 10; i++) {
         const chunk = createGroundChunk(-i * 100);
         scene.add(chunk);
@@ -826,7 +778,12 @@ function resetGame() {
     });
     state.smokeParticles = [];
     bikeGroup.position.set(0, 0, 0);
-    bikeGroup.rotation.set(0, Math.PI, 0);
+    // Apply mode-specific rotation
+    if (GAME_SETTINGS.gameMode === 'free') {
+        bikeGroup.rotation.set(0, 0, 0); // 0° for free mode
+    } else {
+        bikeGroup.rotation.set(0, Math.PI, 0); // 180° for linear mode (inverted)
+    }
     bikePivot.rotation.x = 0;
     state.obstacles.forEach(obs => scene.remove(obs.mesh));
     state.obstacles = [];
@@ -1063,7 +1020,8 @@ function animate() {
             bikeGroup.position.x += moveX;
             bikeGroup.position.z += moveZ;
             if (Math.abs(moveX) > 0.01 || Math.abs(moveZ) > 0.01) {
-                const targetRotation = Math.atan2(moveX, -moveZ);
+                // Normal forward/backward (moveZ positive), inverse left/right (moveX inverted via atan2)
+                const targetRotation = Math.atan2(moveX, moveZ);
                 bikeGroup.rotation.y = targetRotation;
             }
             const speed = Math.sqrt(moveX * moveX + moveZ * moveZ);
@@ -1071,8 +1029,75 @@ function animate() {
             if (bikeGroup.userData.backWheel) bikeGroup.userData.backWheel.rotation.x -= speed * 2;
             if (bikeGroup.position.x > 9) bikeGroup.position.x = 9;
             if (bikeGroup.position.x < -9) bikeGroup.position.x = -9;
-            state.bike.angle = 0;
-            bikePivot.rotation.x = 0;
+
+            // Wheelie mechanics in free mode
+            let lift = 0;
+            if (state.keys.space) {
+                lift = CONFIG.wheelieLift;
+                if (state.bike.angle > CONFIG.balancePoint - CONFIG.sweetSpotWidth &&
+                    state.bike.angle < CONFIG.balancePoint + CONFIG.sweetSpotWidth) {
+                    lift *= 0.5;
+                }
+            }
+            state.bike.angularVelocity += lift;
+            state.bike.angularVelocity -= CONFIG.gravity;
+            state.bike.angularVelocity *= 0.98;
+            state.bike.angle += state.bike.angularVelocity;
+            if (state.bike.angle < 0) {
+                state.bike.angle = 0;
+                state.bike.angularVelocity = 0;
+            }
+            if (state.bike.angle > CONFIG.maxAngle) {
+                state.bike.angle = CONFIG.maxAngle;
+                state.bike.angularVelocity = 0;
+            }
+            bikePivot.rotation.x = -state.bike.angle;
+
+            // Inverted lateral lean in free mode (opposite of linear mode)
+            const lateralLean = -moveX * 0.5; // Negative to inverse the lean direction
+            bikeGroup.rotation.z = lateralLean;
+
+            // Special wheelie effects in free mode
+            const wheelieProgress = state.bike.angle / CONFIG.maxAngle; // 0 to 1
+
+            // Yellow sparks at the very end of wheelie (90%+)
+            if (wheelieProgress > 0.9 && Math.random() > 0.6) {
+                createSparkParticle();
+            }
+
+            // Progressive levitation from 50% to 100% wheelie
+            if (wheelieProgress > 0.5) {
+                const levitationProgress = (wheelieProgress - 0.5) / 0.5; // 0 to 1 from 50% to 100%
+                bikeGroup.position.y = 0.5 * levitationProgress; // Gradually rises to 0.5m
+            } else {
+                bikeGroup.position.y = 0; // Normal height
+            }
+
+            // Progressive wheelie failure mechanics
+            if (wheelieProgress >= 0.99) {
+                state.bike.maxWheelieTimer += dt;
+
+                // Shake left-right after 1 second
+                if (state.bike.maxWheelieTimer >= 1.0 && state.bike.maxWheelieTimer < 3.0) {
+                    const shakeIntensity = 0.15;
+                    bikeGroup.rotation.z = Math.sin(state.gameTime * 10) * shakeIntensity;
+                }
+
+                // Fall backward after 3 seconds
+                if (state.bike.maxWheelieTimer >= 3.0) {
+                    const fallProgress = Math.min((state.bike.maxWheelieTimer - 3.0) / 0.5, 1); // 0.5s fall animation
+                    bikePivot.rotation.x = -state.bike.angle - (fallProgress * 1.5); // Rotate backward
+
+                    // Game over when fall is complete
+                    if (fallProgress >= 1.0) {
+                        gameOver();
+                    }
+                }
+            } else {
+                state.bike.maxWheelieTimer = 0; // Reset timer
+                bikeGroup.rotation.z = lateralLean; // Restore normal lean
+            }
+
             state.distance += Math.abs(moveZ) + Math.abs(moveX);
         } else {
             let isAccelerating = state.keys.up;
@@ -1114,7 +1139,7 @@ function animate() {
 
             if (state.bike.angle > 0.2) {
                 // WHEELIE: Inverse sway for balancing effect
-                leanFactor = -1.5; // Negative = inverse direction
+                leanFactor = -1.5; // Negative = inverse direction (prevents sinking)
             } else if (kmh < 70) {
                 // LOW SPEED (<70 km/h): Inverse lean (road tilts opposite to wheel)
                 leanFactor = -0.8; // Negative = inverse direction
@@ -1285,13 +1310,13 @@ function updateCamera() {
         const shakeX = (Math.random() - 0.5) * shakeIntensity;
         const shakeY = (Math.random() - 0.5) * shakeIntensity * 0.5;
 
-        // Camera distance logic - closer at all speeds
-        let distanceOffset = 5; // Base VERY close distance
+        // Camera distance logic - comfortable distance
+        let distanceOffset = 8; // Base comfortable distance
 
         if (kmh > 50) {
-            // Gradually pull back a bit after 50 km/h, but stay closer than before
+            // Gradually pull back a bit after 50 km/h
             const speedExcess = (kmh - 50) / 150; // 0 to 1 as speed goes from 50 to 200
-            distanceOffset = 5 + (speedExcess * 4); // Max pulls back to 9 at 200km/h (vs 15 before)
+            distanceOffset = 8 + (speedExcess * 4); // Max pulls back to 12 at 200km/h
         }
 
         // Track time at high speed for auto-return
