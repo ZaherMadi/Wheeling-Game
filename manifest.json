@@ -1,0 +1,23 @@
+{
+    "name": "Wheelie King",
+    "short_name": "Wheelie King",
+    "description": "Urban motorcycle wheelie game - Banlieue Edition",
+    "start_url": "/",
+    "display": "fullscreen",
+    "orientation": "any",
+    "background_color": "#0a0a2e",
+    "theme_color": "#ffaa00",
+    "icons": [
+        {
+            "src": "/Logo51.png",
+            "sizes": "512x512",
+            "type": "image/png",
+            "purpose": "any maskable"
+        }
+    ],
+    "categories": [
+        "games",
+        "entertainment"
+    ],
+    "screenshots": []
+}

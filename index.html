@@ -8,6 +8,16 @@
     content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover">
   <meta name="apple-mobile-web-app-capable" content="yes">
   <meta name="mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+  <meta name="apple-mobile-web-app-title" content="Wheelie King">
+  <meta name="theme-color" content="#ffaa00">
+
+  <!-- PWA Manifest -->
+  <link rel="manifest" href="/manifest.json">
+
+  <!-- App Icons -->
+  <link rel="apple-touch-icon" href="/Logo51.png">
+
   <title>Wheelie King - 51Games </title>
   <link rel="icon" type="image/x-icon" href="Logo.ico">
   <link rel="stylesheet" href="style.css">
@@ -955,7 +965,7 @@
       <button class="back-to-main-btn">← RETOUR</button>
     </div>
 
-    <button id="back-btn" style="margin-top: 30px;">← RETOUR AU JEU</button>
+    <button id="back-btn" style="margin-top: 30px; display: none;">← RETOUR AU JEU</button>
   </div>
 
   <!-- GAME OVER SCREEN -->
@@ -1004,6 +1014,21 @@
   </div>
 
   <script type="module" src="/main.js"></script>
+
+  <!-- PWA Service Worker Registration -->
+  <script>
+    if ('serviceWorker' in navigator) {
+      window.addEventListener('load', () => {
+        navigator.serviceWorker.register('/service-worker.js')
+          .then((registration) => {
+            console.log('Service Worker registered:', registration);
+          })
+          .catch((error) => {
+            console.log('Service Worker registration failed:', error);
+          });
+      });
+    }
+  </script>
 </body>
 
 </html>
