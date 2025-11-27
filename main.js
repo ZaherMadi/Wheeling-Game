@@ -33,6 +33,7 @@ let state = {
         angle: 0,
         angularVelocity: 0,
         lateralVelocity: 0,
+        maxWheelieTimer: 0, // Timer for max wheelie in free mode
     },
     keys: {
         left: false,
@@ -683,6 +684,36 @@ function createCheckpoint() {
     scene.add(group);
 }
 
+function createSparkParticle() {
+    // Create tiny yellow spark particle - mini explosion effect
+    const geo = new THREE.SphereGeometry(0.05, 4, 4); // Very small
+    const mat = new THREE.MeshBasicMaterial({
+        color: 0xffff00, // Yellow
+        transparent: true,
+        opacity: 1
+    });
+    const spark = new THREE.Mesh(geo, mat);
+
+    // Position FIXED in space (not relative to bike) - within wheel width
+    const currentX = bikeGroup.position.x;
+    const currentZ = bikeGroup.position.z;
+    spark.position.set(
+        currentX + (Math.random() - 0.5) * 0.3, // Wheel width only (~30cm)
+        0.1, // Just above ground
+        currentZ + (Math.random() - 0.5) * 0.3
+    );
+
+    scene.add(spark);
+
+    // Remove spark quickly (mini explosion effect)
+    setTimeout(() => {
+        scene.remove(spark);
+        spark.geometry.dispose();
+        spark.material.dispose();
+    }, 150); // 0.15 seconds - disappears faster
+}
+
+
 async function loadGraffiti() {
     try {
         const res = await fetch('graffiti.json');
@@ -1025,6 +1056,47 @@ function animate() {
             // Inverted lateral lean in free mode (opposite of linear mode)
             const lateralLean = -moveX * 0.5; // Negative to inverse the lean direction
             bikeGroup.rotation.z = lateralLean;
+
+            // Special wheelie effects in free mode
+            const wheelieProgress = state.bike.angle / CONFIG.maxAngle; // 0 to 1
+
+            // Yellow sparks at the very end of wheelie (90%+)
+            if (wheelieProgress > 0.9 && Math.random() > 0.6) {
+                createSparkParticle();
+            }
+
+            // Progressive levitation from 50% to 100% wheelie
+            if (wheelieProgress > 0.5) {
+                const levitationProgress = (wheelieProgress - 0.5) / 0.5; // 0 to 1 from 50% to 100%
+                bikeGroup.position.y = 0.5 * levitationProgress; // Gradually rises to 0.5m
+            } else {
+                bikeGroup.position.y = 0; // Normal height
+            }
+
+            // Progressive wheelie failure mechanics
+            if (wheelieProgress >= 0.99) {
+                state.bike.maxWheelieTimer += dt;
+
+                // Shake left-right after 1 second
+                if (state.bike.maxWheelieTimer >= 1.0 && state.bike.maxWheelieTimer < 3.0) {
+                    const shakeIntensity = 0.15;
+                    bikeGroup.rotation.z = Math.sin(state.gameTime * 10) * shakeIntensity;
+                }
+
+                // Fall backward after 3 seconds
+                if (state.bike.maxWheelieTimer >= 3.0) {
+                    const fallProgress = Math.min((state.bike.maxWheelieTimer - 3.0) / 0.5, 1); // 0.5s fall animation
+                    bikePivot.rotation.x = -state.bike.angle - (fallProgress * 1.5); // Rotate backward
+
+                    // Game over when fall is complete
+                    if (fallProgress >= 1.0) {
+                        gameOver();
+                    }
+                }
+            } else {
+                state.bike.maxWheelieTimer = 0; // Reset timer
+                bikeGroup.rotation.z = lateralLean; // Restore normal lean
+            }
 
             state.distance += Math.abs(moveZ) + Math.abs(moveX);
         } else {
