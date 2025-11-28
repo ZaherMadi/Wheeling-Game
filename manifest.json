@@ -4,7 +4,7 @@
     "description": "Urban motorcycle wheelie game - Banlieue Edition",
     "start_url": "/",
     "display": "fullscreen",
-    "orientation": "any",
+    "orientation": "landscape",
     "background_color": "#0a0a2e",
     "theme_color": "#ffaa00",
     "icons": [
