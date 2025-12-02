@@ -39,26 +39,6 @@
       background-color: #000;
     }
 
-    /* Portrait mode warning */
-    @media screen and (orientation: portrait) and (max-width: 768px) {
-      body::before {
-        content: '🔄 Tournez votre téléphone en mode paysage pour une meilleure expérience';
-        position: fixed;
-        top: 50%;
-        left: 50%;
-        transform: translate(-50%, -50%);
-        background: rgba(0, 0, 0, 0.9);
-        color: #FFD700;
-        padding: 20px 30px;
-        border-radius: 10px;
-        font-size: 18px;
-        text-align: center;
-        z-index: 9999;
-        max-width: 80%;
-        box-shadow: 0 0 30px rgba(255, 215, 0, 0.5);
-      }
-    }
-
     /* Height-responsive adjustments */
     @media screen and (max-height: 600px) {
       html {
@@ -277,34 +257,34 @@
       transition: height 0.1s, background 0.2s;
     }
 
-    /* Speedometer - Sporty Racing Style */
+    /* Speedometer - Sporty Racing Style - Reduced 1.5x */
     #speedometer {
       position: absolute;
-      bottom: 20px;
-      right: 20px;
-      /* Bottom-right corner for mobile */
-      width: 90px;
-      height: 90px;
+      bottom: 15px;
+      right: 15px;
+      /* Bottom-right corner, closer to edge */
+      width: 60px;
+      height: 60px;
       background: radial-gradient(circle at 30% 30%, rgba(20, 20, 20, 0.95), rgba(0, 0, 0, 0.98));
-      border: 4px solid #FF3333;
+      border: 3px solid #FF3333;
       border-radius: 50%;
       display: flex;
       flex-direction: column;
       justify-content: center;
       align-items: center;
       box-shadow:
-        0 0 30px rgba(255, 51, 51, 0.6),
-        inset 0 0 20px rgba(255, 100, 0, 0.2),
-        0 8px 32px rgba(0, 0, 0, 0.8);
+        0 0 20px rgba(255, 51, 51, 0.6),
+        inset 0 0 15px rgba(255, 100, 0, 0.2),
+        0 6px 24px rgba(0, 0, 0, 0.8);
       overflow: visible;
       z-index: 15;
     }
 
-    /* Desktop: larger speedometer, positioned away from controls */
+    /* Desktop: slightly larger speedometer */
     @media (min-width: 768px) {
       #speedometer {
-        width: 110px;
-        height: 110px;
+        width: 73px;
+        height: 73px;
         bottom: 110px;
         right: 330px;
       }
@@ -339,27 +319,39 @@
 
     #speed-text {
       font-family: 'Russo One', monospace;
-      font-size: 28px;
+      font-size: 18px;
       font-weight: bold;
       color: #FF3333;
       text-shadow:
         0 0 10px #FF3333,
         0 0 20px #FF6633,
         0 0 30px #FF3333,
-        2px 2px 4px rgba(0, 0, 0, 0.8);
+        2px 2px 6px rgba(0, 0, 0, 1),
+        -1px -1px 0 #000,
+        1px -1px 0 #000,
+        -1px 1px 0 #000,
+        1px 1px 0 #000;
       line-height: 1;
       margin: 0;
       letter-spacing: -1px;
+      -webkit-text-stroke: 1px rgba(0, 0, 0, 0.8);
     }
 
     #speed-unit {
       font-family: 'Russo One', sans-serif;
-      font-size: 11px;
+      font-size: 7px;
       font-weight: bold;
       color: #FFD700;
-      text-shadow: 0 0 8px #FFD700, 0 2px 4px rgba(0, 0, 0, 0.8);
-      margin-top: 2px;
-      letter-spacing: 2px;
+      text-shadow:
+        0 0 8px #FFD700,
+        0 2px 4px rgba(0, 0, 0, 1),
+        -1px -1px 0 #000,
+        1px -1px 0 #000,
+        -1px 1px 0 #000,
+        1px 1px 0 #000;
+      margin-top: 1px;
+      letter-spacing: 1px;
+      -webkit-text-stroke: 0.5px rgba(0, 0, 0, 0.8);
     }
 
     /* Pause Button - Top Left */
@@ -887,6 +879,19 @@
       </div>
     </div>
 
+    <!-- Portrait Mode Warning Popup (Closeable) -->
+    <div id="portrait-warning"
+      style="display: none; position: fixed; top: 0; left: 0; width: 100%; height: 100%; background: rgba(0, 0, 0, 0.9); z-index: 10000; justify-content: center; align-items: center;">
+      <div
+        style="position: relative; background: rgba(20, 20, 20, 0.95); border: 3px solid #FFD700; border-radius: 15px; padding: 30px 25px; max-width: 80%; text-align: center; box-shadow: 0 0 40px rgba(255, 215, 0, 0.6);">
+        <button id="close-portrait-warning"
+          style="position: absolute; top: 10px; right: 10px; background: rgba(255, 51, 51, 0.9); border: 2px solid #FF3333; color: white; font-size: 24px; font-weight: bold; width: 40px; height: 40px; border-radius: 50%; cursor: pointer; display: flex; align-items: center; justify-content: center; box-shadow: 0 0 15px rgba(255, 51, 51, 0.8);">✕</button>
+        <div style="font-size: 48px; margin-bottom: 15px;">🔄</div>
+        <div style="color: #FFD700; font-size: 18px; font-weight: bold; text-shadow: 0 2px 8px rgba(0, 0, 0, 0.8);">
+          Tournez votre téléphone en mode paysage pour une meilleure expérience</div>
+      </div>
+    </div>
+
     <!-- Countdown Display -->
     <div id="countdown-display"
       style="position: absolute; top: 30%; left: 50%; transform: translate(-50%, -50%); font-size: 120px; font-weight: bold; color: #FFD700; text-shadow: 0 0 20px #000; display: none; z-index: 50;">
@@ -1058,6 +1063,31 @@
           });
       });
     }
+  </script>
+
+  <!-- Portrait Warning Control -->
+  <script>
+    const portraitWarning = document.getElementById('portrait-warning');
+    const closeBtn = document.getElementById('close-portrait-warning');
+    let warningDismissed = localStorage.getItem('portrait-warning-dismissed') === 'true';
+
+    function checkOrientation() {
+      if (window.innerWidth < 768 && window.innerHeight > window.innerWidth && !warningDismissed) {
+        portraitWarning.style.display = 'flex';
+      } else {
+        portraitWarning.style.display = 'none';
+      }
+    }
+
+    closeBtn.addEventListener('click', () => {
+      warningDismissed = true;
+      localStorage.setItem('portrait-warning-dismissed', 'true');
+      portraitWarning.style.display = 'none';
+    });
+
+    window.addEventListener('resize', checkOrientation);
+    window.addEventListener('orientationchange', checkOrientation);
+    checkOrientation();
   </script>
 </body>
 
