@@ -18,7 +18,11 @@ const CONFIG = {
     sweetSpotWidth: 0.2,
     scoreMultiplier: 10,
     dayNightCycleDuration: 600,
-    freeModeSpeed: 0.15
+    freeModeSpeed: 0.15,
+    freeModeMaxSpeed: 3.0,
+    freeModeAcceleration: 0.015,
+    freeModeDeceleration: 0.01,
+    freeModeBrakeForce: 0.04
 };
 
 let state = {
@@ -52,7 +56,13 @@ let state = {
     birds: [],
     skidding: false,
     skidTimer: 0,
-    smokeParticles: []
+    smokeParticles: [],
+    freeMode: {
+        speed: 0,
+        roadCurve: 0,
+        roadCurveTimer: 0,
+        speedLines: []
+    }
 };
 
 const scene = new THREE.Scene();
@@ -777,6 +787,22 @@ function resetGame() {
         p.mesh.material.dispose();
     });
     state.smokeParticles = [];
+    
+    // Nettoyer les lignes de vitesse du mode libre
+    if (state.freeMode.speedLines) {
+        state.freeMode.speedLines.forEach(line => {
+            scene.remove(line.mesh);
+            line.mesh.geometry.dispose();
+            line.mesh.material.dispose();
+        });
+    }
+    state.freeMode = {
+        speed: 0,
+        roadCurve: 0,
+        roadCurveTimer: 0,
+        speedLines: []
+    };
+    
     bikeGroup.position.set(0, 0, 0);
     // Apply mode-specific rotation
     if (GAME_SETTINGS.gameMode === 'free') {
@@ -933,6 +959,54 @@ function updateSmoke(dt) {
     }
 }
 
+// Fonction pour créer des lignes de vitesse (speed lines)
+function createSpeedLine() {
+    if (state.freeMode.speedLines.length >= 20) {
+        const oldest = state.freeMode.speedLines.shift();
+        scene.remove(oldest.mesh);
+        oldest.mesh.geometry.dispose();
+        oldest.mesh.material.dispose();
+    }
+
+    const geometry = new THREE.PlaneGeometry(0.2, 2);
+    const material = new THREE.MeshBasicMaterial({
+        color: 0xffffff,
+        transparent: true,
+        opacity: 0.8,
+        side: THREE.DoubleSide
+    });
+    const mesh = new THREE.Mesh(geometry, material);
+
+    const pos = bikeGroup.position.clone();
+    pos.x += (Math.random() - 0.5) * 8;
+    pos.y += Math.random() * 2;
+    pos.z += (Math.random() - 0.5) * 5 + 3;
+    mesh.position.copy(pos);
+    mesh.rotation.y = Math.PI / 2;
+
+    scene.add(mesh);
+    state.freeMode.speedLines.push({
+        mesh: mesh,
+        life: 0.3,
+        velocity: new THREE.Vector3(0, 0, 3)
+    });
+}
+
+function updateSpeedLines(dt) {
+    for (let i = state.freeMode.speedLines.length - 1; i >= 0; i--) {
+        const line = state.freeMode.speedLines[i];
+        line.life -= dt;
+        line.mesh.position.add(line.velocity);
+        line.mesh.material.opacity = line.life * 2.5;
+        if (line.life <= 0) {
+            scene.remove(line.mesh);
+            line.mesh.geometry.dispose();
+            line.mesh.material.dispose();
+            state.freeMode.speedLines.splice(i, 1);
+        }
+    }
+}
+
 function gameOver() {
     state.isPlaying = false;
     state.skidding = false;
@@ -1006,27 +1080,65 @@ function animate() {
                 bikeGroup.position.z -= state.speed;
             }
         } else if (GAME_SETTINGS.gameMode === 'free') {
+            // Gestion de l'accélération et freinage
+            if (state.keys.up || (GAME_SETTINGS.controlMode === 'analog' && analogData.y < -0.3)) {
+                state.freeMode.speed += CONFIG.freeModeAcceleration;
+                if (state.freeMode.speed > CONFIG.freeModeMaxSpeed) state.freeMode.speed = CONFIG.freeModeMaxSpeed;
+            } else if (state.keys.down || (GAME_SETTINGS.controlMode === 'analog' && analogData.y > 0.3)) {
+                state.freeMode.speed -= CONFIG.freeModeBrakeForce;
+                if (state.freeMode.speed < 0) state.freeMode.speed = 0;
+            } else {
+                state.freeMode.speed -= CONFIG.freeModeDeceleration;
+                if (state.freeMode.speed < 0) state.freeMode.speed = 0;
+            }
+
+            // Rotation de la route toutes les 10 secondes
+            state.freeMode.roadCurveTimer += 1/60;
+            if (state.freeMode.roadCurveTimer > 10) {
+                state.freeMode.roadCurveTimer = 0;
+                const rand = Math.random();
+                if (rand < 0.33) {
+                    state.freeMode.roadCurve = -0.02; // Tourne à gauche
+                } else if (rand < 0.66) {
+                    state.freeMode.roadCurve = 0.02; // Tourne à droite
+                } else {
+                    state.freeMode.roadCurve = 0; // Tout droit
+                }
+            }
+
+            // Déplacement latéral
             let moveX = 0;
-            let moveZ = 0;
             if (GAME_SETTINGS.controlMode === 'analog' && analogData.active) {
                 moveX = analogData.x * CONFIG.freeModeSpeed * 3;
-                moveZ = analogData.y * CONFIG.freeModeSpeed * 3;
             } else {
-                if (state.keys.left) moveX -= CONFIG.freeModeSpeed * 3;
-                if (state.keys.right) moveX += CONFIG.freeModeSpeed * 3;
-                if (state.keys.up) moveZ -= CONFIG.freeModeSpeed * 3;
-                if (state.keys.down) moveZ += CONFIG.freeModeSpeed * 3;
+                if (state.keys.left || state.keys.right) {
+                    if (state.keys.left) moveX -= CONFIG.freeModeSpeed * 3;
+                    if (state.keys.right) moveX += CONFIG.freeModeSpeed * 3;
+                }
             }
-            bikeGroup.position.x += moveX;
+
+            // Appliquer la courbure de la route
+            bikeGroup.position.x += moveX + state.freeMode.roadCurve;
+
+            // Avancer selon la vitesse
+            const moveZ = -state.freeMode.speed;
             bikeGroup.position.z += moveZ;
-            if (Math.abs(moveX) > 0.01 || Math.abs(moveZ) > 0.01) {
-                // Normal forward/backward (moveZ positive), inverse left/right (moveX inverted via atan2)
-                const targetRotation = Math.atan2(moveX, moveZ);
-                bikeGroup.rotation.y = targetRotation;
+
+            // Orientation de la moto
+            if (Math.abs(moveX) > 0.01) {
+                const targetRotation = Math.atan2(moveX, -state.freeMode.speed);
+                bikeGroup.rotation.y += (targetRotation - bikeGroup.rotation.y) * 0.1;
+            } else if (state.freeMode.roadCurve !== 0) {
+                const curveRotation = state.freeMode.roadCurve * 20;
+                bikeGroup.rotation.y += (curveRotation - bikeGroup.rotation.y) * 0.05;
             }
-            const speed = Math.sqrt(moveX * moveX + moveZ * moveZ);
-            if (bikeGroup.userData.frontWheel) bikeGroup.userData.frontWheel.rotation.x -= speed * 2;
-            if (bikeGroup.userData.backWheel) bikeGroup.userData.backWheel.rotation.x -= speed * 2;
+
+            // Rotation des roues
+            const wheelSpeed = Math.sqrt(moveX * moveX + moveZ * moveZ);
+            if (bikeGroup.userData.frontWheel) bikeGroup.userData.frontWheel.rotation.x -= wheelSpeed * 2;
+            if (bikeGroup.userData.backWheel) bikeGroup.userData.backWheel.rotation.x -= wheelSpeed * 2;
+            
+            // Limites de la route
             if (bikeGroup.position.x > 9) bikeGroup.position.x = 9;
             if (bikeGroup.position.x < -9) bikeGroup.position.x = -9;
 
@@ -1099,6 +1211,41 @@ function animate() {
             }
 
             state.distance += Math.abs(moveZ) + Math.abs(moveX);
+            
+            // Système de score pour le mode libre
+            const kmhFree = state.freeMode.speed * 50;
+            
+            // Seulement donner des points si la vitesse dépasse 20 km/h (en mouvement)
+            if (kmhFree > 20) {
+                let scoreIncrement = dt; // 1 point par seconde de base
+                
+                // Multiplicateur de vitesse progressif
+                let speedMultiplier = 1.0;
+                
+                if (kmhFree >= 150) {
+                    speedMultiplier = 1.5;
+                } else {
+                    // Progression linéaire de x1 à x1.5 entre 20 et 150 km/h
+                    speedMultiplier = 1.0 + ((kmhFree - 20) / 130) * 0.5;
+                }
+                
+                // Multiplicateur de wheelie progressif
+                let wheelieMultiplier = 1.0;
+                if (state.bike.angle > 0.2) {
+                    const wheelieProgress = Math.min((state.bike.angle - 0.2) / (CONFIG.maxAngle - 0.2), 1);
+                    wheelieMultiplier = 1.0 + (wheelieProgress * 0.33);
+                }
+                
+                const totalMultiplier = speedMultiplier * wheelieMultiplier;
+                scoreIncrement *= totalMultiplier;
+                state.score += scoreIncrement;
+            }
+            
+            // Effets visuels de vitesse au-delà de 100 km/h
+            if (kmhFree > 100 && Math.random() > 0.7) {
+                createSpeedLine();
+            }
+            updateSpeedLines(dt);
         } else {
             let isAccelerating = state.keys.up;
             let isBraking = state.keys.down;
@@ -1195,20 +1342,44 @@ function animate() {
             state.distance += state.speed;
             state.distance += state.speed;
 
-            // Scoring System Update
-            // Base score accumulates much slower
-            state.score += state.speed * 0.1;
-
-            // Bonus for Wheelie Angle + Difficulty
-            if (state.bike.angle > 0.2) {
-                let difficultyMult = 1;
-                if (GAME_SETTINGS.difficulty === 'medium') difficultyMult = 1.5;
-                if (GAME_SETTINGS.difficulty === 'hard') difficultyMult = 2.0;
-
-                // Higher angle = More points
-                const angleBonus = (state.bike.angle - 0.2) * 10;
-
-                state.score += angleBonus * difficultyMult * CONFIG.scoreMultiplier;
+            // Nouveau système de score basé sur le temps
+            // Base : 1 point par seconde (60 points par minute)
+            const kmh = state.speed * 50;
+            
+            // Seulement donner des points si la vitesse dépasse 20 km/h (en mouvement)
+            if (kmh > 20) {
+                let scoreIncrement = dt; // dt est en secondes, donc 1 point/seconde de base
+                
+                // Multiplicateur de vitesse progressif
+                let speedMultiplier = 1.0;
+                
+                if (kmh >= 150) {
+                    // À partir de 150 km/h, on est au max (x1.5 pour la vitesse seule)
+                    speedMultiplier = 1.5;
+                } else {
+                    // Progression linéaire de x1 à x1.5 entre 20 et 150 km/h
+                    speedMultiplier = 1.0 + ((kmh - 20) / 130) * 0.5;
+                }
+                
+                // Multiplicateur de wheelie progressif
+                let wheelieMultiplier = 1.0;
+                if (state.bike.angle > 0.2) {
+                    // Progression de x1 à x1.33 selon l'angle du wheelie
+                    const wheelieProgress = Math.min((state.bike.angle - 0.2) / (CONFIG.maxAngle - 0.2), 1);
+                    wheelieMultiplier = 1.0 + (wheelieProgress * 0.33);
+                }
+                
+                // Multiplicateur total : vitesse × wheelie
+                // Maximum possible : 1.5 × 1.33 = 2.0 (à 150 km/h en wheelie max)
+                const totalMultiplier = speedMultiplier * wheelieMultiplier;
+                
+                // Application du multiplicateur de difficulté
+                let difficultyMult = 1.0;
+                if (GAME_SETTINGS.difficulty === 'medium') difficultyMult = 1.2;
+                if (GAME_SETTINGS.difficulty === 'hard') difficultyMult = 1.4;
+                
+                scoreIncrement *= totalMultiplier * difficultyMult;
+                state.score += scoreIncrement;
             }
         }
 
@@ -1269,15 +1440,62 @@ function updateCamera() {
     const targetBaseFOV = isPortrait ? 75 : 60;  // Wider FOV for portrait
 
     if (GAME_SETTINGS.gameMode === 'free') {
-        camera.fov = targetBaseFOV;
+        const kmh = state.freeMode.speed * 50;
+        
+        // FOV dynamique basé sur la vitesse
+        let fovBoost = state.freeMode.speed * 10;
+        if (state.keys.up || (GAME_SETTINGS.controlMode === 'analog' && analogData.y < -0.3)) {
+            fovBoost += 8; // Boost supplémentaire lors de l'accélération
+        }
+        const targetFOV = targetBaseFOV + fovBoost;
+        camera.fov += (targetFOV - camera.fov) * 0.08;
         camera.updateProjectionMatrix();
+
+        // Distance de caméra dynamique
+        let distanceOffset = 12; // Distance de base
+        let heightOffset = 6; // Hauteur de base
+        
+        // À l'accélération : la moto "décolle" de la caméra
+        if (state.keys.up || (GAME_SETTINGS.controlMode === 'analog' && analogData.y < -0.3)) {
+            if (kmh > 100) {
+                distanceOffset = 18; // S'éloigne rapidement
+                heightOffset = 8;
+            } else {
+                distanceOffset = 15;
+                heightOffset = 7;
+            }
+        } else if (state.keys.down || (GAME_SETTINGS.controlMode === 'analog' && analogData.y > 0.3)) {
+            // Au freinage : caméra se rapproche
+            distanceOffset = 8;
+            heightOffset = 5;
+        } else if (kmh > 50) {
+            // Vitesse normale : distance intermédiaire
+            distanceOffset = 12 + (kmh - 50) / 50; // Augmente progressivement
+            heightOffset = 6;
+        }
+
+        // Track time at high speed for gradual return
+        if (!state.highSpeedTimer) state.highSpeedTimer = 0;
+        if (kmh > 100 && !(state.keys.up || (GAME_SETTINGS.controlMode === 'analog' && analogData.y < -0.3))) {
+            state.highSpeedTimer += 1 / 60;
+        } else {
+            state.highSpeedTimer = 0;
+        }
+
+        // Après 2 secondes à haute vitesse sans accélérer, revenir progressivement
+        if (state.highSpeedTimer > 2) {
+            const returnFactor = Math.min((state.highSpeedTimer - 2) / 2, 1);
+            distanceOffset = distanceOffset - (returnFactor * 4);
+        }
+
         const targetX = bikeGroup.position.x;
-        const targetZ = bikeGroup.position.z + 15;
-        const targetY = 8;
-        camera.position.x += (targetX - camera.position.x) * 0.15;
-        camera.position.z += (targetZ - camera.position.z) * 0.15;
-        camera.position.y += (targetY - camera.position.y) * 0.15;
-        camera.lookAt(bikeGroup.position.x, 1, bikeGroup.position.z - 5);
+        const targetZ = bikeGroup.position.z + distanceOffset;
+        const targetY = heightOffset;
+        
+        camera.position.x += (targetX - camera.position.x) * 0.12;
+        camera.position.z += (targetZ - camera.position.z) * 0.12;
+        camera.position.y += (targetY - camera.position.y) * 0.12;
+        camera.lookAt(bikeGroup.position.x, 1, bikeGroup.position.z - 8);
     } else {
         // Dynamic FOV based on speed (Visual Acceleration)
         // Base increase + extra kick when accelerating
@@ -1351,7 +1569,9 @@ function updateUI() {
     const speedText = document.getElementById('speed-text');
     const speedNeedle = document.getElementById('gauge-needle');
     if (speedText && speedNeedle) {
-        const kmh = Math.max(0, Math.floor(state.speed * 50));
+        const kmh = GAME_SETTINGS.gameMode === 'free' ? 
+            Math.max(0, Math.floor(state.freeMode.speed * 50)) :
+            Math.max(0, Math.floor(state.speed * 50));
         speedText.innerText = `${kmh}`;
         const maxKmh = 200;
         const pct = Math.min(1, kmh / maxKmh);
@@ -1403,6 +1623,13 @@ function setupMobileControls() {
     const arrowControls = document.getElementById('arrow-controls');
     const analogControls = document.getElementById('analog-controls');
     if (!mobileControls) return;
+    
+    // Mettre à jour l'emoji du bouton gaz selon le mode de jeu
+    const gasEmoji = document.getElementById('gas-emoji');
+    if (gasEmoji) {
+        gasEmoji.innerText = GAME_SETTINGS.gameMode === 'free' ? '⚡' : '💨';
+    }
+    
     if (GAME_SETTINGS.controlMode === 'arrows') {
         mobileControls.style.display = 'block';
         arrowControls.style.display = 'block';
@@ -1642,6 +1869,9 @@ document.getElementById('mode-linear').addEventListener('click', () => {
     document.getElementById('mode-free').classList.remove('active');
     document.getElementById('desc-linear').style.display = 'inline';
     document.getElementById('desc-free').style.display = 'none';
+    // Remettre l'emoji souffle pour le mode linéaire
+    const gasEmoji = document.getElementById('gas-emoji');
+    if (gasEmoji) gasEmoji.innerText = '💨';
 });
 
 document.getElementById('mode-free').addEventListener('click', () => {
@@ -1650,6 +1880,9 @@ document.getElementById('mode-free').addEventListener('click', () => {
     document.getElementById('mode-linear').classList.remove('active');
     document.getElementById('desc-linear').style.display = 'none';
     document.getElementById('desc-free').style.display = 'inline';
+    // Changer l'emoji du bouton gaz en éclair pour le mode libre
+    const gasEmoji = document.getElementById('gas-emoji');
+    if (gasEmoji) gasEmoji.innerText = '⚡';
 });
 
 const autoRaceToggle = document.getElementById('option-auto-race');
