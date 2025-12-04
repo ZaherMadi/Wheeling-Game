@@ -1525,10 +1525,10 @@ window.addEventListener('resize', () => {
 });
 
 document.addEventListener('keydown', (e) => {
-    if (e.code === 'ArrowLeft') state.keys.left = true;
-    if (e.code === 'ArrowRight') state.keys.right = true;
-    if (e.code === 'ArrowUp') state.keys.up = true;
-    if (e.code === 'ArrowDown') state.keys.down = true;
+    if (e.code === 'ArrowLeft' || e.code === 'KeyQ') state.keys.left = true;
+    if (e.code === 'ArrowRight' || e.code === 'KeyD') state.keys.right = true;
+    if (e.code === 'ArrowUp' || e.code === 'KeyZ') state.keys.up = true;
+    if (e.code === 'ArrowDown' || e.code === 'KeyS') state.keys.down = true;
 
     // Space ONLY for wheelie (no restart functionality)
     if (e.code === 'Space') {
@@ -1552,10 +1552,10 @@ document.addEventListener('keydown', (e) => {
 });
 
 document.addEventListener('keyup', (e) => {
-    if (e.code === 'ArrowLeft') state.keys.left = false;
-    if (e.code === 'ArrowRight') state.keys.right = false;
-    if (e.code === 'ArrowUp') state.keys.up = false;
-    if (e.code === 'ArrowDown') state.keys.down = false;
+    if (e.code === 'ArrowLeft' || e.code === 'KeyQ') state.keys.left = false;
+    if (e.code === 'ArrowRight' || e.code === 'KeyD') state.keys.right = false;
+    if (e.code === 'ArrowUp' || e.code === 'KeyZ') state.keys.up = false;
+    if (e.code === 'ArrowDown' || e.code === 'KeyS') state.keys.down = false;
     if (e.code === 'Space') state.keys.space = false;
 });
 

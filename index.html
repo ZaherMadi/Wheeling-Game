@@ -532,9 +532,13 @@
     .settings-submenu {
       width: 100%;
       max-width: 500px;
+      max-height: 85vh;
       display: flex;
       flex-direction: column;
       align-items: center;
+      overflow-y: auto;
+      overflow-x: hidden;
+      padding: 10px;
     }
 
     .back-to-main-btn {
@@ -581,9 +585,13 @@
     .settings-submenu {
       width: 100%;
       max-width: 500px;
+      max-height: 85vh;
       display: flex;
       flex-direction: column;
       align-items: center;
+      overflow-y: auto;
+      overflow-x: hidden;
+      padding: 10px;
     }
 
     .back-to-main-btn {
@@ -626,7 +634,7 @@
 
     /* Settings Screen */
     .settings-group {
-      margin: 30px 0;
+      margin: 20px 0;
       text-align: center;
     }
 
@@ -881,7 +889,7 @@
 
     <!-- Portrait Mode Warning Popup (Closeable) -->
     <div id="portrait-warning"
-      style="display: none; position: fixed; top: 0; left: 0; width: 100%; height: 100%; background: rgba(0, 0, 0, 0.9); z-index: 10000; justify-content: center; align-items: center;">
+      style="display: none; position: fixed; top: 0; left: 0; width: 100%; height: 100%; background: rgba(0, 0, 0, 0.9); z-index: 10000; justify-content: center; align-items: center; opacity: 0; transition: opacity 0.5s ease-out;">
       <div
         style="position: relative; background: rgba(20, 20, 20, 0.95); border: 3px solid #FFD700; border-radius: 15px; padding: 30px 25px; max-width: 80%; text-align: center; box-shadow: 0 0 40px rgba(255, 215, 0, 0.6);">
         <button id="close-portrait-warning"
@@ -962,21 +970,21 @@
 
     <!-- Sub-menu: Game Mode -->
     <div id="submenu-gamemode" class="settings-submenu" style="display: none;">
-      <h3>MODE DE JEU</h3>
-      <div class="settings-group">
+      <h3 style="margin: 10px 0;">MODE DE JEU</h3>
+      <div class="settings-group" style="margin: 15px 0;">
         <button id="mode-linear" class="setting-btn active">🏁 LINÉAIRE</button>
         <button id="mode-free" class="setting-btn">🌍 LIBRE</button>
       </div>
 
-      <h3>DIFFICULTÉ</h3>
-      <div class="settings-group">
+      <h3 style="margin: 10px 0;">DIFFICULTÉ</h3>
+      <div class="settings-group" style="margin: 15px 0;">
         <button id="diff-easy" class="setting-btn">😌 FACILE</button>
         <button id="diff-medium" class="setting-btn">😐 MOYEN</button>
         <button id="diff-hard" class="setting-btn active">😈 DIFFICILE</button>
-        <p class="setting-desc" id="diff-desc">Difficile: Beaucoup d'obstacles !</p>
+        <p class="setting-desc" id="diff-desc" style="margin: 8px 0;">Difficile: Beaucoup d'obstacles !</p>
       </div>
 
-      <button class="back-to-main-btn">← RETOUR</button>
+      <button class="back-to-main-btn" style="margin: 15px 0;">← RETOUR</button>
     </div>
 
     <!-- Sub-menu: Options -->
@@ -1070,21 +1078,45 @@
     const portraitWarning = document.getElementById('portrait-warning');
     const closeBtn = document.getElementById('close-portrait-warning');
     let warningDismissed = localStorage.getItem('portrait-warning-dismissed') === 'true';
+    let hideTimeout = null;
+
+    function showWarning() {
+      portraitWarning.style.display = 'flex';
+      // Force reflow pour activer la transition
+      void portraitWarning.offsetWidth;
+      portraitWarning.style.opacity = '1';
+      
+      // Cacher automatiquement après 2 secondes
+      if (hideTimeout) clearTimeout(hideTimeout);
+      hideTimeout = setTimeout(() => {
+        hideWarning();
+      }, 2000);
+    }
+
+    function hideWarning() {
+      portraitWarning.style.opacity = '0';
+      setTimeout(() => {
+        portraitWarning.style.display = 'none';
+      }, 500); // Attendre la fin du fade out
+    }
 
     function checkOrientation() {
       if (window.innerWidth < 768 && window.innerHeight > window.innerWidth && !warningDismissed) {
-        portraitWarning.style.display = 'flex';
+        showWarning();
       } else {
+        if (hideTimeout) clearTimeout(hideTimeout);
         portraitWarning.style.display = 'none';
+        portraitWarning.style.opacity = '0';
       }
     }
 
     closeBtn.addEventListener('click', (e) => {
       e.preventDefault();
       e.stopPropagation();
+      if (hideTimeout) clearTimeout(hideTimeout);
       warningDismissed = true;
       localStorage.setItem('portrait-warning-dismissed', 'true');
-      portraitWarning.style.display = 'none';
+      hideWarning();
     });
 
     window.addEventListener('resize', checkOrientation);
