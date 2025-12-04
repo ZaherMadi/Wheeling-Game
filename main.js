@@ -1335,18 +1335,25 @@ function animate() {
                 const old = groundChunks.shift();
                 scene.remove(old);
             }
-            for (let i = 0; i < 4; i++) {
-                // Difficulty-based spawning
-                let spawnChance = 0.3; // Easy default
-                if (GAME_SETTINGS.difficulty === 'medium') spawnChance = 0.6;
-                if (GAME_SETTINGS.difficulty === 'hard') spawnChance = 0.9;
+            // Only spawn obstacles in linear mode
+            if (GAME_SETTINGS.gameMode === 'linear') {
+                for (let i = 0; i < 4; i++) {
+                    // Difficulty-based spawning
+                    let spawnChance = 0.3; // Easy default
+                    if (GAME_SETTINGS.difficulty === 'medium') spawnChance = 0.6;
+                    if (GAME_SETTINGS.difficulty === 'hard') spawnChance = 0.9;
 
-                if (Math.random() < spawnChance) {
-                    spawnObstacle(newZ + Math.random() * 100);
+                    if (Math.random() < spawnChance) {
+                        spawnObstacle(newZ + Math.random() * 100);
+                    }
                 }
             }
         }
-        checkCollisions();
+        
+        // Only check collisions in linear mode
+        if (GAME_SETTINGS.gameMode === 'linear') {
+            checkCollisions();
+        }
 
         // Performance: Clean up old obstacles periodically
         obstacleCleanupCounter++;
@@ -1858,6 +1865,55 @@ document.getElementById('start-btn').addEventListener('click', startGame);
 document.getElementById('restart-btn').addEventListener('click', startGame);
 document.getElementById('pause-btn').addEventListener('click', togglePause);
 
+// API Configuration
+const API_BASE_URL = 'https://51-games-api.vercel.app/api/ranking';
+const GAME_NAME = 'WheelieKing';
+
+// Fonction pour envoyer le score à l'API
+async function sendScoreToAPI(nickname, score) {
+    try {
+        const response = await fetch(API_BASE_URL + '/', {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json',
+            },
+            body: JSON.stringify({
+                game_name: GAME_NAME,
+                nickname: nickname,
+                score: score
+            })
+        });
+        
+        if (!response.ok) {
+            throw new Error('Erreur lors de l\'envoi du score');
+        }
+        
+        const data = await response.json();
+        console.log('Score envoyé avec succès:', data);
+        return true;
+    } catch (error) {
+        console.error('Erreur API:', error);
+        return false;
+    }
+}
+
+// Fonction pour récupérer le classement depuis l'API
+async function fetchLeaderboardFromAPI() {
+    try {
+        const response = await fetch(`${API_BASE_URL}/leaderboard/${GAME_NAME}`);
+        
+        if (!response.ok) {
+            throw new Error('Erreur lors de la récupération du classement');
+        }
+        
+        const data = await response.json();
+        return data.leaderboard || [];
+    } catch (error) {
+        console.error('Erreur API:', error);
+        return [];
+    }
+}
+
 // Nickname & Leaderboard Functions
 function showNicknamePopup(score) {
     const popup = document.getElementById('nickname-popup');
@@ -1872,7 +1928,7 @@ function showNicknamePopup(score) {
     }
 }
 
-function submitNickname() {
+async function submitNickname() {
     const nicknameInput = document.getElementById('nickname-input');
     const nickname = nicknameInput.value.trim();
     
@@ -1883,6 +1939,9 @@ function submitNickname() {
         // Mettre à jour le leaderboard
         const currentScore = Math.floor(state.score);
         updateLeaderboard(nickname, currentScore);
+        
+        // Envoyer le score à l'API
+        await sendScoreToAPI(nickname, currentScore);
         
         // Afficher le pseudo dans le menu
         displayNickname();
@@ -1935,7 +1994,7 @@ function updateLeaderboard(nickname, score) {
     localStorage.setItem('wheelie_leaderboard', JSON.stringify(leaderboard));
 }
 
-function showLeaderboard() {
+async function showLeaderboard() {
     const startScreen = document.getElementById('start-screen');
     const leaderboardScreen = document.getElementById('leaderboard-screen');
     const leaderboardList = document.getElementById('leaderboard-list');
@@ -1943,8 +2002,11 @@ function showLeaderboard() {
     if (startScreen) startScreen.classList.remove('active');
     if (leaderboardScreen) leaderboardScreen.classList.add('active');
     
-    // Charger et afficher le classement
-    const leaderboard = JSON.parse(localStorage.getItem('wheelie_leaderboard') || '[]');
+    // Afficher un message de chargement
+    leaderboardList.innerHTML = '<p style="color: #888;">Chargement...</p>';
+    
+    // Récupérer le classement depuis l'API
+    const leaderboard = await fetchLeaderboardFromAPI();
     
     if (leaderboard.length === 0) {
         leaderboardList.innerHTML = '<p style="color: #888;">Aucun score enregistré...</p>';
