@@ -1096,65 +1096,26 @@ function animate() {
                 bikeGroup.position.z -= state.speed;
             }
         } else if (GAME_SETTINGS.gameMode === 'free') {
-            // Gestion de l'accélération et freinage
-            if (state.keys.up || (GAME_SETTINGS.controlMode === 'analog' && analogData.y < -0.3)) {
-                state.freeMode.speed += CONFIG.freeModeAcceleration;
-                if (state.freeMode.speed > CONFIG.freeModeMaxSpeed) state.freeMode.speed = CONFIG.freeModeMaxSpeed;
-            } else if (state.keys.down || (GAME_SETTINGS.controlMode === 'analog' && analogData.y > 0.3)) {
-                state.freeMode.speed -= CONFIG.freeModeBrakeForce;
-                if (state.freeMode.speed < 0) state.freeMode.speed = 0;
-            } else {
-                state.freeMode.speed -= CONFIG.freeModeDeceleration;
-                if (state.freeMode.speed < 0) state.freeMode.speed = 0;
-            }
-
-            // Rotation de la route toutes les 10 secondes
-            state.freeMode.roadCurveTimer += 1/60;
-            if (state.freeMode.roadCurveTimer > 10) {
-                state.freeMode.roadCurveTimer = 0;
-                const rand = Math.random();
-                if (rand < 0.33) {
-                    state.freeMode.roadCurve = -0.02; // Tourne à gauche
-                } else if (rand < 0.66) {
-                    state.freeMode.roadCurve = 0.02; // Tourne à droite
-                } else {
-                    state.freeMode.roadCurve = 0; // Tout droit
-                }
-            }
-
-            // Déplacement latéral
             let moveX = 0;
+            let moveZ = 0;
             if (GAME_SETTINGS.controlMode === 'analog' && analogData.active) {
                 moveX = analogData.x * CONFIG.freeModeSpeed * 3;
+                moveZ = analogData.y * CONFIG.freeModeSpeed * 3;
             } else {
-                if (state.keys.left || state.keys.right) {
-                    if (state.keys.left) moveX -= CONFIG.freeModeSpeed * 3;
-                    if (state.keys.right) moveX += CONFIG.freeModeSpeed * 3;
-                }
+                if (state.keys.left) moveX -= CONFIG.freeModeSpeed * 3;
+                if (state.keys.right) moveX += CONFIG.freeModeSpeed * 3;
+                if (state.keys.up) moveZ -= CONFIG.freeModeSpeed * 3;
+                if (state.keys.down) moveZ += CONFIG.freeModeSpeed * 3;
             }
-
-            // Appliquer la courbure de la route
-            bikeGroup.position.x += moveX + state.freeMode.roadCurve;
-
-            // Avancer selon la vitesse
-            const moveZ = -state.freeMode.speed;
+            bikeGroup.position.x += moveX;
             bikeGroup.position.z += moveZ;
-
-            // Orientation de la moto
-            if (Math.abs(moveX) > 0.01) {
-                const targetRotation = Math.atan2(moveX, -state.freeMode.speed);
-                bikeGroup.rotation.y += (targetRotation - bikeGroup.rotation.y) * 0.1;
-            } else if (state.freeMode.roadCurve !== 0) {
-                const curveRotation = state.freeMode.roadCurve * 20;
-                bikeGroup.rotation.y += (curveRotation - bikeGroup.rotation.y) * 0.05;
+            if (Math.abs(moveX) > 0.01 || Math.abs(moveZ) > 0.01) {
+                const targetRotation = Math.atan2(moveX, moveZ);
+                bikeGroup.rotation.y = targetRotation;
             }
-
-            // Rotation des roues
-            const wheelSpeed = Math.sqrt(moveX * moveX + moveZ * moveZ);
-            if (bikeGroup.userData.frontWheel) bikeGroup.userData.frontWheel.rotation.x -= wheelSpeed * 2;
-            if (bikeGroup.userData.backWheel) bikeGroup.userData.backWheel.rotation.x -= wheelSpeed * 2;
-            
-            // Limites de la route
+            const speed = Math.sqrt(moveX * moveX + moveZ * moveZ);
+            if (bikeGroup.userData.frontWheel) bikeGroup.userData.frontWheel.rotation.x -= speed * 2;
+            if (bikeGroup.userData.backWheel) bikeGroup.userData.backWheel.rotation.x -= speed * 2;
             if (bikeGroup.position.x > 9) bikeGroup.position.x = 9;
             if (bikeGroup.position.x < -9) bikeGroup.position.x = -9;
 
@@ -1227,41 +1188,6 @@ function animate() {
             }
 
             state.distance += Math.abs(moveZ) + Math.abs(moveX);
-            
-            // Système de score pour le mode libre
-            const kmhFree = state.freeMode.speed * 50;
-            
-            // Seulement donner des points si la vitesse dépasse 20 km/h (en mouvement)
-            if (kmhFree > 20) {
-                let scoreIncrement = dt; // 1 point par seconde de base
-                
-                // Multiplicateur de vitesse progressif
-                let speedMultiplier = 1.0;
-                
-                if (kmhFree >= 150) {
-                    speedMultiplier = 1.5;
-                } else {
-                    // Progression linéaire de x1 à x1.5 entre 20 et 150 km/h
-                    speedMultiplier = 1.0 + ((kmhFree - 20) / 130) * 0.5;
-                }
-                
-                // Multiplicateur de wheelie progressif
-                let wheelieMultiplier = 1.0;
-                if (state.bike.angle > 0.2) {
-                    const wheelieProgress = Math.min((state.bike.angle - 0.2) / (CONFIG.maxAngle - 0.2), 1);
-                    wheelieMultiplier = 1.0 + (wheelieProgress * 0.33);
-                }
-                
-                const totalMultiplier = speedMultiplier * wheelieMultiplier;
-                scoreIncrement *= totalMultiplier;
-                state.score += scoreIncrement;
-            }
-            
-            // Effets visuels de vitesse au-delà de 100 km/h
-            if (kmhFree > 100 && Math.random() > 0.7) {
-                createSpeedLine();
-            }
-            updateSpeedLines(dt);
         } else {
             let isAccelerating = state.keys.up;
             let isBraking = state.keys.down;
@@ -1360,7 +1286,7 @@ function animate() {
 
             // Nouveau système de score basé sur le temps
             // Base : 1 point par seconde (60 points par minute)
-            const kmh = state.speed * 50;
+            // Utiliser la variable kmh déjà déclarée plus haut
             
             // Seulement donner des points si la vitesse dépasse 20 km/h (en mouvement)
             if (kmh > 20) {
@@ -1585,9 +1511,7 @@ function updateUI() {
     const speedText = document.getElementById('speed-text');
     const speedNeedle = document.getElementById('gauge-needle');
     if (speedText && speedNeedle) {
-        const kmh = GAME_SETTINGS.gameMode === 'free' ? 
-            Math.max(0, Math.floor(state.freeMode.speed * 50)) :
-            Math.max(0, Math.floor(state.speed * 50));
+        const kmh = Math.max(0, Math.floor(state.speed * 50));
         speedText.innerText = `${kmh}`;
         const maxKmh = 200;
         const pct = Math.min(1, kmh / maxKmh);
