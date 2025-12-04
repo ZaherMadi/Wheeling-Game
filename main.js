@@ -29,7 +29,7 @@ let state = {
     isPlaying: false,
     isPaused: false,
     score: 0,
-    highScore: parseInt(localStorage.getItem('wheelieHighScore')) || 0,
+    highScore: parseInt(localStorage.getItem('wheelie_high_score')) || 0,
     speed: 0,
     distance: 0,
     gameTime: 0,
@@ -1010,18 +1010,34 @@ function updateSpeedLines(dt) {
 function gameOver() {
     state.isPlaying = false;
     state.skidding = false;
+    const currentScore = Math.floor(state.score);
+    
     if (state.score > state.highScore) {
-        state.highScore = Math.floor(state.score);
+        state.highScore = currentScore;
         localStorage.setItem('wheelie_high_score', state.highScore);
     }
+    
     const finalScore = document.getElementById('final-score');
     const gameOverScreen = document.getElementById('game-over-screen');
     const bestScore = document.getElementById('best-score-gameover');
-    if (finalScore) finalScore.innerText = Math.floor(state.score);
+    if (finalScore) finalScore.innerText = currentScore;
     if (bestScore) bestScore.innerText = state.highScore;
     if (gameOverScreen) gameOverScreen.classList.add('active');
+    
     const mobileControls = document.getElementById('mobile-controls');
     if (mobileControls) mobileControls.style.display = 'none';
+    
+    // Afficher la popup de pseudo tant qu'on n'a pas de pseudo
+    const nickname = localStorage.getItem('wheelie_nickname');
+    if (!nickname) {
+        // Afficher la popup de pseudo après un court délai
+        setTimeout(() => {
+            showNicknamePopup(currentScore);
+        }, 1000);
+    } else {
+        // Mettre à jour le score dans le leaderboard
+        updateLeaderboard(nickname, currentScore);
+    }
 }
 
 function animate() {
@@ -1917,5 +1933,140 @@ document.getElementById('quality-low').addEventListener('click', () => {
 document.getElementById('start-btn').addEventListener('click', startGame);
 document.getElementById('restart-btn').addEventListener('click', startGame);
 document.getElementById('pause-btn').addEventListener('click', togglePause);
+
+// Nickname & Leaderboard Functions
+function showNicknamePopup(score) {
+    const popup = document.getElementById('nickname-popup');
+    const popupScore = document.getElementById('popup-score');
+    const nicknameInput = document.getElementById('nickname-input');
+    
+    if (popup && popupScore && nicknameInput) {
+        popupScore.innerText = score;
+        nicknameInput.value = '';
+        popup.style.display = 'flex';
+        nicknameInput.focus();
+    }
+}
+
+function submitNickname() {
+    const nicknameInput = document.getElementById('nickname-input');
+    const nickname = nicknameInput.value.trim();
+    
+    if (nickname.length > 0) {
+        // Sauvegarder le pseudo
+        localStorage.setItem('wheelie_nickname', nickname);
+        
+        // Mettre à jour le leaderboard
+        const currentScore = Math.floor(state.score);
+        updateLeaderboard(nickname, currentScore);
+        
+        // Afficher le pseudo dans le menu
+        displayNickname();
+        
+        // Fermer la popup
+        closeNicknamePopup();
+    }
+}
+
+function closeNicknamePopup() {
+    const popup = document.getElementById('nickname-popup');
+    if (popup) popup.style.display = 'none';
+}
+
+function displayNickname() {
+    const nickname = localStorage.getItem('wheelie_nickname');
+    const nicknameDisplay = document.getElementById('nickname-display');
+    const playerNickname = document.getElementById('player-nickname');
+    
+    if (nickname && nicknameDisplay && playerNickname) {
+        nicknameDisplay.innerText = nickname;
+        playerNickname.style.display = 'block';
+    }
+}
+
+function updateLeaderboard(nickname, score) {
+    // Récupérer le leaderboard actuel
+    let leaderboard = JSON.parse(localStorage.getItem('wheelie_leaderboard') || '[]');
+    
+    // Chercher si le joueur existe déjà
+    const existingIndex = leaderboard.findIndex(entry => entry.nickname === nickname);
+    
+    if (existingIndex !== -1) {
+        // Mettre à jour le score seulement s'il est meilleur
+        if (score > leaderboard[existingIndex].score) {
+            leaderboard[existingIndex].score = score;
+        }
+    } else {
+        // Ajouter le nouveau joueur
+        leaderboard.push({ nickname, score });
+    }
+    
+    // Trier par score décroissant
+    leaderboard.sort((a, b) => b.score - a.score);
+    
+    // Garder seulement le top 10
+    leaderboard = leaderboard.slice(0, 10);
+    
+    // Sauvegarder
+    localStorage.setItem('wheelie_leaderboard', JSON.stringify(leaderboard));
+}
+
+function showLeaderboard() {
+    const startScreen = document.getElementById('start-screen');
+    const leaderboardScreen = document.getElementById('leaderboard-screen');
+    const leaderboardList = document.getElementById('leaderboard-list');
+    
+    if (startScreen) startScreen.classList.remove('active');
+    if (leaderboardScreen) leaderboardScreen.classList.add('active');
+    
+    // Charger et afficher le classement
+    const leaderboard = JSON.parse(localStorage.getItem('wheelie_leaderboard') || '[]');
+    
+    if (leaderboard.length === 0) {
+        leaderboardList.innerHTML = '<p style="color: #888;">Aucun score enregistré...</p>';
+    } else {
+        let html = '';
+        leaderboard.forEach((entry, index) => {
+            const rank = index + 1;
+            const medal = rank === 1 ? '🥇' : rank === 2 ? '🥈' : rank === 3 ? '🥉' : `${rank}.`;
+            html += `
+                <div class="leaderboard-entry">
+                    <div class="leaderboard-rank">${medal}</div>
+                    <div class="leaderboard-name">${entry.nickname}</div>
+                    <div class="leaderboard-score">${entry.score}</div>
+                </div>
+            `;
+        });
+        leaderboardList.innerHTML = html;
+    }
+}
+
+// Event Listeners pour le système de pseudo et classement
+document.getElementById('submit-nickname')?.addEventListener('click', submitNickname);
+document.getElementById('close-nickname-popup')?.addEventListener('click', closeNicknamePopup);
+document.getElementById('skip-nickname')?.addEventListener('click', closeNicknamePopup);
+
+document.getElementById('nickname-input')?.addEventListener('keypress', (e) => {
+    if (e.key === 'Enter') {
+        e.preventDefault();
+        submitNickname();
+    }
+});
+
+// Empêcher le zoom sur focus de l'input sur mobile
+document.getElementById('nickname-input')?.addEventListener('focus', function(e) {
+    this.style.fontSize = '16px'; // Évite le zoom automatique sur iOS
+});
+
+document.getElementById('leaderboard-btn')?.addEventListener('click', showLeaderboard);
+document.getElementById('back-from-leaderboard')?.addEventListener('click', () => {
+    const leaderboardScreen = document.getElementById('leaderboard-screen');
+    const startScreen = document.getElementById('start-screen');
+    if (leaderboardScreen) leaderboardScreen.classList.remove('active');
+    if (startScreen) startScreen.classList.add('active');
+});
+
+// Afficher le pseudo au chargement si il existe
+displayNickname();
 
 init();
