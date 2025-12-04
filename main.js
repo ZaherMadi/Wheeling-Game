@@ -1007,28 +1007,43 @@ function updateSpeedLines(dt) {
     }
 }
 
-function gameOver() {
+async function gameOver() {
     state.isPlaying = false;
     state.skidding = false;
     const currentScore = Math.floor(state.score);
     
-    if (state.score > state.highScore) {
-        state.highScore = currentScore;
-        localStorage.setItem('wheelie_high_score', state.highScore);
+    // Récupérer le nickname
+    const nickname = localStorage.getItem('wheelie_nickname');
+    
+    // Récupérer le high score depuis l'API si on a un nickname, sinon depuis localStorage
+    let highScore = state.highScore;
+    if (nickname) {
+        const stats = await getPlayerStats(nickname);
+        if (stats && stats.best_score) {
+            highScore = stats.best_score;
+            state.highScore = highScore;
+            localStorage.setItem('wheelie_high_score', highScore);
+        }
+    }
+    
+    // Mettre à jour le high score si le score actuel est meilleur
+    if (currentScore > highScore) {
+        highScore = currentScore;
+        state.highScore = highScore;
+        localStorage.setItem('wheelie_high_score', highScore);
     }
     
     const finalScore = document.getElementById('final-score');
     const gameOverScreen = document.getElementById('game-over-screen');
     const bestScore = document.getElementById('best-score-gameover');
     if (finalScore) finalScore.innerText = currentScore;
-    if (bestScore) bestScore.innerText = state.highScore;
+    if (bestScore) bestScore.innerText = highScore;
     if (gameOverScreen) gameOverScreen.classList.add('active');
     
     const mobileControls = document.getElementById('mobile-controls');
     if (mobileControls) mobileControls.style.display = 'none';
     
     // Afficher la popup de pseudo tant qu'on n'a pas de pseudo
-    const nickname = localStorage.getItem('wheelie_nickname');
     if (!nickname) {
         // Afficher la popup de pseudo après un court délai
         setTimeout(() => {
@@ -1037,6 +1052,8 @@ function gameOver() {
     } else {
         // Mettre à jour le score dans le leaderboard
         updateLeaderboard(nickname, currentScore);
+        // Envoyer le score à l'API
+        await sendScoreToAPI(nickname, currentScore);
     }
 }
 
@@ -1911,6 +1928,26 @@ async function fetchLeaderboardFromAPI() {
     } catch (error) {
         console.error('Erreur API:', error);
         return [];
+    }
+}
+
+// Fonction pour récupérer les statistiques d'un joueur depuis l'API
+async function getPlayerStats(nickname) {
+    try {
+        const response = await fetch(`${API_BASE_URL}/player/${encodeURIComponent(nickname)}`);
+        
+        if (!response.ok) {
+            if (response.status === 404) {
+                return null; // Joueur non trouvé
+            }
+            throw new Error('Erreur lors de la récupération des stats');
+        }
+        
+        const data = await response.json();
+        return data;
+    } catch (error) {
+        console.error('Erreur API:', error);
+        return null;
     }
 }
 
