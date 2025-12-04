@@ -898,7 +898,7 @@
       3</div>
 
     <!-- Pause Button -->
-    <button id="pause-btn">⬅️</button>
+    <button id="pause-btn">⏸️</button>
 
     <!-- Mobile Controls (Hidden by default) -->
     <div id="mobile-controls" style="display: none;">
@@ -1079,7 +1079,9 @@
       }
     }
 
-    closeBtn.addEventListener('click', () => {
+    closeBtn.addEventListener('click', (e) => {
+      e.preventDefault();
+      e.stopPropagation();
       warningDismissed = true;
       localStorage.setItem('portrait-warning-dismissed', 'true');
       portraitWarning.style.display = 'none';
