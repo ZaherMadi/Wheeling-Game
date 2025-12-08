@@ -44,6 +44,7 @@ let state = {
     angleMultiplier: 1.0, // Multiplicateur basé sur l'angle (x1 à x2)
     timeMultiplier: 1.0, // Multiplicateur progressif basé sur le temps (x2 à x5)
     currentMultiplier: 1.0, // Multiplicateur total (angle × temps)
+    lastTimeMultiplierDisplay: 0, // Dernier temps d'affichage du multiplicateur de temps
     keys: {
         left: false,
         right: false,
@@ -791,6 +792,7 @@ function resetGame() {
     state.angleMultiplier = 1.0;
     state.timeMultiplier = 1.0;
     state.currentMultiplier = 1.0;
+    state.lastTimeMultiplierDisplay = 0;
     state.smokeParticles.forEach(p => {
         scene.remove(p.mesh);
         p.mesh.geometry.dispose();
@@ -1604,26 +1606,82 @@ function updateUI() {
 }
 
 function updateMultiplierDisplay() {
-    const multiplierEl = document.getElementById('multiplier-display');
-    if (!multiplierEl) return;
+    // 1. Multiplicateur de temps (orange/jaune/rouge) - popup toutes les 3 secondes
+    const timeMultEl = document.getElementById('time-multiplier-display');
+    if (timeMultEl && state.timeMultiplier > 1.0) {
+        const currentTime = Date.now();
+        if (currentTime - state.lastTimeMultiplierDisplay > 3000) {
+            state.lastTimeMultiplierDisplay = currentTime;
 
-    // Afficher le pourcentage d'inclinaison et les multiplicateurs
-    if (state.wheeliePercentage > 0 || state.timeMultiplier > 1.0) {
-        const percentage = Math.floor(state.wheeliePercentage);
-        const angleMultText = `x${state.angleMultiplier.toFixed(2)}`;
-        const timeMultText = state.timeMultiplier > 1.0 ? ` • x${state.timeMultiplier.toFixed(1)}` : '';
-        const totalMultText = `x${state.currentMultiplier.toFixed(2)}`;
+            // Position aléatoire: gauche ou droite
+            const isLeft = Math.random() < 0.5;
+            if (isLeft) {
+                timeMultEl.style.left = '15%';
+                timeMultEl.style.right = 'auto';
+                timeMultEl.style.transform = 'rotate(-8deg)';
+            } else {
+                timeMultEl.style.right = '15%';
+                timeMultEl.style.left = 'auto';
+                timeMultEl.style.transform = 'rotate(8deg)';
+            }
 
-        // Afficher: pourcentage • multiplicateur d'angle • multiplicateur de temps (si actif) = total
-        if (state.timeMultiplier > 1.0) {
-            multiplierEl.textContent = `${percentage}% • ${angleMultText} • ${timeMultText} = ${totalMultText}`;
-        } else {
-            multiplierEl.textContent = `${percentage}% • ${totalMultText}`;
+            // Couleur selon le niveau: orange -> jaune -> rouge
+            let color, shadow;
+            if (state.timeMultiplier >= 4.5) {
+                color = '#FF1744'; // Rouge vif
+                shadow = '3px 3px 0px #000, 0 0 30px rgba(255, 23, 68, 0.9)';
+            } else if (state.timeMultiplier >= 3.5) {
+                color = '#FF9800'; // Orange
+                shadow = '3px 3px 0px #000, 0 0 25px rgba(255, 152, 0, 0.8)';
+            } else {
+                color = '#FFC107'; // Jaune
+                shadow = '3px 3px 0px #000, 0 0 20px rgba(255, 193, 7, 0.7)';
+            }
+
+            timeMultEl.style.color = color;
+            timeMultEl.style.textShadow = shadow;
+            timeMultEl.textContent = `x${state.timeMultiplier.toFixed(1)}`;
+            timeMultEl.classList.add('show');
+
+            // Cacher après 2.5 secondes
+            setTimeout(() => {
+                timeMultEl.classList.remove('show');
+                setTimeout(() => {
+                    timeMultEl.style.opacity = '0';
+                }, 400);
+            }, 2500);
         }
+    }
 
-        multiplierEl.style.opacity = '1';
-    } else {
-        multiplierEl.style.opacity = '0';
+    // 2. Multiplicateur d'angle (bleu) - fixe en dessous
+    const angleMultEl = document.getElementById('angle-multiplier-display');
+    if (angleMultEl) {
+        if (state.angleMultiplier > 1.0) {
+            angleMultEl.textContent = `x${state.angleMultiplier.toFixed(2)}`;
+            angleMultEl.style.opacity = '1';
+        } else {
+            angleMultEl.style.opacity = '0';
+        }
+    }
+
+    // 3. Pourcentage de wheeling avec emoji moto
+    const percentageEl = document.getElementById('wheelie-percentage-display');
+    const bikeEmoji = document.getElementById('bike-emoji');
+    const percentageText = document.getElementById('percentage-text');
+
+    if (percentageEl && bikeEmoji && percentageText) {
+        if (state.wheeliePercentage > 0) {
+            percentageText.textContent = `${Math.floor(state.wheeliePercentage)}%`;
+
+            // Incliner l'emoji selon le pourcentage
+            const rotation = -45 + (state.wheeliePercentage / 100) * 45; // De -45° à 0°
+            const scale = 1 + (state.wheeliePercentage / 100) * 0.3; // De 1 à 1.3
+            bikeEmoji.style.transform = `rotate(${rotation}deg) scale(${scale})`;
+
+            percentageEl.style.opacity = '1';
+        } else {
+            percentageEl.style.opacity = '0';
+        }
     }
 }
 

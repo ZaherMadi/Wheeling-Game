@@ -234,20 +234,78 @@
       z-index: 10;
     }
 
-    #multiplier-display {
+    /* Multiplicateur de temps - Orange/Jaune/Rouge popup */
+    #time-multiplier-display {
       position: absolute;
-      top: 70px;
-      left: 50%;
-      transform: translateX(-50%);
+      top: 30px;
       font-family: 'Russo One', sans-serif;
-      font-size: 28px;
+      font-size: 48px;
       font-weight: bold;
-      color: #00BFFF;
-      text-shadow: 2px 2px 0px #000, 0 0 15px #00BFFF;
       z-index: 15;
       pointer-events: none;
       opacity: 0;
+      transition: opacity 0.4s ease, transform 0.4s ease;
+    }
+
+    #time-multiplier-display.show {
+      opacity: 1;
+      animation: popBounce 0.5s ease;
+    }
+
+    @keyframes popBounce {
+      0% { transform: scale(0.5) rotate(-5deg); }
+      50% { transform: scale(1.2) rotate(5deg); }
+      100% { transform: scale(1) rotate(0deg); }
+    }
+
+    /* Multiplicateur d'angle - Bleu foncé fixe */
+    #angle-multiplier-display {
+      position: absolute;
+      top: 90px;
+      left: 50%;
+      transform: translateX(-50%);
+      font-family: 'Russo One', sans-serif;
+      font-size: 32px;
+      font-weight: bold;
+      color: #1E90FF;
+      text-shadow:
+        0 0 10px rgba(30, 144, 255, 0.8),
+        0 0 20px rgba(30, 144, 255, 0.6),
+        0 0 30px rgba(30, 144, 255, 0.4),
+        2px 2px 0px #000;
+      z-index: 14;
+      pointer-events: none;
+      opacity: 0;
       transition: opacity 0.3s ease;
+    }
+
+    /* Pourcentage de wheeling - Bas gauche avec emoji */
+    #wheelie-percentage-display {
+      position: absolute;
+      bottom: 120px;
+      left: 20px;
+      font-family: 'Russo One', sans-serif;
+      font-size: 28px;
+      font-weight: bold;
+      color: #FFD700;
+      text-shadow: 2px 2px 0px #000, 0 0 10px rgba(255, 215, 0, 0.6);
+      z-index: 14;
+      pointer-events: none;
+      opacity: 0;
+      transition: opacity 0.3s ease;
+      display: flex;
+      align-items: center;
+      gap: 10px;
+    }
+
+    #bike-emoji {
+      font-size: 36px;
+      display: inline-block;
+      transition: transform 0.2s ease;
+    }
+
+    #percentage-text {
+      font-size: 28px;
     }
 
     /* Balance Meter - Top Right */
@@ -911,8 +969,17 @@
   <div id="ui-layer">
     <div id="score-container">Score: <span id="score">0</span></div>
 
-    <!-- Multiplicateur animé -->
-    <div id="multiplier-display"></div>
+    <!-- Multiplicateur de temps (orange/jaune/rouge) - popup animé -->
+    <div id="time-multiplier-display"></div>
+
+    <!-- Multiplicateur d'angle (bleu) - fixe -->
+    <div id="angle-multiplier-display"></div>
+
+    <!-- Pourcentage de wheeling avec emoji moto -->
+    <div id="wheelie-percentage-display">
+      <span id="bike-emoji">🏍️</span>
+      <span id="percentage-text">0%</span>
+    </div>
 
     <!-- Sports Car Speedometer -->
     <div id="speedometer">
