@@ -39,6 +39,9 @@ let state = {
         lateralVelocity: 0,
         maxWheelieTimer: 0, // Timer for max wheelie in free mode
     },
+    wheelieTime: 0, // Temps passé en wheeling à plus de 50%
+    currentMultiplier: 1.0, // Multiplicateur actuel
+    lastMultiplierDisplay: 0, // Dernier temps d'affichage du multiplicateur
     keys: {
         left: false,
         right: false,
@@ -781,6 +784,9 @@ function resetGame() {
     state.isPaused = false;
     state.skidding = false;
     state.skidTimer = 0;
+    state.wheelieTime = 0;
+    state.currentMultiplier = 1.0;
+    state.lastMultiplierDisplay = 0;
     state.smokeParticles.forEach(p => {
         scene.remove(p.mesh);
         p.mesh.geometry.dispose();
@@ -1308,37 +1314,46 @@ function animate() {
             // Seulement donner des points si la vitesse dépasse 20 km/h (en mouvement)
             if (kmh > 20) {
                 let scoreIncrement = dt; // dt est en secondes, donc 1 point/seconde de base
-                
-                // Multiplicateur de vitesse progressif
-                let speedMultiplier = 1.0;
-                
-                if (kmh >= 150) {
-                    // À partir de 150 km/h, on est au max (x1.5 pour la vitesse seule)
-                    speedMultiplier = 1.5;
+
+                // Vérifier si on est en wheeling à plus de 50% de la hauteur max
+                const wheelieThreshold = CONFIG.maxAngle * 0.5; // 50% de la hauteur max
+                const isInHighWheelie = state.bike.angle > wheelieThreshold;
+
+                if (isInHighWheelie) {
+                    // Augmenter le temps de wheeling
+                    state.wheelieTime += dt;
+
+                    // Calculer le multiplicateur progressif : de x2 à x5 sur 30 secondes
+                    // Formule : 2 + (temps / 30) * 3, plafonné à 5
+                    state.currentMultiplier = Math.min(2.0 + (state.wheelieTime / 30.0) * 3.0, 5.0);
                 } else {
-                    // Progression linéaire de x1 à x1.5 entre 20 et 150 km/h
-                    speedMultiplier = 1.0 + ((kmh - 20) / 130) * 0.5;
+                    // Réinitialiser le temps de wheeling et le multiplicateur
+                    state.wheelieTime = 0;
+                    state.currentMultiplier = 1.0;
                 }
-                
-                // Multiplicateur de wheelie progressif
-                let wheelieMultiplier = 1.0;
-                if (state.bike.angle > 0.2) {
-                    // Progression de x1 à x1.33 selon l'angle du wheelie
-                    const wheelieProgress = Math.min((state.bike.angle - 0.2) / (CONFIG.maxAngle - 0.2), 1);
-                    wheelieMultiplier = 1.0 + (wheelieProgress * 0.33);
+
+                // Multiplicateur de vitesse (bonus additionnel)
+                let speedMultiplier = 1.0;
+                if (kmh >= 150) {
+                    speedMultiplier = 1.3;
+                } else {
+                    speedMultiplier = 1.0 + ((kmh - 20) / 130) * 0.3;
                 }
-                
-                // Multiplicateur total : vitesse × wheelie
-                // Maximum possible : 1.5 × 1.33 = 2.0 (à 150 km/h en wheelie max)
-                const totalMultiplier = speedMultiplier * wheelieMultiplier;
-                
+
                 // Application du multiplicateur de difficulté
                 let difficultyMult = 1.0;
                 if (GAME_SETTINGS.difficulty === 'medium') difficultyMult = 1.2;
                 if (GAME_SETTINGS.difficulty === 'hard') difficultyMult = 1.4;
-                
-                scoreIncrement *= totalMultiplier * difficultyMult;
+
+                // Multiplicateur total : wheeling × vitesse × difficulté
+                const totalMultiplier = state.currentMultiplier * speedMultiplier * difficultyMult;
+
+                scoreIncrement *= totalMultiplier;
                 state.score += scoreIncrement;
+            } else {
+                // Si vitesse trop faible, réinitialiser le wheeling
+                state.wheelieTime = 0;
+                state.currentMultiplier = 1.0;
             }
         }
 
@@ -1395,6 +1410,7 @@ function animate() {
     }
     updateCamera();
     updateUI();
+    updateMultiplierDisplay();
     renderer.render(scene, camera);
 }
 
@@ -1544,6 +1560,57 @@ function updateUI() {
         // Let's calibrate: 0 speed = 135deg. Max speed = 405deg.
         const deg = 135 + (pct * 270);
         speedNeedle.style.transform = `rotate(${deg}deg)`;
+    }
+}
+
+function updateMultiplierDisplay() {
+    const multiplierEl = document.getElementById('multiplier-display');
+    if (!multiplierEl) return;
+
+    const wheelieThreshold = CONFIG.maxAngle * 0.5;
+    const isInHighWheelie = state.bike.angle > wheelieThreshold;
+
+    if (isInHighWheelie && state.currentMultiplier >= 2.0) {
+        // Afficher le multiplicateur toutes les 3 secondes
+        const currentTime = Date.now();
+        if (currentTime - state.lastMultiplierDisplay > 3000) {
+            state.lastMultiplierDisplay = currentTime;
+
+            // Position aléatoire : gauche ou droite
+            const isLeft = Math.random() < 0.5;
+            const topPosition = 30 + Math.random() * 40; // Entre 30% et 70% de la hauteur
+
+            if (isLeft) {
+                multiplierEl.style.left = '10%';
+                multiplierEl.style.right = 'auto';
+            } else {
+                multiplierEl.style.right = '10%';
+                multiplierEl.style.left = 'auto';
+            }
+            multiplierEl.style.top = `${topPosition}%`;
+
+            // Afficher le multiplicateur avec animation
+            const mult = state.currentMultiplier.toFixed(1);
+            multiplierEl.textContent = `x${mult} !!!`;
+            multiplierEl.classList.remove('hide');
+            multiplierEl.classList.add('show');
+
+            // Couleur selon le niveau du multiplicateur
+            if (state.currentMultiplier >= 4.5) {
+                multiplierEl.style.color = '#FF00FF'; // Magenta pour x4.5+
+                multiplierEl.style.textShadow = '3px 3px 0px #000, 0 0 30px #FF00FF';
+            } else if (state.currentMultiplier >= 3.5) {
+                multiplierEl.style.color = '#FF4444'; // Rouge pour x3.5+
+                multiplierEl.style.textShadow = '3px 3px 0px #000, 0 0 25px #FF4444';
+            } else {
+                multiplierEl.style.color = '#FFD700'; // Jaune pour x2+
+                multiplierEl.style.textShadow = '3px 3px 0px #000, 0 0 20px #FFD700';
+            }
+        }
+    } else {
+        // Cacher doucement le multiplicateur quand on redescend
+        multiplierEl.classList.remove('show');
+        multiplierEl.classList.add('hide');
     }
 }
 

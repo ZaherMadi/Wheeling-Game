@@ -234,6 +234,34 @@
       z-index: 10;
     }
 
+    #multiplier-display {
+      position: absolute;
+      font-family: 'Russo One', sans-serif;
+      font-size: 48px;
+      font-weight: bold;
+      color: #FF4444;
+      text-shadow: 3px 3px 0px #000, 0 0 20px #FF4444;
+      z-index: 15;
+      pointer-events: none;
+      opacity: 0;
+      transition: opacity 0.5s ease;
+    }
+
+    #multiplier-display.show {
+      opacity: 1;
+      animation: pulse 0.5s ease;
+    }
+
+    #multiplier-display.hide {
+      opacity: 0;
+    }
+
+    @keyframes pulse {
+      0% { transform: scale(0.8); }
+      50% { transform: scale(1.2); }
+      100% { transform: scale(1); }
+    }
+
     /* Balance Meter - Top Right */
     #balance-meter {
       position: absolute;
@@ -894,6 +922,9 @@
   <!-- HUD -->
   <div id="ui-layer">
     <div id="score-container">Score: <span id="score">0</span></div>
+
+    <!-- Multiplicateur animé -->
+    <div id="multiplier-display"></div>
 
     <!-- Sports Car Speedometer -->
     <div id="speedometer">
