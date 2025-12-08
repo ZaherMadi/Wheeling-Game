@@ -39,9 +39,8 @@ let state = {
         lateralVelocity: 0,
         maxWheelieTimer: 0, // Timer for max wheelie in free mode
     },
-    wheelieTime: 0, // Temps passé en wheeling à plus de 50%
+    wheeliePercentage: 0, // Pourcentage d'inclinaison du wheeling (0-100%)
     currentMultiplier: 1.0, // Multiplicateur actuel
-    lastMultiplierDisplay: 0, // Dernier temps d'affichage du multiplicateur
     keys: {
         left: false,
         right: false,
@@ -784,9 +783,8 @@ function resetGame() {
     state.isPaused = false;
     state.skidding = false;
     state.skidTimer = 0;
-    state.wheelieTime = 0;
+    state.wheeliePercentage = 0;
     state.currentMultiplier = 1.0;
-    state.lastMultiplierDisplay = 0;
     state.smokeParticles.forEach(p => {
         scene.remove(p.mesh);
         p.mesh.geometry.dispose();
@@ -1274,7 +1272,18 @@ function animate() {
             }
             if (isBraking) {
                 lift -= CONFIG.wheelieLift * 2;
-                const brakePower = CONFIG.brakeForce * (1 + state.speed * 2);
+
+                // Système de freinage réaliste : moins efficace à haute vitesse
+                const kmh = state.speed * 50;
+                let brakeEfficiency = 1.0;
+
+                if (kmh > 100) {
+                    // À partir de 100 km/h, l'efficacité diminue progressivement
+                    // À 100 km/h: 100%, à 150 km/h: 50%, à 200 km/h: 30%
+                    brakeEfficiency = Math.max(0.3, 1.0 - ((kmh - 100) / 200));
+                }
+
+                const brakePower = CONFIG.brakeForce * brakeEfficiency;
                 state.speed = Math.max(0, state.speed - brakePower);
             }
             state.bike.angularVelocity += lift;
@@ -1315,22 +1324,14 @@ function animate() {
             if (kmh > 20) {
                 let scoreIncrement = dt; // dt est en secondes, donc 1 point/seconde de base
 
-                // Vérifier si on est en wheeling à plus de 50% de la hauteur max
-                const wheelieThreshold = CONFIG.maxAngle * 0.5; // 50% de la hauteur max
-                const isInHighWheelie = state.bike.angle > wheelieThreshold;
+                // Calculer le pourcentage d'inclinaison (0% à 100%)
+                const wheeliePercentage = Math.max(0, Math.min(100, (state.bike.angle / CONFIG.maxAngle) * 100));
+                state.wheeliePercentage = wheeliePercentage;
 
-                if (isInHighWheelie) {
-                    // Augmenter le temps de wheeling
-                    state.wheelieTime += dt;
-
-                    // Calculer le multiplicateur progressif : de x2 à x5 sur 30 secondes
-                    // Formule : 2 + (temps / 30) * 3, plafonné à 5
-                    state.currentMultiplier = Math.min(2.0 + (state.wheelieTime / 30.0) * 3.0, 5.0);
-                } else {
-                    // Réinitialiser le temps de wheeling et le multiplicateur
-                    state.wheelieTime = 0;
-                    state.currentMultiplier = 1.0;
-                }
+                // Multiplicateur instantané basé sur l'inclinaison : de x1 à x2
+                // 0% = x1, 50% = x1.5, 100% = x2
+                const wheelieMultiplier = 1.0 + (wheeliePercentage / 100.0);
+                state.currentMultiplier = wheelieMultiplier;
 
                 // Multiplicateur de vitesse (bonus additionnel)
                 let speedMultiplier = 1.0;
@@ -1346,13 +1347,13 @@ function animate() {
                 if (GAME_SETTINGS.difficulty === 'hard') difficultyMult = 1.4;
 
                 // Multiplicateur total : wheeling × vitesse × difficulté
-                const totalMultiplier = state.currentMultiplier * speedMultiplier * difficultyMult;
+                const totalMultiplier = wheelieMultiplier * speedMultiplier * difficultyMult;
 
                 scoreIncrement *= totalMultiplier;
                 state.score += scoreIncrement;
             } else {
-                // Si vitesse trop faible, réinitialiser le wheeling
-                state.wheelieTime = 0;
+                // Si vitesse trop faible, réinitialiser
+                state.wheeliePercentage = 0;
                 state.currentMultiplier = 1.0;
             }
         }
@@ -1567,50 +1568,15 @@ function updateMultiplierDisplay() {
     const multiplierEl = document.getElementById('multiplier-display');
     if (!multiplierEl) return;
 
-    const wheelieThreshold = CONFIG.maxAngle * 0.5;
-    const isInHighWheelie = state.bike.angle > wheelieThreshold;
+    // Afficher le pourcentage d'inclinaison et le multiplicateur en bleu
+    if (state.wheeliePercentage > 0) {
+        const percentage = Math.floor(state.wheeliePercentage);
+        const mult = state.currentMultiplier.toFixed(2);
 
-    if (isInHighWheelie && state.currentMultiplier >= 2.0) {
-        // Afficher le multiplicateur toutes les 3 secondes
-        const currentTime = Date.now();
-        if (currentTime - state.lastMultiplierDisplay > 3000) {
-            state.lastMultiplierDisplay = currentTime;
-
-            // Position aléatoire : gauche ou droite
-            const isLeft = Math.random() < 0.5;
-            const topPosition = 30 + Math.random() * 40; // Entre 30% et 70% de la hauteur
-
-            if (isLeft) {
-                multiplierEl.style.left = '10%';
-                multiplierEl.style.right = 'auto';
-            } else {
-                multiplierEl.style.right = '10%';
-                multiplierEl.style.left = 'auto';
-            }
-            multiplierEl.style.top = `${topPosition}%`;
-
-            // Afficher le multiplicateur avec animation
-            const mult = state.currentMultiplier.toFixed(1);
-            multiplierEl.textContent = `x${mult} !!!`;
-            multiplierEl.classList.remove('hide');
-            multiplierEl.classList.add('show');
-
-            // Couleur selon le niveau du multiplicateur
-            if (state.currentMultiplier >= 4.5) {
-                multiplierEl.style.color = '#FF00FF'; // Magenta pour x4.5+
-                multiplierEl.style.textShadow = '3px 3px 0px #000, 0 0 30px #FF00FF';
-            } else if (state.currentMultiplier >= 3.5) {
-                multiplierEl.style.color = '#FF4444'; // Rouge pour x3.5+
-                multiplierEl.style.textShadow = '3px 3px 0px #000, 0 0 25px #FF4444';
-            } else {
-                multiplierEl.style.color = '#FFD700'; // Jaune pour x2+
-                multiplierEl.style.textShadow = '3px 3px 0px #000, 0 0 20px #FFD700';
-            }
-        }
+        multiplierEl.textContent = `${percentage}% • x${mult}`;
+        multiplierEl.style.opacity = '1';
     } else {
-        // Cacher doucement le multiplicateur quand on redescend
-        multiplierEl.classList.remove('show');
-        multiplierEl.classList.add('hide');
+        multiplierEl.style.opacity = '0';
     }
 }
 

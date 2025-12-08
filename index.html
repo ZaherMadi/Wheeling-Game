@@ -236,30 +236,18 @@
 
     #multiplier-display {
       position: absolute;
+      top: 70px;
+      left: 50%;
+      transform: translateX(-50%);
       font-family: 'Russo One', sans-serif;
-      font-size: 48px;
+      font-size: 28px;
       font-weight: bold;
-      color: #FF4444;
-      text-shadow: 3px 3px 0px #000, 0 0 20px #FF4444;
+      color: #00BFFF;
+      text-shadow: 2px 2px 0px #000, 0 0 15px #00BFFF;
       z-index: 15;
       pointer-events: none;
       opacity: 0;
-      transition: opacity 0.5s ease;
-    }
-
-    #multiplier-display.show {
-      opacity: 1;
-      animation: pulse 0.5s ease;
-    }
-
-    #multiplier-display.hide {
-      opacity: 0;
-    }
-
-    @keyframes pulse {
-      0% { transform: scale(0.8); }
-      50% { transform: scale(1.2); }
-      100% { transform: scale(1); }
+      transition: opacity 0.3s ease;
     }
 
     /* Balance Meter - Top Right */
