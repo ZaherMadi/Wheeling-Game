@@ -40,7 +40,10 @@ let state = {
         maxWheelieTimer: 0, // Timer for max wheelie in free mode
     },
     wheeliePercentage: 0, // Pourcentage d'inclinaison du wheeling (0-100%)
-    currentMultiplier: 1.0, // Multiplicateur actuel
+    wheelieTime: 0, // Temps passé en wheeling à plus de 50%
+    angleMultiplier: 1.0, // Multiplicateur basé sur l'angle (x1 à x2)
+    timeMultiplier: 1.0, // Multiplicateur progressif basé sur le temps (x2 à x5)
+    currentMultiplier: 1.0, // Multiplicateur total (angle × temps)
     keys: {
         left: false,
         right: false,
@@ -784,6 +787,9 @@ function resetGame() {
     state.skidding = false;
     state.skidTimer = 0;
     state.wheeliePercentage = 0;
+    state.wheelieTime = 0;
+    state.angleMultiplier = 1.0;
+    state.timeMultiplier = 1.0;
     state.currentMultiplier = 1.0;
     state.smokeParticles.forEach(p => {
         scene.remove(p.mesh);
@@ -1328,10 +1334,31 @@ function animate() {
                 const wheeliePercentage = Math.max(0, Math.min(100, (state.bike.angle / CONFIG.maxAngle) * 100));
                 state.wheeliePercentage = wheeliePercentage;
 
-                // Multiplicateur instantané basé sur l'inclinaison : de x1 à x2
+                // Multiplicateur BLEU basé sur l'angle instantané : de x1 à x2
                 // 0% = x1, 50% = x1.5, 100% = x2
-                const wheelieMultiplier = 1.0 + (wheeliePercentage / 100.0);
-                state.currentMultiplier = wheelieMultiplier;
+                const angleMultiplier = 1.0 + (wheeliePercentage / 100.0);
+                state.angleMultiplier = angleMultiplier;
+
+                // Multiplicateur PROGRESSIF basé sur le temps en wheeling haut
+                const wheelieThreshold = CONFIG.maxAngle * 0.5; // 50% de la hauteur
+                const isInHighWheelie = state.bike.angle > wheelieThreshold;
+
+                if (isInHighWheelie) {
+                    // Augmenter le temps de wheeling
+                    state.wheelieTime += dt;
+
+                    // Multiplicateur progressif : de x2 à x5 sur 30 secondes
+                    state.timeMultiplier = Math.min(2.0 + (state.wheelieTime / 30.0) * 3.0, 5.0);
+                } else {
+                    // Réinitialiser le temps de wheeling
+                    state.wheelieTime = 0;
+                    state.timeMultiplier = 1.0;
+                }
+
+                // MULTIPLICATION des deux multiplicateurs
+                // Exemple: 75% d'angle (x1.75) × x3 de temps = x5.25 total
+                const combinedWheelieMultiplier = angleMultiplier * state.timeMultiplier;
+                state.currentMultiplier = combinedWheelieMultiplier;
 
                 // Multiplicateur de vitesse (bonus additionnel)
                 let speedMultiplier = 1.0;
@@ -1346,14 +1373,17 @@ function animate() {
                 if (GAME_SETTINGS.difficulty === 'medium') difficultyMult = 1.2;
                 if (GAME_SETTINGS.difficulty === 'hard') difficultyMult = 1.4;
 
-                // Multiplicateur total : wheeling × vitesse × difficulté
-                const totalMultiplier = wheelieMultiplier * speedMultiplier * difficultyMult;
+                // Multiplicateur total : (angle × temps) × vitesse × difficulté
+                const totalMultiplier = combinedWheelieMultiplier * speedMultiplier * difficultyMult;
 
                 scoreIncrement *= totalMultiplier;
                 state.score += scoreIncrement;
             } else {
                 // Si vitesse trop faible, réinitialiser
                 state.wheeliePercentage = 0;
+                state.wheelieTime = 0;
+                state.angleMultiplier = 1.0;
+                state.timeMultiplier = 1.0;
                 state.currentMultiplier = 1.0;
             }
         }
@@ -1577,12 +1607,20 @@ function updateMultiplierDisplay() {
     const multiplierEl = document.getElementById('multiplier-display');
     if (!multiplierEl) return;
 
-    // Afficher le pourcentage d'inclinaison et le multiplicateur en bleu
-    if (state.wheeliePercentage > 0) {
+    // Afficher le pourcentage d'inclinaison et les multiplicateurs
+    if (state.wheeliePercentage > 0 || state.timeMultiplier > 1.0) {
         const percentage = Math.floor(state.wheeliePercentage);
-        const mult = state.currentMultiplier.toFixed(2);
+        const angleMultText = `x${state.angleMultiplier.toFixed(2)}`;
+        const timeMultText = state.timeMultiplier > 1.0 ? ` • x${state.timeMultiplier.toFixed(1)}` : '';
+        const totalMultText = `x${state.currentMultiplier.toFixed(2)}`;
 
-        multiplierEl.textContent = `${percentage}% • x${mult}`;
+        // Afficher: pourcentage • multiplicateur d'angle • multiplicateur de temps (si actif) = total
+        if (state.timeMultiplier > 1.0) {
+            multiplierEl.textContent = `${percentage}% • ${angleMultText} • ${timeMultText} = ${totalMultText}`;
+        } else {
+            multiplierEl.textContent = `${percentage}% • ${totalMultText}`;
+        }
+
         multiplierEl.style.opacity = '1';
     } else {
         multiplierEl.style.opacity = '0';
