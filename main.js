@@ -1514,31 +1514,40 @@ function updateCamera() {
         // Camera distance logic - comfortable distance
         let distanceOffset = 8; // Base comfortable distance
 
-        if (kmh > 50) {
-            // Gradually pull back a bit after 50 km/h
-            const speedExcess = (kmh - 50) / 150; // 0 to 1 as speed goes from 50 to 200
-            distanceOffset = 8 + (speedExcess * 4); // Max pulls back to 12 at 200km/h
+        // Éloignement progressif dès 25 km/h (au lieu de 50)
+        if (kmh > 25) {
+            // Distance augmente progressivement de 25 à 150 km/h
+            const speedExcess = (kmh - 25) / 125; // 0 to 1 as speed goes from 25 to 150
+            distanceOffset = 8 + (speedExcess * 2); // Max distance: 10 (au lieu de 12)
         }
 
-        // Track time at high speed for auto-return
+        // Effet d'accélération: la moto s'éloigne un peu
+        const isAccelerating = state.keys.up || (GAME_SETTINGS.controlMode === 'analog' && analogData.y < -0.1);
+        if (isAccelerating && kmh > 25) {
+            distanceOffset += 1.5; // Petit éloignement à l'accélération
+        }
+
+        // Track time at medium speed for auto-return
         if (!state.highSpeedTimer) state.highSpeedTimer = 0;
-        if (kmh > 150) {
+        if (kmh > 60 && !isAccelerating) {
             state.highSpeedTimer += 1 / 60; // Increment in seconds
         } else {
             state.highSpeedTimer = 0;
         }
 
-        // After 3 seconds at high speed, gradually return camera closer
-        if (state.highSpeedTimer > 3) {
-            const returnFactor = Math.min((state.highSpeedTimer - 3) / 2, 1); // 0 to 1 over 2 seconds
-            distanceOffset = distanceOffset - (returnFactor * 2); // Bring back closer by 2 units
+        // Après 1.5 secondes sans accélérer, ramener la caméra progressivement
+        if (state.highSpeedTimer > 1.5) {
+            const returnFactor = Math.min((state.highSpeedTimer - 1.5) / 1.5, 1); // 0 to 1 over 1.5 seconds
+            distanceOffset = distanceOffset - (returnFactor * 2.5); // Rapproche de 2.5 unités
+            distanceOffset = Math.max(distanceOffset, 7.5); // Minimum distance
         }
 
         const targetZ = bikeGroup.position.z + distanceOffset;
         const targetY = 4.5;
 
+        // Rattrapage plus rapide (0.15 au lieu de 0.1)
         camera.position.x += (bikeGroup.position.x - camera.position.x) * 0.1 + shakeX;
-        camera.position.z += (targetZ - camera.position.z) * 0.1;
+        camera.position.z += (targetZ - camera.position.z) * 0.15;
         camera.position.y += (targetY - camera.position.y) * 0.1 + shakeY;
 
         // Look slightly ahead of the bike
