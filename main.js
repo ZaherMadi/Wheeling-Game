@@ -2056,7 +2056,7 @@ async function showLeaderboard() {
                 <div class="leaderboard-entry">
                     <div class="leaderboard-rank">${medal}</div>
                     <div class="leaderboard-name">${entry.nickname}</div>
-                    <div class="leaderboard-score">${entry.score}</div>
+                    <div class="leaderboard-score">${entry.best_score}</div>
                 </div>
             `;
         });
