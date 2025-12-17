@@ -1544,19 +1544,27 @@ function updateCamera() {
         const shakeY = (Math.random() - 0.5) * shakeIntensity * 0.5;
 
         // Camera distance logic - comfortable distance
-        let distanceOffset = 8; // Base comfortable distance
+        // Sur mobile, réduire fortement les distances pour garder la moto visible
+        // Priorité à la width pour éviter les bugs de user agent
+        const isMobileDevice = (window.innerWidth < 768) || isMobile();
+        
+        // Distance de base réduite sur mobile
+        let baseDistance = isMobileDevice ? 5 : 8;
+        let distanceOffset = baseDistance;
 
-        // Éloignement progressif dès 25 km/h (au lieu de 50)
+        // Éloignement progressif dès 25 km/h
         if (kmh > 25) {
-            // Distance augmente progressivement de 25 à 150 km/h
             const speedExcess = (kmh - 25) / 125; // 0 to 1 as speed goes from 25 to 150
-            distanceOffset = 8 + (speedExcess * 2); // Max distance: 10 (au lieu de 12)
+            // Sur mobile: max +0.5, sur desktop: max +2
+            const maxExtraDistance = isMobileDevice ? 0.5 : 2;
+            distanceOffset = baseDistance + (speedExcess * maxExtraDistance);
         }
 
         // Effet d'accélération: la moto s'éloigne un peu
         const isAccelerating = state.keys.up || (GAME_SETTINGS.controlMode === 'analog' && analogData.y < -0.1);
         if (isAccelerating && kmh > 25) {
-            distanceOffset += 1.5; // Petit éloignement à l'accélération
+            // Sur mobile: +0.2 max, sur desktop: +1.5
+            distanceOffset += isMobileDevice ? 0.2 : 1.5;
         }
 
         // Track time at medium speed for auto-return
@@ -1569,13 +1577,14 @@ function updateCamera() {
 
         // Après 1.5 secondes sans accélérer, ramener la caméra progressivement
         if (state.highSpeedTimer > 1.5) {
-            const returnFactor = Math.min((state.highSpeedTimer - 1.5) / 1.5, 1); // 0 to 1 over 1.5 seconds
-            distanceOffset = distanceOffset - (returnFactor * 2.5); // Rapproche de 2.5 unités
-            distanceOffset = Math.max(distanceOffset, 7.5); // Minimum distance
+            const returnFactor = Math.min((state.highSpeedTimer - 1.5) / 1.5, 1);
+            const returnAmount = isMobileDevice ? 0.5 : 2.5;
+            distanceOffset = distanceOffset - (returnFactor * returnAmount);
+            distanceOffset = Math.max(distanceOffset, baseDistance - 0.5);
         }
 
         const targetZ = bikeGroup.position.z + distanceOffset;
-        const targetY = 4.5;
+        const targetY = isMobileDevice ? 3.5 : 4.5; // Caméra plus basse sur mobile
 
         // Rattrapage plus rapide (0.15 au lieu de 0.1)
         camera.position.x += (bikeGroup.position.x - camera.position.x) * 0.1 + shakeX;
@@ -1673,8 +1682,8 @@ function updateMultiplierDisplay() {
         if (state.wheeliePercentage > 0) {
             percentageText.textContent = `${Math.floor(state.wheeliePercentage)}%`;
 
-            // Incliner l'emoji selon le pourcentage
-            const rotation = -45 + (state.wheeliePercentage / 100) * 45; // De -45° à 0°
+            // Incliner l'emoji selon le pourcentage (inversé pour que la moto se lève)
+            const rotation = 45 - (state.wheeliePercentage / 100) * 45; // De 45° à 0°
             const scale = 1 + (state.wheeliePercentage / 100) * 0.3; // De 1 à 1.3
             bikeEmoji.style.transform = `rotate(${rotation}deg) scale(${scale})`;
 
@@ -2016,7 +2025,28 @@ document.getElementById('quality-low').addEventListener('click', () => {
     applyGraphicsQuality();
 });
 
-document.getElementById('start-btn').addEventListener('click', startGame);
+document.getElementById('start-btn').addEventListener('click', () => {
+    document.getElementById('start-screen').classList.remove('active');
+    document.getElementById('mode-select-screen').classList.add('active');
+});
+
+document.getElementById('select-competitive').addEventListener('click', () => {
+    GAME_SETTINGS.gameMode = 'linear';
+    document.getElementById('mode-select-screen').classList.remove('active');
+    startGame();
+});
+
+document.getElementById('select-freemode').addEventListener('click', () => {
+    GAME_SETTINGS.gameMode = 'free';
+    document.getElementById('mode-select-screen').classList.remove('active');
+    startGame();
+});
+
+document.getElementById('back-from-mode-select').addEventListener('click', () => {
+    document.getElementById('mode-select-screen').classList.remove('active');
+    document.getElementById('start-screen').classList.add('active');
+});
+
 document.getElementById('restart-btn').addEventListener('click', startGame);
 document.getElementById('pause-btn').addEventListener('click', togglePause);
 
