@@ -1,4 +1,6 @@
 import * as THREE from 'three';
+import './src/style.css';
+import voiceLineGroups from './src/voice-lines.json';
 
 const CONFIG = {
     laneWidth: 10,
@@ -24,6 +26,11 @@ const CONFIG = {
     freeModeDeceleration: 0.01,
     freeModeBrakeForce: 0.04
 };
+
+const FIXED_STEP = 1 / 60;
+const daytimeSky = new THREE.Color(0x87CEEB);
+const nighttimeSky = new THREE.Color(0x0a0a2e);
+const skyColor = new THREE.Color();
 
 let state = {
     isPlaying: false,
@@ -80,6 +87,7 @@ const renderer = new THREE.WebGLRenderer({
     powerPreference: 'high-performance',
     precision: 'highp'
 });
+renderer.setPixelRatio(1);
 renderer.setSize(window.innerWidth, window.innerHeight);
 renderer.shadowMap.enabled = true;
 renderer.shadowMap.type = THREE.PCFSoftShadowMap;
@@ -121,6 +129,35 @@ const matBillboardFrame = new THREE.MeshStandardMaterial({ color: 0x333333, meta
 const matHazardLight = new THREE.MeshBasicMaterial({ color: 0xffaa00 });
 const matConstructionStripe = new THREE.MeshStandardMaterial({ color: 0xffcc00 });
 const matHole = new THREE.MeshBasicMaterial({ color: 0x000000 });
+const sharedMaterials = new Set([
+    matAsphalt, matLine, matSidewalk, matBuilding, matBuilding2, matBuilding3,
+    matWindow, matWindowLit, matTrashBag, matBox, matTire, matPole,
+    matLightHousing, matBalcony, matSkin, matJersey, matPants, matShoes,
+    matBillboardFrame, matHazardLight, matConstructionStripe, matHole
+]);
+
+function disposeObjectTree(root) {
+    const geometries = new Set();
+    const materials = new Set();
+    const textures = new Set();
+
+    root.traverse((object) => {
+        if (object.geometry) geometries.add(object.geometry);
+        const objectMaterials = Array.isArray(object.material) ? object.material : [object.material];
+        objectMaterials.forEach((material) => {
+            if (material && !sharedMaterials.has(material)) materials.add(material);
+        });
+    });
+
+    materials.forEach((material) => {
+        Object.values(material).forEach((value) => {
+            if (value && value.isTexture) textures.add(value);
+        });
+    });
+    geometries.forEach((geometry) => geometry.dispose());
+    textures.forEach((texture) => texture.dispose());
+    materials.forEach((material) => material.dispose());
+}
 
 let bikeGroup, bikePivot;
 let groundChunks = [];
@@ -214,6 +251,7 @@ function createBike() {
         model.rotation.x = 0.55; // 90 degree forward tilt (π/2 radians)
 
         bikePivot.add(model);
+        if (!state.isPlaying) renderer.render(scene, camera);
 
     }, undefined, (error) => {
         console.error('An error happened loading the bike model:', error);
@@ -557,7 +595,8 @@ function createGroundChunk(zPos) {
     const curbRight = new THREE.Mesh(curbGeo, curbMat);
     curbRight.position.set(10.25, 0.075, 0);
     chunk.add(curbRight);
-    for (let i = 0; i < 6; i++) {
+    const buildingCount = isMobile() ? 4 : 6;
+    for (let i = 0; i < buildingCount; i++) {
         const isTower = Math.random() > 0.7;
         let bLeft, bRight;
         if (isTower) {
@@ -625,7 +664,8 @@ function createGroundChunk(zPos) {
             chunk.add(bb);
         }
     }
-    for (let i = 0; i < 3; i++) {
+    const streetlightCount = isMobile() ? 1 : 2;
+    for (let i = 0; i < streetlightCount; i++) {
         const z = (Math.random() - 0.5) * 80;
         const poleGeo = new THREE.CylinderGeometry(0.1, 0.1, 6);
         const pole = new THREE.Mesh(poleGeo, matPole);
@@ -642,6 +682,7 @@ function createGroundChunk(zPos) {
         chunk.add(housing);
         const spot = new THREE.SpotLight(0xffaa00, 0.5);
         spot.position.set(-8.5, 5.6, z);
+        spot.distance = 24;
         spot.target.position.set(-8.5, 0, z);
         spot.angle = Math.PI / 4;
         spot.penumbra = 0.5;
@@ -679,8 +720,9 @@ function spawnObstacle(zPos) {
         obs.position.set((Math.random() - 0.5) * 16, 0.5, zPos);
     }
     obs.castShadow = true;
+    obs.updateMatrixWorld(true);
     scene.add(obs);
-    state.obstacles.push({ mesh: obs, active: true });
+    state.obstacles.push({ mesh: obs, box: new THREE.Box3().setFromObject(obs), active: true });
 }
 
 function createCheckpoint() {
@@ -724,15 +766,14 @@ function createSparkParticle() {
     // Remove spark quickly (mini explosion effect)
     setTimeout(() => {
         scene.remove(spark);
-        spark.geometry.dispose();
-        spark.material.dispose();
+        disposeObjectTree(spark);
     }, 150); // 0.15 seconds - disappears faster
 }
 
 
 async function loadGraffiti() {
     try {
-        const res = await fetch('graffiti.json');
+        const res = await fetch('/graffiti.json');
         if (res.ok) {
             const data = await res.json();
             state.graffitiList = data;
@@ -745,7 +786,7 @@ async function loadGraffiti() {
 function init() {
     const bike = createBike();
     scene.add(bike);
-    for (let i = 0; i < 10; i++) {
+    for (let i = 0; i < 5; i++) {
         const chunk = createGroundChunk(-i * 100);
         scene.add(chunk);
         groundChunks.push(chunk);
@@ -772,8 +813,11 @@ function init() {
     document.querySelectorAll('.setting-btn').forEach(b => b.classList.remove('active'));
     const analogBtn = document.getElementById('control-analog');
     if (analogBtn) analogBtn.classList.add('active');
+    setVoiceEnabled(GAME_SETTINGS.voiceEnabled);
     applyGraphicsQuality();
-    animate();
+    getVoiceManifest();
+    updateCamera();
+    renderer.render(scene, camera);
 }
 
 function resetGame() {
@@ -795,7 +839,6 @@ function resetGame() {
     state.lastTimeMultiplierDisplay = 0;
     state.smokeParticles.forEach(p => {
         scene.remove(p.mesh);
-        p.mesh.geometry.dispose();
         p.mesh.material.dispose();
     });
     state.smokeParticles = [];
@@ -824,9 +867,13 @@ function resetGame() {
     }
     bikePivot.rotation.x = 0;
     state.obstacles.forEach(obs => scene.remove(obs.mesh));
+    state.obstacles.forEach(obs => disposeObjectTree(obs.mesh));
     state.obstacles = [];
     state.animatedObjects = [];
-    groundChunks.forEach(chunk => scene.remove(chunk));
+    groundChunks.forEach(chunk => {
+        scene.remove(chunk);
+        disposeObjectTree(chunk);
+    });
     groundChunks = [];
     for (let i = 0; i < 5; i++) {
         const chunk = createGroundChunk(-i * 100);
@@ -840,10 +887,16 @@ function resetGame() {
 }
 
 function startGame() {
-    mobileControlsInitialized = false;
+    stopVoice();
     resetGame();
     state.isPlaying = true;
     state.speed = CONFIG.minSpeed;
+    lastVoiceAt = -Infinity;
+    lastPeriodicVoiceAt = 0;
+    announcedWheelie = false;
+    announcedCombo = false;
+    announcedSpeed = false;
+    announcedNearFall = false;
 
     const startScreen = document.getElementById('start-screen');
     const gameOverScreen = document.getElementById('game-over-screen');
@@ -853,6 +906,8 @@ function startGame() {
     if (gameOverScreen) gameOverScreen.classList.remove('active');
 
     setupMobileControls();
+    speak('start', { force: true });
+    startAnimationLoop();
 
     // Auto-fullscreen on mobile devices
     if (isMobile() && !document.fullscreenElement) {
@@ -889,6 +944,7 @@ function togglePause() {
     if (!state.isPlaying) return;
     state.isPlaying = false;
     state.isPaused = false;
+    stopVoice();
     const startScreen = document.getElementById('start-screen');
     if (startScreen) startScreen.classList.add('active');
     const mobileControls = document.getElementById('mobile-controls');
@@ -902,8 +958,7 @@ function checkCollisions() {
     for (let i = 0; i < state.obstacles.length; i++) {
         const obs = state.obstacles[i];
         if (!obs.active) continue;
-        const obsBox = new THREE.Box3().setFromObject(obs.mesh);
-        if (bikeBox.intersectsBox(obsBox)) {
+        if (bikeBox.intersectsBox(obs.box)) {
             if (state.skidding) {
                 gameOver();
             } else {
@@ -964,7 +1019,6 @@ function updateSmoke(dt) {
         p.mesh.scale.multiplyScalar(1.02);
         if (p.life <= 0) {
             scene.remove(p.mesh);
-            p.mesh.geometry.dispose();
             p.mesh.material.dispose();
             state.smokeParticles.splice(i, 1);
         }
@@ -1020,6 +1074,7 @@ function updateSpeedLines(dt) {
 }
 
 async function gameOver() {
+    speak('crash', { force: true, allowWhenStopped: true });
     state.isPlaying = false;
     state.skidding = false;
     const currentScore = Math.floor(state.score);
@@ -1069,16 +1124,38 @@ async function gameOver() {
     }
 }
 
-function animate() {
+let animationLoopRunning = false;
+let lastFrameTime = 0;
+let simulationAccumulator = 0;
+let uiAccumulator = 0;
+
+function startAnimationLoop() {
+    if (animationLoopRunning) return;
+    animationLoopRunning = true;
+    lastFrameTime = performance.now();
+    simulationAccumulator = 0;
     requestAnimationFrame(animate);
-    if (state.isPlaying && !state.isPaused && bikeGroup) {
-        const dt = 1 / 60;
+}
+
+function animate(timestamp = performance.now()) {
+    if (!state.isPlaying) {
+        animationLoopRunning = false;
+        return;
+    }
+
+    requestAnimationFrame(animate);
+    const elapsed = Math.min((timestamp - lastFrameTime) / 1000, 0.083);
+    lastFrameTime = timestamp;
+    simulationAccumulator += elapsed;
+
+    while (simulationAccumulator >= FIXED_STEP) {
+        const dt = FIXED_STEP;
+        if (state.isPlaying && !state.isPaused && bikeGroup) {
         state.gameTime += dt;
         const dayProgress = (state.gameTime % CONFIG.dayNightCycleDuration) / CONFIG.dayNightCycleDuration;
-        const skyColor = new THREE.Color();
-        skyColor.lerpColors(new THREE.Color(0x87CEEB), new THREE.Color(0x0a0a2e), dayProgress);
+        skyColor.lerpColors(daytimeSky, nighttimeSky, dayProgress);
         scene.background = skyColor;
-        scene.fog.color = skyColor;
+        if (scene.fog) scene.fog.color.copy(skyColor);
 
         if (bikeGroup.userData.frontWheel && bikeGroup.userData.backWheel) {
             const rotationSpeed = state.speed * 2.0;
@@ -1143,6 +1220,7 @@ function animate() {
                 bikeGroup.rotation.y = targetRotation;
             }
             const speed = Math.sqrt(moveX * moveX + moveZ * moveZ);
+            state.freeMode.speed = speed;
             if (bikeGroup.userData.frontWheel) bikeGroup.userData.frontWheel.rotation.x -= speed * 2;
             if (bikeGroup.userData.backWheel) bikeGroup.userData.backWheel.rotation.x -= speed * 2;
             if (bikeGroup.position.x > 9) bikeGroup.position.x = 9;
@@ -1344,7 +1422,6 @@ function animate() {
                 // Multiplicateur PROGRESSIF basé sur le temps en wheeling haut
                 const wheelieThreshold = CONFIG.maxAngle * 0.5; // 50% de la hauteur
                 const isInHighWheelie = state.bike.angle > wheelieThreshold;
-
                 if (isInHighWheelie) {
                     // Augmenter le temps de wheeling
                     state.wheelieTime += dt;
@@ -1361,6 +1438,12 @@ function animate() {
                 // Exemple: 75% d'angle (x1.75) × x3 de temps = x5.25 total
                 const combinedWheelieMultiplier = angleMultiplier * state.timeMultiplier;
                 state.currentMultiplier = combinedWheelieMultiplier;
+                if (state.currentMultiplier >= 3.5 && !announcedCombo) {
+                    speak('combo');
+                    announcedCombo = true;
+                } else if (state.currentMultiplier < 2.5) {
+                    announcedCombo = false;
+                }
 
                 // Multiplicateur de vitesse (bonus additionnel)
                 let speedMultiplier = 1.0;
@@ -1390,6 +1473,30 @@ function animate() {
             }
         }
 
+        if (state.bike.angle >= CONFIG.maxAngle * 0.5 && !announcedWheelie) {
+            speak('wheelie');
+            announcedWheelie = true;
+        } else if (state.bike.angle < CONFIG.maxAngle * 0.4) {
+            announcedWheelie = false;
+        }
+        if (state.bike.angle >= CONFIG.maxAngle * 0.9 && !announcedNearFall) {
+            speak('nearFall');
+            announcedNearFall = true;
+        } else if (state.bike.angle < CONFIG.maxAngle * 0.8) {
+            announcedNearFall = false;
+        }
+        const currentKmh = (GAME_SETTINGS.gameMode === 'free' ? state.freeMode.speed : state.speed) * 50;
+        if (currentKmh >= 150 && !announcedSpeed) {
+            speak('speed');
+            announcedSpeed = true;
+        } else if (currentKmh < 120) {
+            announcedSpeed = false;
+        }
+        if (state.gameTime - lastPeriodicVoiceAt >= 30) {
+            lastPeriodicVoiceAt = state.gameTime;
+            speak('periodic');
+        }
+
         const lastChunk = groundChunks[groundChunks.length - 1];
         if (bikeGroup.position.z < lastChunk.position.z + 200) {
             const newZ = lastChunk.position.z - 100;
@@ -1398,7 +1505,9 @@ function animate() {
             groundChunks.push(chunk);
             if (groundChunks.length > 12) {
                 const old = groundChunks.shift();
+                state.animatedObjects = state.animatedObjects.filter((object) => object.parent !== old);
                 scene.remove(old);
+                disposeObjectTree(old);
             }
             // Only spawn obstacles in linear mode
             if (GAME_SETTINGS.gameMode === 'linear') {
@@ -1424,26 +1533,26 @@ function animate() {
         obstacleCleanupCounter++;
         if (obstacleCleanupCounter > 300) {  // Every ~5 seconds at 60fps
             state.obstacles = state.obstacles.filter(obs => {
-                if (!obs.active && obs.mesh.position.z > bikeGroup.position.z + 100) {
+                if (obs.mesh.position.z > bikeGroup.position.z + 100) {
                     scene.remove(obs.mesh);
-                    if (obs.mesh.geometry) obs.mesh.geometry.dispose();
-                    if (obs.mesh.material) {
-                        if (Array.isArray(obs.mesh.material)) {
-                            obs.mesh.material.forEach(m => m.dispose());
-                        } else {
-                            obs.mesh.material.dispose();
-                        }
-                    }
+                    disposeObjectTree(obs.mesh);
                     return false;
                 }
                 return true;
             });
             obstacleCleanupCounter = 0;
         }
+        }
+        simulationAccumulator -= FIXED_STEP;
     }
+
     updateCamera();
-    updateUI();
-    updateMultiplierDisplay();
+    uiAccumulator += elapsed;
+    if (uiAccumulator >= 0.1) {
+        updateUI();
+        updateMultiplierDisplay();
+        uiAccumulator %= 0.1;
+    }
     renderer.render(scene, camera);
 }
 
@@ -1602,7 +1711,8 @@ function updateUI() {
     const speedText = document.getElementById('speed-text');
     const speedNeedle = document.getElementById('gauge-needle');
     if (speedText && speedNeedle) {
-        const kmh = Math.max(0, Math.floor(state.speed * 50));
+        const currentSpeed = GAME_SETTINGS.gameMode === 'free' ? state.freeMode.speed : state.speed;
+        const kmh = Math.max(0, Math.floor(currentSpeed * 50));
         speedText.innerText = `${kmh}`;
         const maxKmh = 200;
         const pct = Math.min(1, kmh / maxKmh);
@@ -1695,7 +1805,7 @@ function updateMultiplierDisplay() {
 }
 
 function isMobile() {
-    return /Android|webOS|iPhone|iPad|iPod|BlackBerry|IEMobile|Opera Mini/i.test(navigator.userAgent);
+    return navigator.maxTouchPoints > 0 || window.matchMedia('(pointer: coarse)').matches;
 }
 
 const GAME_SETTINGS = {
@@ -1703,24 +1813,105 @@ const GAME_SETTINGS = {
     gameMode: 'linear',
     difficulty: 'hard', // easy, medium, hard
     autoRace: false,
-    graphicsQuality: 'high'  // 'high' or 'low'
+    graphicsQuality: 'high',
+    voiceEnabled: localStorage.getItem('wheelie_voice_enabled') !== 'false'
 };
+
+const voiceAudio = new Audio();
+voiceAudio.preload = 'none';
+voiceAudio.volume = 0.8;
+let voiceManifestPromise;
+let voiceAssetsAvailable = false;
+let lastVoiceAt = -Infinity;
+let lastPeriodicVoiceAt = 0;
+let announcedWheelie = false;
+let announcedCombo = false;
+let announcedSpeed = false;
+let announcedNearFall = false;
+
+function getVoiceManifest() {
+    if (!voiceManifestPromise) {
+        voiceManifestPromise = fetch('/audio/manifest.json')
+            .then((response) => {
+                if (!response.ok) throw new Error(`Voice manifest request failed: ${response.status}`);
+                return response.json();
+            })
+            .then((manifest) => {
+                const available = new Set(Array.isArray(manifest.available) ? manifest.available : []);
+                voiceAssetsAvailable = available.size > 0;
+                updateVoiceToggle();
+                return { available, hashes: manifest.hashes || {} };
+            })
+            .catch((error) => {
+                console.warn('Voice commentary is unavailable:', error);
+                voiceAssetsAvailable = false;
+                updateVoiceToggle();
+                return { available: new Set(), hashes: {} };
+            });
+    }
+    return voiceManifestPromise;
+}
+
+function speak(eventName, { force = false, allowWhenStopped = false } = {}) {
+    const lines = voiceLineGroups[eventName];
+    if (!GAME_SETTINGS.voiceEnabled || !lines || (!state.isPlaying && !allowWhenStopped)) return;
+    if (!force && performance.now() - lastVoiceAt < 8000) return;
+
+    lastVoiceAt = performance.now();
+    getVoiceManifest().then(({ available, hashes }) => {
+        if (!GAME_SETTINGS.voiceEnabled || (!state.isPlaying && !allowWhenStopped)) return;
+        const choices = lines.filter((line) => available.has(line.id));
+        if (choices.length === 0 || (!force && !voiceAudio.paused)) return;
+        if (force) voiceAudio.pause();
+
+        const line = choices[Math.floor(Math.random() * choices.length)];
+        const version = hashes[line.id] ? `?v=${hashes[line.id]}` : '';
+        voiceAudio.src = `/audio/${line.id}.mp3${version}`;
+        voiceAudio.currentTime = 0;
+        voiceAudio.play().catch((error) => {
+            console.warn(`Could not play voice line "${line.id}":`, error);
+        });
+    });
+}
+
+function stopVoice() {
+    voiceAudio.pause();
+    voiceAudio.currentTime = 0;
+}
+
+function setVoiceEnabled(enabled) {
+    GAME_SETTINGS.voiceEnabled = enabled;
+    localStorage.setItem('wheelie_voice_enabled', String(enabled));
+    updateVoiceToggle();
+    if (!enabled) stopVoice();
+}
+
+function updateVoiceToggle() {
+    const voiceToggle = document.getElementById('voice-toggle');
+    if (voiceToggle) {
+        voiceToggle.classList.toggle('active', GAME_SETTINGS.voiceEnabled);
+        voiceToggle.textContent = !voiceAssetsAvailable && GAME_SETTINGS.voiceEnabled
+            ? '🎙️ VOIX : À GÉNÉRER'
+            : GAME_SETTINGS.voiceEnabled ? '🔊 VOIX : ON' : '🔇 VOIX : OFF';
+    }
+}
 
 // Apply graphics quality settings
 function applyGraphicsQuality() {
+    const isTouchDevice = isMobile();
+    renderer.shadowMap.enabled = !isTouchDevice || GAME_SETTINGS.graphicsQuality === 'high';
+    dirLight.castShadow = renderer.shadowMap.enabled;
     if (GAME_SETTINGS.graphicsQuality === 'high') {
-        // High quality settings
-        scene.fog = new THREE.Fog(0x87CEEB, 70, 400);  // Extended visibility
-        renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));  // Retina support
-        dirLight.shadow.mapSize.width = 4096;  // 4K shadows
-        dirLight.shadow.mapSize.height = 4096;
+        scene.fog = new THREE.Fog(0x87CEEB, 70, 400);
+        renderer.setPixelRatio(Math.min(window.devicePixelRatio || 1, isTouchDevice ? 1.5 : 2));
+        dirLight.shadow.mapSize.set(isTouchDevice ? 1024 : 2048, isTouchDevice ? 1024 : 2048);
     } else {
-        // Low quality settings (original)
         scene.fog = new THREE.Fog(0x87CEEB, 50, 300);
-        renderer.setPixelRatio(1);  // Standard resolution
-        dirLight.shadow.mapSize.width = 2048;  // 2K shadows
-        dirLight.shadow.mapSize.height = 2048;
+        renderer.setPixelRatio(1);
+        dirLight.shadow.mapSize.set(1024, 1024);
     }
+    dirLight.shadow.needsUpdate = true;
+    renderer.setSize(window.innerWidth, window.innerHeight);
 }
 
 let mobileControlsInitialized = false;
@@ -1734,6 +1925,10 @@ function setupMobileControls() {
     const arrowControls = document.getElementById('arrow-controls');
     const analogControls = document.getElementById('analog-controls');
     if (!mobileControls) return;
+    if (!isMobile()) {
+        mobileControls.style.display = 'none';
+        return;
+    }
     
     // Mettre à jour l'emoji du bouton gaz selon le mode de jeu
     const gasEmoji = document.getElementById('gas-emoji');
@@ -1745,12 +1940,10 @@ function setupMobileControls() {
         mobileControls.style.display = 'block';
         arrowControls.style.display = 'block';
         analogControls.style.display = 'none';
-        if (!mobileControlsInitialized) setupArrowControls();
     } else if (GAME_SETTINGS.controlMode === 'analog') {
         mobileControls.style.display = 'block';
         arrowControls.style.display = 'none';
         analogControls.style.display = 'block';
-        if (!mobileControlsInitialized) setupAnalogControls();
         const brakeBtn = document.getElementById('analog-brake');
         const gasBtn = document.getElementById('analog-gas');
         const wheelieBtn = document.getElementById('analog-wheelie');
@@ -1773,7 +1966,11 @@ function setupMobileControls() {
     } else {
         mobileControls.style.display = 'none';
     }
-    mobileControlsInitialized = true;
+    if (!mobileControlsInitialized) {
+        setupArrowControls();
+        setupAnalogControls();
+        mobileControlsInitialized = true;
+    }
 }
 
 function setupArrowControls() {
@@ -1787,11 +1984,15 @@ function setupArrowControls() {
     Object.entries(buttons).forEach(([id, key]) => {
         const btn = document.getElementById(id);
         if (!btn) return;
-        btn.addEventListener('touchstart', (e) => { e.preventDefault(); state.keys[key] = true; }, { passive: false });
-        btn.addEventListener('touchend', (e) => { e.preventDefault(); state.keys[key] = false; }, { passive: false });
-        btn.addEventListener('mousedown', (e) => { e.preventDefault(); state.keys[key] = true; });
-        btn.addEventListener('mouseup', (e) => { e.preventDefault(); state.keys[key] = false; });
-        btn.addEventListener('mouseleave', () => { state.keys[key] = false; });
+        btn.addEventListener('pointerdown', (event) => {
+            event.preventDefault();
+            btn.setPointerCapture(event.pointerId);
+            state.keys[key] = true;
+        });
+        const release = () => { state.keys[key] = false; };
+        btn.addEventListener('pointerup', release);
+        btn.addEventListener('pointercancel', release);
+        btn.addEventListener('lostpointercapture', release);
     });
 }
 
@@ -1804,36 +2005,49 @@ function setupAnalogControls() {
             const rect = analogBase.getBoundingClientRect();
             const centerX = rect.width / 2;
             const centerY = rect.height / 2;
-            const touch = e.touches ? e.touches[0] : e;
-            const x = touch.clientX - rect.left - centerX;
-            const y = touch.clientY - rect.top - centerY;
+            const x = e.clientX - rect.left - centerX;
+            const y = e.clientY - rect.top - centerY;
             const distance = Math.sqrt(x * x + y * y);
             const maxDistance = 40;
+            let knobX = x;
+            let knobY = y;
             if (distance > maxDistance) {
                 const angle = Math.atan2(y, x);
                 analogData.x = Math.cos(angle);
                 analogData.y = Math.sin(angle);
-                analogKnob.style.transform = `translate(${Math.cos(angle) * maxDistance}px, ${Math.sin(angle) * maxDistance}px)`;
+                knobX = Math.cos(angle) * maxDistance;
+                knobY = Math.sin(angle) * maxDistance;
             } else {
                 analogData.x = x / maxDistance;
                 analogData.y = y / maxDistance;
-                analogKnob.style.transform = `translate(${x}px, ${y}px)`;
             }
+            analogKnob.style.transform = `translate(calc(-50% + ${knobX}px), calc(-50% + ${knobY}px))`;
             analogData.active = true;
         };
         const resetAnalog = () => {
             analogData.x = 0;
             analogData.y = 0;
             analogData.active = false;
-            analogKnob.style.transform = 'translate(0, 0)';
+            analogKnob.style.transform = 'translate(-50%, -50%)';
         };
-        analogBase.addEventListener('touchstart', handleAnalog);
-        analogBase.addEventListener('touchmove', handleAnalog);
-        analogBase.addEventListener('touchend', resetAnalog);
-        let isDragging = false;
-        analogBase.addEventListener('mousedown', (e) => { isDragging = true; handleAnalog(e); });
-        window.addEventListener('mousemove', (e) => { if (isDragging) handleAnalog(e); });
-        window.addEventListener('mouseup', () => { if (isDragging) { isDragging = false; resetAnalog(); } });
+        let pointerId = null;
+        analogBase.addEventListener('pointerdown', (event) => {
+            event.preventDefault();
+            pointerId = event.pointerId;
+            analogBase.setPointerCapture(pointerId);
+            handleAnalog(event);
+        });
+        analogBase.addEventListener('pointermove', (event) => {
+            if (event.pointerId === pointerId) handleAnalog(event);
+        });
+        const releaseAnalog = (event) => {
+            if (event.pointerId !== pointerId) return;
+            pointerId = null;
+            resetAnalog();
+        };
+        analogBase.addEventListener('pointerup', releaseAnalog);
+        analogBase.addEventListener('pointercancel', releaseAnalog);
+        analogBase.addEventListener('lostpointercapture', releaseAnalog);
     }
     const buttons = {
         'analog-gas': 'up',
@@ -1843,11 +2057,15 @@ function setupAnalogControls() {
     Object.entries(buttons).forEach(([id, key]) => {
         const btn = document.getElementById(id);
         if (!btn) return;
-        btn.addEventListener('touchstart', (e) => { e.preventDefault(); state.keys[key] = true; }, { passive: false });
-        btn.addEventListener('touchend', (e) => { e.preventDefault(); state.keys[key] = false; }, { passive: false });
-        btn.addEventListener('mousedown', (e) => { e.preventDefault(); state.keys[key] = true; });
-        btn.addEventListener('mouseup', (e) => { e.preventDefault(); state.keys[key] = false; });
-        btn.addEventListener('mouseleave', () => { state.keys[key] = false; });
+        btn.addEventListener('pointerdown', (event) => {
+            event.preventDefault();
+            btn.setPointerCapture(event.pointerId);
+            state.keys[key] = true;
+        });
+        const release = () => { state.keys[key] = false; };
+        btn.addEventListener('pointerup', release);
+        btn.addEventListener('pointercancel', release);
+        btn.addEventListener('lostpointercapture', release);
     });
 }
 
@@ -1860,9 +2078,11 @@ window.addEventListener('resize', () => {
     if (bikeGroup) {
         updateCamera();
     }
+    renderer.render(scene, camera);
 });
 
 document.addEventListener('keydown', (e) => {
+    if (['ArrowLeft', 'ArrowRight', 'ArrowUp', 'ArrowDown'].includes(e.code)) e.preventDefault();
     if (e.code === 'ArrowLeft' || e.code === 'KeyQ') state.keys.left = true;
     if (e.code === 'ArrowRight' || e.code === 'KeyD') state.keys.right = true;
     if (e.code === 'ArrowUp' || e.code === 'KeyZ') state.keys.up = true;
@@ -1895,6 +2115,19 @@ document.addEventListener('keyup', (e) => {
     if (e.code === 'ArrowUp' || e.code === 'KeyZ') state.keys.up = false;
     if (e.code === 'ArrowDown' || e.code === 'KeyS') state.keys.down = false;
     if (e.code === 'Space') state.keys.space = false;
+});
+
+window.addEventListener('blur', () => {
+    Object.keys(state.keys).forEach((key) => { state.keys[key] = false; });
+    analogData.x = 0;
+    analogData.y = 0;
+    analogData.active = false;
+    const analogKnob = document.getElementById('analog-stick-knob');
+    if (analogKnob) analogKnob.style.transform = 'translate(-50%, -50%)';
+});
+
+document.addEventListener('visibilitychange', () => {
+    if (document.hidden && state.isPlaying) togglePause();
 });
 
 // Settings Menu Navigation
@@ -2045,6 +2278,27 @@ document.getElementById('select-freemode').addEventListener('click', () => {
 document.getElementById('back-from-mode-select').addEventListener('click', () => {
     document.getElementById('mode-select-screen').classList.remove('active');
     document.getElementById('start-screen').classList.add('active');
+});
+
+document.getElementById('voice-toggle')?.addEventListener('click', () => {
+    setVoiceEnabled(!GAME_SETTINGS.voiceEnabled);
+});
+
+document.getElementById('fullscreen-btn')?.addEventListener('click', async () => {
+    try {
+        if (document.fullscreenElement) {
+            await document.exitFullscreen();
+            return;
+        }
+        await document.documentElement.requestFullscreen();
+        if (screen.orientation && screen.orientation.lock) {
+            await screen.orientation.lock('landscape').catch((error) => {
+                console.info('Landscape orientation lock is unavailable:', error);
+            });
+        }
+    } catch (error) {
+        console.warn('Fullscreen mode is unavailable:', error);
+    }
 });
 
 document.getElementById('restart-btn').addEventListener('click', startGame);

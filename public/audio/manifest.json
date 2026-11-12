@@ -1,0 +1,42 @@
+{
+  "available": [
+    "start_1",
+    "start_2",
+    "wheelie_1",
+    "wheelie_2",
+    "wheelie_3",
+    "combo_1",
+    "combo_2",
+    "combo_3",
+    "speed_1",
+    "speed_2",
+    "near_fall_1",
+    "near_fall_2",
+    "crash_1",
+    "crash_2",
+    "periodic_1",
+    "periodic_2",
+    "periodic_3",
+    "periodic_4"
+  ],
+  "hashes": {
+    "start_1": "43826a0e51419ff8a85b35393c6ba63f85dcc9da6941eb37f5020b6ba488431d",
+    "start_2": "cb5f19dfc5428f3d67e559ac001a75d100d184a7273945aac12cc1a34b61b9f9",
+    "wheelie_1": "f55a0c25b42a5e06c0da6f210159062717167ab50259356f82d5bb6f5aeb6873",
+    "wheelie_2": "1a7041043648299f3dcbaa0d2a42b38e0326e4256cef5ff3f19c31986dc537b1",
+    "wheelie_3": "167d46cb9eda23d00c1dec68a26df68e116ae33564dea21a003adf8d4322fb98",
+    "combo_1": "83b878420a6623a7bf54468205e649b760c40b3a1f38739393efb81524d05586",
+    "combo_2": "e39069dc1496a8f70a647b4f22a92509272c0a6c86227ed255939676600e288c",
+    "combo_3": "a07b0b2fd7f1bd05841d4dcc980f92671c3f7b63121a43f890720a0e367e34cc",
+    "speed_1": "73ff779eb09a77380d89fd11099828e66d2a57c8fe2bebb8b3c3dd30e300e44d",
+    "speed_2": "ad1cef9cfe209b1702fb90153d5a0751b04197bf4d8f0d9ed203a79ca8a19c7a",
+    "near_fall_1": "63c26b68aab1fa1111b742bb6cb76b9767a8dab61415cc8a7d8bb789a3cb0d71",
+    "near_fall_2": "ce23acf9ef94f8a38fc7ef5f37986ccf7bd46b2535b77a3275c19979f4dfab5b",
+    "crash_1": "f074e8cf7d191cb80764c93ce9bb7810e2d9ec9f05e715a140b1802a190f76f0",
+    "crash_2": "58d63bbff787d5f555a33b93ff48864e1997c8404bb664c2b05175aae572baaf",
+    "periodic_1": "04b62dd02e87a23d50aba271feb47379a30a671e07289d4978b56ec6ddee4962",
+    "periodic_2": "34104c231c96550abdc20c4234c02dc6f784f78423ffe8ee890aaa0684b07a8a",
+    "periodic_3": "a1daa1df240d1d552b7f3ccc082e0e8b73975dba2a52fd7d0fa7b73cfbed32e9",
+    "periodic_4": "d040b4e133c9804853b401895a124947ee45cb57b58d8e145068de24debbd852"
+  }
+}

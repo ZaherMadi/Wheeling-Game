@@ -1,0 +1,34 @@
+{
+  "start": [
+    { "id": "start_1", "text": "Allez, c'est parti ! Montre-moi ce que tu sais faire !" },
+    { "id": "start_2", "text": "On y va ! Garde l'équilibre et fais grimper le score !" }
+  ],
+  "wheelie": [
+    { "id": "wheelie_1", "text": "Bien joué ! Tiens cette roue en l'air !" },
+    { "id": "wheelie_2", "text": "C'est ça ! Reste dans la zone parfaite !" },
+    { "id": "wheelie_3", "text": "Propre ! Continue comme ça !" }
+  ],
+  "combo": [
+    { "id": "combo_1", "text": "Quel combo ! Le multiplicateur s'envole !" },
+    { "id": "combo_2", "text": "Ça, c'est du pilotage ! Enchaîne !" },
+    { "id": "combo_3", "text": "Incroyable ! Tu fais monter le score !" }
+  ],
+  "speed": [
+    { "id": "speed_1", "text": "Quelle vitesse ! Garde les yeux sur la route !" },
+    { "id": "speed_2", "text": "Ça accélère fort ! Reste concentré !" }
+  ],
+  "nearFall": [
+    { "id": "near_fall_1", "text": "Ouh, c'était limite ! Rattrape l'équilibre !" },
+    { "id": "near_fall_2", "text": "Attention à l'angle ! Redresse un peu !" }
+  ],
+  "crash": [
+    { "id": "crash_1", "text": "Aïe ! Belle tentative, on remet ça ?" },
+    { "id": "crash_2", "text": "C'est la chute ! Relève-toi, le prochain run sera meilleur !" }
+  ],
+  "periodic": [
+    { "id": "periodic_1", "text": "Tu tiens le rythme ! Continue de viser la zone parfaite !" },
+    { "id": "periodic_2", "text": "Reste fluide, surveille ton équilibre et protège ton combo !" },
+    { "id": "periodic_3", "text": "Chaque seconde compte. À toi de battre ton record !" },
+    { "id": "periodic_4", "text": "Bien joué jusque-là ! Voyons jusqu'où tu peux aller !" }
+  ]
+}
