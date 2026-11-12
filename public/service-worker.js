@@ -1,4 +1,4 @@
-const CACHE_NAME = 'wheelie-king-v2';
+const CACHE_NAME = 'wheelie-king-v3';
 const APP_SHELL = [
     '/',
     '/index.html',

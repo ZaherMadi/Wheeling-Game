@@ -1,6 +1,24 @@
 import * as THREE from 'three';
 import './src/style.css';
 import voiceLineGroups from './src/voice-lines.json';
+import soundEffects from './src/sound-effects.json';
+import { createAudioEngine } from './src/audio-engine.js';
+
+// Two versions share the same simulation, scoring and ranked replay:
+// 'v2' (realistic city, new rider) and 'classic' (the original V1 look).
+// The choice is stored per device; ?version=classic or ?version=v2 forces it.
+const VERSION_KEY = 'wheelie_version';
+const requestedVersion = new URLSearchParams(window.location.search).get('version');
+if (requestedVersion === 'classic' || requestedVersion === 'v2') {
+    localStorage.setItem(VERSION_KEY, requestedVersion);
+}
+const GAME_VERSION = localStorage.getItem(VERSION_KEY) === 'classic' ? 'classic' : 'v2';
+const IS_V2 = GAME_VERSION === 'v2';
+// Only the selected version's visuals are downloaded.
+const createRealisticVersion = IS_V2
+    ? (await import('./src/v2/index.js')).createRealisticVersion
+    : null;
+let v2 = null;
 
 const CONFIG = {
     laneWidth: 10,
@@ -28,6 +46,7 @@ const CONFIG = {
 };
 
 const FIXED_STEP = 1 / 60;
+const MAX_RANKED_FRAMES = 72000;
 const daytimeSky = new THREE.Color(0x87CEEB);
 const nighttimeSky = new THREE.Color(0x0a0a2e);
 const skyColor = new THREE.Color();
@@ -69,6 +88,10 @@ let state = {
     birds: [],
     skidding: false,
     skidTimer: 0,
+    runToken: null,
+    inputLog: [],
+    runReplayOverflow: false,
+    rankedRunUnavailable: false,
     smokeParticles: [],
     freeMode: {
         speed: 0,
@@ -99,12 +122,12 @@ if (container) {
 }
 
 const ambientLight = new THREE.AmbientLight(0xffffff, 0.7);
-scene.add(ambientLight);
+if (!IS_V2) scene.add(ambientLight);
 
 const dirLight = new THREE.DirectionalLight(0xffffff, 0.8);
 dirLight.position.set(50, 100, 50);
 dirLight.castShadow = true;
-scene.add(dirLight);
+if (!IS_V2) scene.add(dirLight);
 
 // Materials
 const matAsphalt = new THREE.MeshStandardMaterial({ color: 0x222222, roughness: 0.9 });
@@ -142,7 +165,7 @@ function disposeObjectTree(root) {
     const textures = new Set();
 
     root.traverse((object) => {
-        if (object.geometry) geometries.add(object.geometry);
+        if (object.geometry && !object.geometry.userData.shared) geometries.add(object.geometry);
         const objectMaterials = Array.isArray(object.material) ? object.material : [object.material];
         objectMaterials.forEach((material) => {
             if (material && !sharedMaterials.has(material)) materials.add(material);
@@ -220,15 +243,18 @@ function createJerseyTexture(isFront) {
     return new THREE.CanvasTexture(canvas);
 }
 
-import { GLTFLoader } from 'three/examples/jsm/loaders/GLTFLoader.js';
-
 function createBike() {
+    if (v2) {
+        bikeGroup = v2.rider.bikeGroup;
+        bikePivot = v2.rider.bikePivot;
+        return bikeGroup;
+    }
+
     bikeGroup = new THREE.Group();
     bikePivot = new THREE.Group();
     bikeGroup.add(bikePivot);
 
-    const loader = new GLTFLoader();
-    loader.load('wheelie_rider_51.gltf', (gltf) => {
+    import('three/examples/jsm/loaders/GLTFLoader.js').then(({ GLTFLoader }) => new GLTFLoader().load('wheelie_rider_51.gltf', (gltf) => {
         const model = gltf.scene;
         model.traverse((child) => {
             if (child.isMesh) {
@@ -255,7 +281,7 @@ function createBike() {
 
     }, undefined, (error) => {
         console.error('An error happened loading the bike model:', error);
-    });
+    }));
 
     return bikeGroup;
 }
@@ -692,10 +718,39 @@ function createGroundChunk(zPos) {
     return chunk;
 }
 
+// Ground blocks: built on demand in classic, recycled from a pool in V2.
+function makeChunk(zPos) {
+    return v2 ? v2.world.acquireChunk(zPos) : createGroundChunk(zPos);
+}
+
+function dropChunk(chunk) {
+    scene.remove(chunk);
+    if (v2) v2.world.releaseChunk(chunk);
+    else disposeObjectTree(chunk);
+}
+
 function spawnObstacle(zPos) {
     const type = Math.random();
     let obs;
-    if (type < 0.15) {
+    if (v2) {
+        // Same odds, footprints and placement as the classic obstacles.
+        if (type < 0.15) {
+            obs = v2.world.createObstacle('construction');
+            obs.position.set((Math.random() - 0.5) * 14, 0, zPos);
+        } else if (type < 0.3) {
+            obs = v2.world.createObstacle('sign');
+            obs.position.set((Math.random() - 0.5) * 14, 0, zPos);
+            obs.rotation.y = (Math.random() - 0.5) * 0.5;
+        } else if (type < 0.45) {
+            obs = v2.world.createObstacle('barrier');
+            obs.position.set((Math.random() - 0.5) * 14, 0, zPos);
+            obs.rotation.y = (Math.random() - 0.5) * 0.5;
+        } else {
+            obs = v2.world.createObstacle(type < 0.6 ? 'crate' : type < 0.8 ? 'bag' : 'cone');
+            obs.position.set((Math.random() - 0.5) * 16, 0.5, zPos);
+            obs.rotation.y = Math.random() * Math.PI;
+        }
+    } else if (type < 0.15) {
         obs = createConstructionZone();
         obs.position.set((Math.random() - 0.5) * 14, 0, zPos);
     } else if (type < 0.3) {
@@ -743,6 +798,10 @@ function createCheckpoint() {
 }
 
 function createSparkParticle() {
+    if (v2) {
+        v2.spark();
+        return;
+    }
     // Create tiny yellow spark particle - mini explosion effect
     const geo = new THREE.SphereGeometry(0.05, 4, 4); // Very small
     const mat = new THREE.MeshBasicMaterial({
@@ -784,25 +843,31 @@ async function loadGraffiti() {
 }
 
 function init() {
+    if (IS_V2) {
+        v2 = createRealisticVersion({ scene, renderer, camera, mobile: isMobile() });
+        v2.world.sharedMaterials.forEach((material) => sharedMaterials.add(material));
+    }
     const bike = createBike();
     scene.add(bike);
     for (let i = 0; i < 5; i++) {
-        const chunk = createGroundChunk(-i * 100);
+        const chunk = makeChunk(-i * 100);
         scene.add(chunk);
         groundChunks.push(chunk);
     }
-    for (let i = 0; i < 10; i++) {
-        const cloud = createCloud();
-        scene.add(cloud);
-        state.clouds.push(cloud);
-    }
-    for (let i = 0; i < 5; i++) {
-        const bird = createBird();
-        scene.add(bird);
-        state.birds.push(bird);
+    if (!IS_V2) {
+        for (let i = 0; i < 10; i++) {
+            const cloud = createCloud();
+            scene.add(cloud);
+            state.clouds.push(cloud);
+        }
+        for (let i = 0; i < 5; i++) {
+            const bird = createBird();
+            scene.add(bird);
+            state.birds.push(bird);
+        }
+        createCheckpoint();
     }
     loadGraffiti();
-    createCheckpoint();
     state.highScore = parseInt(localStorage.getItem('wheelie_high_score')) || 0;
     const highScoreEl = document.getElementById('high-score-display');
     if (highScoreEl) {
@@ -814,9 +879,52 @@ function init() {
     const analogBtn = document.getElementById('control-analog');
     if (analogBtn) analogBtn.classList.add('active');
     setVoiceEnabled(GAME_SETTINGS.voiceEnabled);
+    setSfxEnabled(GAME_SETTINGS.sfxEnabled);
+    updateLanguageButtons();
     applyGraphicsQuality();
-    getVoiceManifest();
+    getAudioManifest();
+    updateVersionUI();
+    if (IS_V2) {
+        // Menu backdrop: a three-quarter view of the rider on the wet street.
+        bikeGroup.rotation.set(0, Math.PI, 0);
+        camera.position.set(3.2, 2.5, 7.6);
+        camera.lookAt(3.9, 1.7, -10);
+        v2.frame(0, visualSnapshot());
+        renderer.render(scene, camera);
+    } else {
+        renderScene(0);
+    }
+}
+
+// Speed / input picture of the current frame for the visuals and the audio.
+function visualSnapshot() {
+    const free = GAME_SETTINGS.gameMode === 'free';
+    const analogThrottle = analogData.active && analogData.y < -0.1;
+    let throttle = 0;
+    if (state.isPlaying && !state.isPaused && !state.skidding) {
+        if (state.keys.up || (GAME_SETTINGS.autoRace && autoRaceActive && !free)) throttle = 1;
+        else if (analogThrottle) throttle = Math.min(1, Math.abs(analogData.y) * 1.5);
+    }
+    const braking = state.isPlaying &&
+        (state.keys.down || (analogData.active && analogData.y > 0.5 && !GAME_SETTINGS.autoRace));
+    // Free mode moves slowly in world units; scale it so it still feels like riding.
+    const kmh = free ? state.freeMode.speed * 50 * 3.5 : state.speed * 50;
+    return {
+        kmh,
+        throttle,
+        braking,
+        steer: free ? 0 : Math.max(-1, Math.min(1, state.bike.lateralVelocity / CONFIG.maxLateralSpeed)),
+        angle: state.bike.angle,
+        angleRatio: Math.max(0, Math.min(1, state.bike.angle / CONFIG.maxAngle)),
+        skidding: state.skidding,
+        linear: !free,
+        gameTime: state.gameTime
+    };
+}
+
+function renderScene(dt, snapshot = visualSnapshot()) {
     updateCamera();
+    if (v2) v2.frame(dt, snapshot);
     renderer.render(scene, camera);
 }
 
@@ -831,6 +939,10 @@ function resetGame() {
     state.isPaused = false;
     state.skidding = false;
     state.skidTimer = 0;
+    state.runToken = null;
+    state.inputLog = [];
+    state.runReplayOverflow = false;
+    state.rankedRunUnavailable = false;
     state.wheeliePercentage = 0;
     state.wheelieTime = 0;
     state.angleMultiplier = 1.0;
@@ -866,77 +978,106 @@ function resetGame() {
         bikeGroup.rotation.set(0, Math.PI, 0); // 180° for linear mode (inverted)
     }
     bikePivot.rotation.x = 0;
+    if (v2) v2.reset();
     state.obstacles.forEach(obs => scene.remove(obs.mesh));
     state.obstacles.forEach(obs => disposeObjectTree(obs.mesh));
     state.obstacles = [];
     state.animatedObjects = [];
-    groundChunks.forEach(chunk => {
-        scene.remove(chunk);
-        disposeObjectTree(chunk);
-    });
+    groundChunks.forEach(dropChunk);
     groundChunks = [];
     for (let i = 0; i < 5; i++) {
-        const chunk = createGroundChunk(-i * 100);
+        const chunk = makeChunk(-i * 100);
         scene.add(chunk);
         groundChunks.push(chunk);
     }
+    wheelieHoldTime = 0;
+    lastMultiplierStep = 2;
+    recordAnnounced = false;
     const highScoreEl = document.getElementById('high-score-display');
     if (highScoreEl) {
         highScoreEl.innerText = `MEILLEUR: ${state.highScore}`;
     }
 }
 
-function startGame() {
+let startInProgress = false;
+let completedRankedRun = null;
+
+async function startGame() {
+    if (startInProgress) return;
+    startInProgress = true;
+    crashSequence++;
+    audio.prepare();
     stopVoice();
-    resetGame();
-    state.isPlaying = true;
-    state.speed = CONFIG.minSpeed;
-    lastVoiceAt = -Infinity;
-    lastPeriodicVoiceAt = 0;
-    announcedWheelie = false;
-    announcedCombo = false;
-    announcedSpeed = false;
-    announcedNearFall = false;
-
-    const startScreen = document.getElementById('start-screen');
-    const gameOverScreen = document.getElementById('game-over-screen');
-    const countdownEl = document.getElementById('countdown-display');
-
-    if (startScreen) startScreen.classList.remove('active');
-    if (gameOverScreen) gameOverScreen.classList.remove('active');
-
-    setupMobileControls();
-    speak('start', { force: true });
-    startAnimationLoop();
-
-    // Auto-fullscreen on mobile devices
-    if (isMobile() && !document.fullscreenElement) {
-        document.documentElement.requestFullscreen().catch(err => {
-            console.log('Auto-fullscreen failed:', err);
-        });
+    let runToken = null;
+    if (GAME_SETTINGS.gameMode === 'linear') {
+        try {
+            runToken = await createWheelieRun();
+        } catch (error) {
+            console.error('Classement indisponible:', error);
+        }
     }
 
-    if (GAME_SETTINGS.autoRace) {
-        autoRaceActive = false;
-        state.isPaused = true;
-        if (countdownEl) {
-            countdownEl.style.display = 'block';
-            let count = 3;
-            countdownEl.innerText = count;
-            const timer = setInterval(() => {
-                count--;
-                if (count > 0) {
-                    countdownEl.innerText = count;
-                } else if (count === 0) {
-                    countdownEl.innerText = "GO!";
-                } else {
-                    clearInterval(timer);
-                    countdownEl.style.display = 'none';
-                    state.isPaused = false;
-                    autoRaceActive = true;
-                }
-            }, 1000);
+    try {
+        resetGame();
+        state.runToken = runToken;
+        state.rankedRunUnavailable = GAME_SETTINGS.gameMode === 'linear' && !runToken;
+        setRankingStatus('');
+        completedRankedRun = null;
+        state.isPlaying = true;
+        state.speed = CONFIG.minSpeed;
+        audio.startRun();
+        audio.play('rev_blip', { volume: 0.4 });
+        lastVoiceAt = -Infinity;
+        lastPeriodicVoiceAt = 0;
+        announcedWheelie = false;
+        announcedCombo = false;
+        announcedSpeed = false;
+        announcedNearFall = false;
+
+        const startScreen = document.getElementById('start-screen');
+        const gameOverScreen = document.getElementById('game-over-screen');
+        const countdownEl = document.getElementById('countdown-display');
+
+        if (startScreen) startScreen.classList.remove('active');
+        if (gameOverScreen) gameOverScreen.classList.remove('active');
+
+        setupMobileControls();
+        speak('start', { force: true });
+        startAnimationLoop();
+
+        if (isMobile() && !document.fullscreenElement) {
+            document.documentElement.requestFullscreen().catch(err => {
+                console.log('Auto-fullscreen failed:', err);
+            });
         }
+
+        if (GAME_SETTINGS.autoRace) {
+            autoRaceActive = false;
+            state.isPaused = true;
+            if (countdownEl) {
+                countdownEl.style.display = 'block';
+                let count = 3;
+                countdownEl.innerText = count;
+                audio.play('countdown_beep', { volume: 0.5 });
+                const timer = setInterval(() => {
+                    count--;
+                    if (count > 0) {
+                        countdownEl.innerText = count;
+                        audio.play('countdown_beep', { volume: 0.5 });
+                    } else if (count === 0) {
+                        countdownEl.innerText = "GO!";
+                        audio.play('go_beep', { volume: 0.55 });
+                    } else {
+                        clearInterval(timer);
+                        countdownEl.style.display = 'none';
+                        state.isPaused = false;
+                        autoRaceActive = true;
+                    }
+                }, 1000);
+            }
+        }
+    } finally {
+        startInProgress = false;
     }
 }
 
@@ -945,6 +1086,7 @@ function togglePause() {
     state.isPlaying = false;
     state.isPaused = false;
     stopVoice();
+    audio.stopRun();
     const startScreen = document.getElementById('start-screen');
     if (startScreen) startScreen.classList.add('active');
     const mobileControls = document.getElementById('mobile-controls');
@@ -953,8 +1095,8 @@ function togglePause() {
 
 function checkCollisions() {
     if (!state.isPlaying) return;
-    const bikeBox = new THREE.Box3().setFromObject(bikeGroup);
-    bikeBox.expandByScalar(-0.2);
+    // V2 uses a fixed hit box so the rider's animation never changes gameplay.
+    const bikeBox = v2 ? v2.rider.getHitBox() : new THREE.Box3().setFromObject(bikeGroup).expandByScalar(-0.2);
     for (let i = 0; i < state.obstacles.length; i++) {
         const obs = state.obstacles[i];
         if (!obs.active) continue;
@@ -965,13 +1107,37 @@ function checkCollisions() {
                 startSkid();
             }
             obs.active = false;
+        } else if (!obs.passed && obs.box.min.z > bikeBox.max.z) {
+            // Just went by: a close pass at speed whooshes on that side.
+            obs.passed = true;
+            const gap = (obs.box.min.x + obs.box.max.x) / 2 - bikeGroup.position.x;
+            const kmh = state.speed * 50;
+            if (Math.abs(gap) < 3 && kmh > 60) {
+                audio.play('whoosh', {
+                    volume: Math.min(0.6, 0.2 + kmh / 400) * (1 - Math.abs(gap) / 4),
+                    rate: 0.9 + Math.random() * 0.25,
+                    pan: Math.max(-1, Math.min(1, gap / 2))
+                });
+            }
         }
     }
+}
+
+function recordRankedInput(flags, accelerationScale = 1) {
+    if (!state.runToken || state.runReplayOverflow) return;
+    if (state.inputLog.length / 2 >= MAX_RANKED_FRAMES) {
+        state.runReplayOverflow = true;
+        return;
+    }
+
+    state.inputLog.push(flags, Math.round(Math.max(0, Math.min(1, accelerationScale)) * 255));
 }
 
 function startSkid() {
     state.skidding = true;
     state.skidTimer = 1.5;
+    audio.play('skid', { volume: 0.6 });
+    speak('skid');
     bikeGroup.rotation.z = Math.PI / 8;
     // Reduced from 20 to 10 for better performance
     for (let i = 0; i < 10; i++) {
@@ -980,6 +1146,10 @@ function startSkid() {
 }
 
 function createSmokeParticle() {
+    if (v2) {
+        v2.smoke();
+        return;
+    }
     // Limit max smoke particles for performance
     if (state.smokeParticles.length >= 30) {
         const oldest = state.smokeParticles.shift();
@@ -1074,10 +1244,29 @@ function updateSpeedLines(dt) {
 }
 
 async function gameOver() {
+    if (!state.isPlaying) return;
+    if (state.runToken && !state.runReplayOverflow && state.inputLog.length >= 120) {
+        state.inputLog[state.inputLog.length - 2] |= 0x10;
+        completedRankedRun = {
+            runToken: state.runToken,
+            inputLog: Uint8Array.from(state.inputLog)
+        };
+    } else {
+        completedRankedRun = null;
+    }
+    state.runToken = null;
     speak('crash', { force: true, allowWhenStopped: true });
+    audio.stopRun();
+    audio.play('collision', { volume: 0.85 });
+    const crashKind = state.bike.angle > CONFIG.maxAngle || GAME_SETTINGS.gameMode === 'free' ? 'loop' : 'hit';
+    const crashSpeed = (GAME_SETTINGS.gameMode === 'free' ? state.freeMode.speed : state.speed) * 60;
     state.isPlaying = false;
     state.skidding = false;
+    const sequence = ++crashSequence;
+    if (v2) playCrashSequence(crashKind, crashSpeed, sequence);
+    const screenDelay = new Promise((resolve) => setTimeout(resolve, v2 ? 1150 : 0));
     const currentScore = Math.floor(state.score);
+    const previousBest = state.highScore;
     
     // Récupérer le nickname
     const nickname = localStorage.getItem('wheelie_nickname');
@@ -1099,13 +1288,34 @@ async function gameOver() {
         state.highScore = highScore;
         localStorage.setItem('wheelie_high_score', highScore);
     }
-    
+
+    await screenDelay;
+    // A new run may already have started while the crash was playing out.
+    if (sequence !== crashSequence) return;
+    if (currentScore > previousBest && previousBest > 0 && currentScore === highScore) {
+        audio.play('new_record', { volume: 0.5 });
+        setTimeout(() => {
+            if (sequence === crashSequence) speak('record', { force: true, allowWhenStopped: true });
+        }, 900);
+    }
+
     const finalScore = document.getElementById('final-score');
     const gameOverScreen = document.getElementById('game-over-screen');
     const bestScore = document.getElementById('best-score-gameover');
     if (finalScore) finalScore.innerText = currentScore;
     if (bestScore) bestScore.innerText = highScore;
     if (gameOverScreen) gameOverScreen.classList.add('active');
+    if (completedRankedRun) {
+        setRankingStatus('');
+    } else if (GAME_SETTINGS.gameMode === 'free') {
+        setRankingStatus('Mode libre : le score n’est pas classé.');
+    } else if (state.rankedRunUnavailable) {
+        setRankingStatus('Score non classé : impossible de vérifier la session de jeu.');
+    } else if (state.runReplayOverflow) {
+        setRankingStatus('Score non classé : durée maximale de partie atteinte.');
+    } else {
+        setRankingStatus('Score non classé : la partie n’a pas produit de replay valide.');
+    }
     
     const mobileControls = document.getElementById('mobile-controls');
     if (mobileControls) mobileControls.style.display = 'none';
@@ -1117,13 +1327,32 @@ async function gameOver() {
             showNicknamePopup(currentScore);
         }, 1000);
     } else {
-        // Mettre à jour le score dans le leaderboard
-        updateLeaderboard(nickname, currentScore);
-        // Envoyer le score à l'API
-        await sendScoreToAPI(nickname, currentScore);
+        await submitCompletedRun(nickname);
     }
 }
 
+// V2 only: keep rendering after the run ends so the fall plays out.
+let crashSequence = 0;
+function playCrashSequence(kind, unitsPerSecond, sequence) {
+    v2.rider.startCrash(kind, unitsPerSecond);
+    state.speed = 0;
+    state.freeMode.speed = 0;
+    updateUI();
+    let last = performance.now();
+    const tick = (now) => {
+        if (sequence !== crashSequence || state.isPlaying) return;
+        const dt = Math.min((now - last) / 1000, 0.05);
+        last = now;
+        const moving = v2.rider.updateCrash(dt);
+        renderScene(dt);
+        if (moving) requestAnimationFrame(tick);
+    };
+    requestAnimationFrame(tick);
+}
+
+let wheelieHoldTime = 0;
+let lastMultiplierStep = 2;
+let recordAnnounced = false;
 let animationLoopRunning = false;
 let lastFrameTime = 0;
 let simulationAccumulator = 0;
@@ -1152,10 +1381,12 @@ function animate(timestamp = performance.now()) {
         const dt = FIXED_STEP;
         if (state.isPlaying && !state.isPaused && bikeGroup) {
         state.gameTime += dt;
-        const dayProgress = (state.gameTime % CONFIG.dayNightCycleDuration) / CONFIG.dayNightCycleDuration;
-        skyColor.lerpColors(daytimeSky, nighttimeSky, dayProgress);
-        scene.background = skyColor;
-        if (scene.fog) scene.fog.color.copy(skyColor);
+        if (!IS_V2) {
+            const dayProgress = (state.gameTime % CONFIG.dayNightCycleDuration) / CONFIG.dayNightCycleDuration;
+            skyColor.lerpColors(daytimeSky, nighttimeSky, dayProgress);
+            scene.background = skyColor;
+            if (scene.fog) scene.fog.color.copy(skyColor);
+        }
 
         if (bikeGroup.userData.frontWheel && bikeGroup.userData.backWheel) {
             const rotationSpeed = state.speed * 2.0;
@@ -1188,6 +1419,7 @@ function animate(timestamp = performance.now()) {
         updateSmoke(dt);
 
         if (state.skidding) {
+            recordRankedInput(0x08);
             state.skidTimer -= dt;
             if (state.skidTimer <= 0) {
                 state.skidding = false;
@@ -1316,6 +1548,15 @@ function animate(timestamp = performance.now()) {
                 if (state.keys.left) state.bike.lateralVelocity -= CONFIG.lateralAccel;
                 if (state.keys.right) state.bike.lateralVelocity += CONFIG.lateralAccel;
             }
+            let accelerationScale = 1;
+            if (GAME_SETTINGS.controlMode === 'analog' && analogData.active && analogData.y < -0.1) {
+                accelerationScale = Math.min(1, Math.abs(analogData.y) * 1.5);
+            }
+            const inputFlags =
+                (isAccelerating ? 0x01 : 0) |
+                (isBraking ? 0x02 : 0) |
+                (state.keys.space ? 0x04 : 0);
+            recordRankedInput(inputFlags, accelerationScale);
             state.bike.lateralVelocity *= CONFIG.lateralFriction;
             if (state.bike.lateralVelocity > CONFIG.maxLateralSpeed) state.bike.lateralVelocity = CONFIG.maxLateralSpeed;
             if (state.bike.lateralVelocity < -CONFIG.maxLateralSpeed) state.bike.lateralVelocity = -CONFIG.maxLateralSpeed;
@@ -1473,6 +1714,23 @@ function animate(timestamp = performance.now()) {
             }
         }
 
+        // A long wheelie brought back down cleanly gets a word from the rider.
+        if (state.bike.angle > CONFIG.maxAngle * 0.3) {
+            wheelieHoldTime += dt;
+        } else if (state.bike.angle === 0) {
+            if (wheelieHoldTime > 3 && state.isPlaying) speak('landing');
+            wheelieHoldTime = 0;
+        }
+        const multiplierStep = Math.floor(state.timeMultiplier);
+        if (multiplierStep > lastMultiplierStep) {
+            audio.play('multiplier_up', { volume: 0.35, rate: 1 + (multiplierStep - 3) * 0.08 });
+        }
+        lastMultiplierStep = Math.max(2, multiplierStep);
+        if (!recordAnnounced && state.highScore > 0 && state.score > state.highScore) {
+            recordAnnounced = true;
+            audio.play('multiplier_up', { volume: 0.4, rate: 1.3 });
+        }
+
         if (state.bike.angle >= CONFIG.maxAngle * 0.5 && !announcedWheelie) {
             speak('wheelie');
             announcedWheelie = true;
@@ -1500,14 +1758,14 @@ function animate(timestamp = performance.now()) {
         const lastChunk = groundChunks[groundChunks.length - 1];
         if (bikeGroup.position.z < lastChunk.position.z + 200) {
             const newZ = lastChunk.position.z - 100;
-            const chunk = createGroundChunk(newZ);
+            const chunk = makeChunk(newZ);
             scene.add(chunk);
             groundChunks.push(chunk);
-            if (groundChunks.length > 12) {
+            // V2 blocks are pooled: keep only what can still be seen behind.
+            if (groundChunks.length > (IS_V2 ? 6 : 12)) {
                 const old = groundChunks.shift();
                 state.animatedObjects = state.animatedObjects.filter((object) => object.parent !== old);
-                scene.remove(old);
-                disposeObjectTree(old);
+                dropChunk(old);
             }
             // Only spawn obstacles in linear mode
             if (GAME_SETTINGS.gameMode === 'linear') {
@@ -1546,14 +1804,17 @@ function animate(timestamp = performance.now()) {
         simulationAccumulator -= FIXED_STEP;
     }
 
-    updateCamera();
+    // The run may have just ended in this frame: the crash sequence renders it.
+    if (!state.isPlaying) return;
+    const snapshot = visualSnapshot();
+    audio.update(elapsed, snapshot);
     uiAccumulator += elapsed;
     if (uiAccumulator >= 0.1) {
         updateUI();
         updateMultiplierDisplay();
         uiAccumulator %= 0.1;
     }
-    renderer.render(scene, camera);
+    renderScene(elapsed, snapshot);
 }
 
 function updateCamera() {
@@ -1658,7 +1919,8 @@ function updateCamera() {
         const isMobileDevice = (window.innerWidth < 768) || isMobile();
         
         // Distance de base réduite sur mobile
-        let baseDistance = isMobileDevice ? 5 : 8;
+        // The V2 rider is larger on screen: stand a little further back on phones.
+        let baseDistance = isMobileDevice ? (IS_V2 ? 6.5 : 5) : 8;
         let distanceOffset = baseDistance;
 
         // Éloignement progressif dès 25 km/h
@@ -1693,7 +1955,7 @@ function updateCamera() {
         }
 
         const targetZ = bikeGroup.position.z + distanceOffset;
-        const targetY = isMobileDevice ? 3.5 : 4.5; // Caméra plus basse sur mobile
+        const targetY = isMobileDevice ? (IS_V2 ? 4 : 3.5) : 4.5; // Caméra plus basse sur mobile
 
         // Rattrapage plus rapide (0.15 au lieu de 0.1)
         camera.position.x += (bikeGroup.position.x - camera.position.x) * 0.1 + shakeX;
@@ -1721,6 +1983,7 @@ function updateUI() {
         // Let's calibrate: 0 speed = 135deg. Max speed = 405deg.
         const deg = 135 + (pct * 270);
         speedNeedle.style.transform = `rotate(${deg}deg)`;
+        if (IS_V2) document.getElementById('speedometer').style.setProperty('--speed', pct.toFixed(3));
     }
 }
 
@@ -1814,14 +2077,24 @@ const GAME_SETTINGS = {
     difficulty: 'hard', // easy, medium, hard
     autoRace: false,
     graphicsQuality: 'high',
-    voiceEnabled: localStorage.getItem('wheelie_voice_enabled') !== 'false'
+    voiceEnabled: localStorage.getItem('wheelie_voice_enabled') !== 'false',
+    sfxEnabled: localStorage.getItem('wheelie_sfx_enabled') !== 'false',
+    language: localStorage.getItem('wheelie_language') === 'en' ? 'en' : 'fr'
 };
 
 const voiceAudio = new Audio();
 voiceAudio.preload = 'none';
 voiceAudio.volume = 0.8;
-let voiceManifestPromise;
+let audioManifestPromise;
 let voiceAssetsAvailable = false;
+let sfxAssetsAvailable = false;
+const audio = createAudioEngine({ effects: soundEffects, getManifest: () => getAudioManifest() });
+audio.setEnabled(GAME_SETTINGS.sfxEnabled);
+voiceAudio.addEventListener('playing', () => audio.duck(true));
+voiceAudio.addEventListener('pause', () => audio.duck(false));
+voiceAudio.addEventListener('ended', () => audio.duck(false));
+// The classic version keeps its original commentary; V2 uses the rider's voice.
+const voiceGroup = () => (IS_V2 ? GAME_SETTINGS.language : 'classic');
 let lastVoiceAt = -Infinity;
 let lastPeriodicVoiceAt = 0;
 let announcedWheelie = false;
@@ -1829,36 +2102,41 @@ let announcedCombo = false;
 let announcedSpeed = false;
 let announcedNearFall = false;
 
-function getVoiceManifest() {
-    if (!voiceManifestPromise) {
-        voiceManifestPromise = fetch('/audio/manifest.json')
+function getAudioManifest() {
+    if (!audioManifestPromise) {
+        audioManifestPromise = fetch('/audio/manifest.json')
             .then((response) => {
-                if (!response.ok) throw new Error(`Voice manifest request failed: ${response.status}`);
+                if (!response.ok) throw new Error(`Audio manifest request failed: ${response.status}`);
                 return response.json();
             })
             .then((manifest) => {
                 const available = new Set(Array.isArray(manifest.available) ? manifest.available : []);
-                voiceAssetsAvailable = available.size > 0;
+                voiceAssetsAvailable = Object.values(voiceLineGroups[voiceGroup()] || {})
+                    .some((lines) => lines.some((line) => available.has(line.id)));
+                sfxAssetsAvailable = soundEffects.some((effect) => available.has(effect.id));
                 updateVoiceToggle();
+                updateSfxToggle();
                 return { available, hashes: manifest.hashes || {} };
             })
             .catch((error) => {
-                console.warn('Voice commentary is unavailable:', error);
+                console.warn('Game audio is unavailable:', error);
                 voiceAssetsAvailable = false;
+                sfxAssetsAvailable = false;
                 updateVoiceToggle();
+                updateSfxToggle();
                 return { available: new Set(), hashes: {} };
             });
     }
-    return voiceManifestPromise;
+    return audioManifestPromise;
 }
 
 function speak(eventName, { force = false, allowWhenStopped = false } = {}) {
-    const lines = voiceLineGroups[eventName];
+    const lines = voiceLineGroups[voiceGroup()]?.[eventName];
     if (!GAME_SETTINGS.voiceEnabled || !lines || (!state.isPlaying && !allowWhenStopped)) return;
     if (!force && performance.now() - lastVoiceAt < 8000) return;
 
     lastVoiceAt = performance.now();
-    getVoiceManifest().then(({ available, hashes }) => {
+    getAudioManifest().then(({ available, hashes }) => {
         if (!GAME_SETTINGS.voiceEnabled || (!state.isPlaying && !allowWhenStopped)) return;
         const choices = lines.filter((line) => available.has(line.id));
         if (choices.length === 0 || (!force && !voiceAudio.paused)) return;
@@ -1869,7 +2147,8 @@ function speak(eventName, { force = false, allowWhenStopped = false } = {}) {
         voiceAudio.src = `/audio/${line.id}.mp3${version}`;
         voiceAudio.currentTime = 0;
         voiceAudio.play().catch((error) => {
-            console.warn(`Could not play voice line "${line.id}":`, error);
+            // A newer line cutting this one off is expected, not a failure.
+            if (error.name !== 'AbortError') console.warn(`Could not play voice line "${line.id}":`, error);
         });
     });
 }
@@ -1896,9 +2175,49 @@ function updateVoiceToggle() {
     }
 }
 
+function setSfxEnabled(enabled) {
+    GAME_SETTINGS.sfxEnabled = enabled;
+    localStorage.setItem('wheelie_sfx_enabled', String(enabled));
+    updateSfxToggle();
+    audio.setEnabled(enabled);
+    if (enabled && state.isPlaying) {
+        audio.prepare();
+        audio.startRun();
+    }
+}
+
+function updateSfxToggle() {
+    const sfxToggle = document.getElementById('sfx-toggle');
+    if (!sfxToggle) return;
+    sfxToggle.classList.toggle('active', GAME_SETTINGS.sfxEnabled);
+    sfxToggle.textContent = !sfxAssetsAvailable && GAME_SETTINGS.sfxEnabled
+        ? '🎚️ EFFETS : À GÉNÉRER'
+        : GAME_SETTINGS.sfxEnabled ? '🔊 EFFETS : ON' : '🔇 EFFETS : OFF';
+}
+
+function setAudioLanguage(language) {
+    if (language !== 'fr' && language !== 'en') return;
+    GAME_SETTINGS.language = language;
+    localStorage.setItem('wheelie_language', language);
+    updateLanguageButtons();
+}
+
+function updateLanguageButtons() {
+    document.getElementById('language-fr')?.classList.toggle('active', GAME_SETTINGS.language === 'fr');
+    document.getElementById('language-en')?.classList.toggle('active', GAME_SETTINGS.language === 'en');
+}
+
 // Apply graphics quality settings
 function applyGraphicsQuality() {
     const isTouchDevice = isMobile();
+    if (v2) {
+        const high = GAME_SETTINGS.graphicsQuality === 'high';
+        renderer.shadowMap.enabled = high || !isTouchDevice;
+        renderer.setPixelRatio(high ? Math.min(window.devicePixelRatio || 1, isTouchDevice ? 1.5 : 2) : 1);
+        v2.setQuality(high);
+        renderer.setSize(window.innerWidth, window.innerHeight);
+        return;
+    }
     renderer.shadowMap.enabled = !isTouchDevice || GAME_SETTINGS.graphicsQuality === 'high';
     dirLight.castShadow = renderer.shadowMap.enabled;
     if (GAME_SETTINGS.graphicsQuality === 'high') {
@@ -2074,11 +2393,12 @@ window.addEventListener('resize', () => {
     camera.updateProjectionMatrix();
     renderer.setSize(window.innerWidth, window.innerHeight);
 
-    // Force camera update for orientation change
-    if (bikeGroup) {
-        updateCamera();
+    // Redraw for the new size (the game loop does it while a run is on).
+    if (bikeGroup && !state.isPlaying && !(v2 && v2.rider.crashing)) {
+        if (v2) v2.frame(0, visualSnapshot());
+        else updateCamera();
+        renderer.render(scene, camera);
     }
-    renderer.render(scene, camera);
 });
 
 document.addEventListener('keydown', (e) => {
@@ -2154,6 +2474,34 @@ document.getElementById('btn-cat-controls')?.addEventListener('click', () => sho
 document.getElementById('btn-cat-gamemode')?.addEventListener('click', () => showSubmenu('submenu-gamemode'));
 document.getElementById('btn-cat-options')?.addEventListener('click', () => showSubmenu('submenu-options'));
 document.getElementById('btn-cat-graphics')?.addEventListener('click', () => showSubmenu('submenu-graphics'));
+document.getElementById('btn-cat-version')?.addEventListener('click', () => showSubmenu('submenu-version'));
+
+// Switching version reloads the page: scores, nickname and settings are kept.
+function switchVersion(version) {
+    if (version === GAME_VERSION) return;
+    localStorage.setItem(VERSION_KEY, version);
+    const url = new URL(window.location.href);
+    url.searchParams.delete('version');
+    window.location.replace(url);
+}
+
+function updateVersionUI() {
+    document.getElementById('version-v2')?.classList.toggle('active', IS_V2);
+    document.getElementById('version-classic')?.classList.toggle('active', !IS_V2);
+    const label = document.getElementById('version-label');
+    if (label) label.innerText = IS_V2 ? '51 Games - V2.0 Réaliste' : '51 Games - V1.0 Classique';
+    // The rider's language only applies to the V2 voice.
+    document.querySelectorAll('.v2-only').forEach((element) => {
+        element.style.display = IS_V2 ? '' : 'none';
+    });
+}
+
+document.getElementById('version-v2')?.addEventListener('click', () => switchVersion('v2'));
+document.getElementById('version-classic')?.addEventListener('click', () => switchVersion('classic'));
+
+document.addEventListener('click', (event) => {
+    if (event.target.closest('button')) audio.play('ui_click', { volume: 0.45 });
+});
 
 // Back to Main Buttons
 document.querySelectorAll('.back-to-main-btn').forEach(btn => {
@@ -2284,6 +2632,18 @@ document.getElementById('voice-toggle')?.addEventListener('click', () => {
     setVoiceEnabled(!GAME_SETTINGS.voiceEnabled);
 });
 
+document.getElementById('sfx-toggle')?.addEventListener('click', () => {
+    setSfxEnabled(!GAME_SETTINGS.sfxEnabled);
+});
+
+document.getElementById('language-fr')?.addEventListener('click', () => {
+    setAudioLanguage('fr');
+});
+
+document.getElementById('language-en')?.addEventListener('click', () => {
+    setAudioLanguage('en');
+});
+
 document.getElementById('fullscreen-btn')?.addEventListener('click', async () => {
     try {
         if (document.fullscreenElement) {
@@ -2308,30 +2668,69 @@ document.getElementById('pause-btn').addEventListener('click', togglePause);
 const API_BASE_URL = 'https://51-games-api.vercel.app/api/ranking';
 const GAME_NAME = 'WheelieKing';
 
-// Fonction pour envoyer le score à l'API
-async function sendScoreToAPI(nickname, score) {
+function setRankingStatus(message) {
+    const status = document.getElementById('ranking-status');
+    if (!status) return;
+    status.innerText = message;
+    status.style.display = message ? 'block' : 'none';
+}
+
+async function createWheelieRun() {
+    const response = await fetch(`${API_BASE_URL}/wheelie-sessions`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ difficulty: GAME_SETTINGS.difficulty })
+    });
+
+    if (!response.ok) {
+        throw new Error(`Impossible d’ouvrir une session classée (${response.status})`);
+    }
+
+    const data = await response.json();
+    if (!data.run_token) throw new Error('L’API n’a pas fourni de jeton de partie');
+    return data.run_token;
+}
+
+function encodeInputLog(inputLog) {
+    const bytes = inputLog instanceof Uint8Array ? inputLog : Uint8Array.from(inputLog);
+    let binary = '';
+    const chunkSize = 0x8000;
+    for (let offset = 0; offset < bytes.length; offset += chunkSize) {
+        binary += String.fromCharCode(...bytes.subarray(offset, offset + chunkSize));
+    }
+    return btoa(binary);
+}
+
+async function submitCompletedRun(nickname) {
+    if (!completedRankedRun) {
+        setRankingStatus('Score non classé : aucun replay vérifiable n’est disponible.');
+        return false;
+    }
+
     try {
-        const response = await fetch(API_BASE_URL + '/', {
+        const response = await fetch(`${API_BASE_URL}/wheelie-sessions/submit`, {
             method: 'POST',
-            headers: {
-                'Content-Type': 'application/json',
-            },
+            headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({
-                game_name: GAME_NAME,
-                nickname: nickname,
-                score: score
+                run_token: completedRankedRun.runToken,
+                nickname,
+                input_log: encodeInputLog(completedRankedRun.inputLog)
             })
         });
         
         if (!response.ok) {
-            throw new Error('Erreur lors de l\'envoi du score');
+            const error = await response.json().catch(() => ({}));
+            throw new Error(error.detail || `Échec de l’envoi du score (${response.status})`);
         }
         
         const data = await response.json();
-        console.log('Score envoyé avec succès:', data);
+        updateLeaderboard(nickname, data.score);
+        setRankingStatus(`Score classé : ${data.score} points.`);
+        completedRankedRun = null;
         return true;
     } catch (error) {
         console.error('Erreur API:', error);
+        setRankingStatus('Score non classé : vérification ou envoi impossible. ' + error.message);
         return false;
     }
 }
@@ -2392,15 +2791,10 @@ async function submitNickname() {
     const nickname = nicknameInput.value.trim();
     
     if (nickname.length > 0) {
-        // Sauvegarder le pseudo
+        const submitted = await submitCompletedRun(nickname);
+        if (!submitted) return;
+
         localStorage.setItem('wheelie_nickname', nickname);
-        
-        // Mettre à jour le leaderboard
-        const currentScore = Math.floor(state.score);
-        updateLeaderboard(nickname, currentScore);
-        
-        // Envoyer le score à l'API
-        await sendScoreToAPI(nickname, currentScore);
         
         // Afficher le pseudo dans le menu
         displayNickname();
@@ -2413,6 +2807,7 @@ async function submitNickname() {
 function closeNicknamePopup() {
     const popup = document.getElementById('nickname-popup');
     if (popup) popup.style.display = 'none';
+    completedRankedRun = null;
 }
 
 function displayNickname() {
@@ -2515,3 +2910,8 @@ document.getElementById('back-from-leaderboard')?.addEventListener('click', () =
 displayNickname();
 
 init();
+
+// Development only: lets tests and the console inspect a running game.
+if (import.meta.env.DEV) {
+    window.__wheelie = { state, renderer, scene, camera, audio, CONFIG, get v2() { return v2; } };
+}

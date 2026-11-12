@@ -1,0 +1,134 @@
+[
+  {
+    "id": "engine_idle",
+    "durationSeconds": 5,
+    "loop": true,
+    "text": "Close-mic recording of a small single-cylinder street motorcycle engine idling at a steady low RPM, soft rough four-stroke pulse, constant and even, isolated clean recording, no revving, no speech, no music, no wind, no traffic, seamless loop."
+  },
+  {
+    "id": "engine_mid",
+    "durationSeconds": 5,
+    "loop": true,
+    "text": "Close-mic recording of a small street motorcycle engine held at a perfectly steady medium RPM under load, constant even drone with exhaust growl, no gear changes, no pitch change, isolated clean recording, no speech, no music, no wind, seamless loop."
+  },
+  {
+    "id": "engine_high",
+    "durationSeconds": 5,
+    "loop": true,
+    "text": "Close-mic recording of a sport motorcycle engine held at a perfectly steady high RPM, constant aggressive raspy exhaust scream, no gear changes, no pitch change, isolated clean recording, no speech, no music, no wind, seamless loop."
+  },
+  {
+    "id": "wind",
+    "durationSeconds": 6,
+    "loop": true,
+    "text": "Constant strong wind rushing past a motorcycle helmet at high speed, smooth broadband air roar with light buffeting, no engine, no voices, no music, seamless loop."
+  },
+  {
+    "id": "tire_wet",
+    "durationSeconds": 5,
+    "loop": true,
+    "text": "Constant hiss of a tire rolling fast on a wet asphalt road, fine water spray and soft road noise, steady and even, no engine, no rain drops, no voices, no music, seamless loop."
+  },
+  {
+    "id": "city_ambience",
+    "durationSeconds": 10,
+    "loop": true,
+    "text": "Calm city street ambience at dusk after rain, very distant traffic hum, faint far-away city murmur, soft and steady, no car horns, no sirens, no nearby voices, no music, seamless loop."
+  },
+  {
+    "id": "scrape",
+    "durationSeconds": 3,
+    "loop": true,
+    "text": "Continuous harsh metal scraping and grinding along asphalt, a motorcycle part dragging on the road throwing sparks, steady gritty scrape, no impact, no voices, no music, seamless loop."
+  },
+  {
+    "id": "rev_blip",
+    "durationSeconds": 2,
+    "loop": false,
+    "text": "A small street motorcycle throttle blip: the engine revs up sharply twice and settles back down, close and punchy, isolated sound effect, no speech, no music, no background."
+  },
+  {
+    "id": "gear_shift",
+    "durationSeconds": 0.5,
+    "loop": false,
+    "text": "A single quick mechanical motorcycle gearbox shift clunk, short metallic click, dry and close, no engine, no voices."
+  },
+  {
+    "id": "backfire",
+    "durationSeconds": 1,
+    "loop": false,
+    "text": "Motorcycle exhaust popping and crackling on deceleration, two or three short sharp exhaust pops, close, no speech, no music."
+  },
+  {
+    "id": "skid",
+    "durationSeconds": 2,
+    "loop": false,
+    "text": "A motorcycle rear tire skidding across wet asphalt, gritty rubber slide with a short tire squeal and water spray, starts immediately, close isolated sound effect, no crash, no speech, no music."
+  },
+  {
+    "id": "brake",
+    "durationSeconds": 1.5,
+    "loop": false,
+    "text": "A short motorcycle disc brake squeal with tire scrub on asphalt during hard braking, starts immediately, close isolated sound effect, no collision, no speech, no music."
+  },
+  {
+    "id": "collision",
+    "durationSeconds": 2.5,
+    "loop": false,
+    "text": "A heavy motorcycle crash onto asphalt: immediate hard metal and plastic impact, then the bike sliding and scraping along the road with rattling parts, realistic, not an explosion, no voice, no music."
+  },
+  {
+    "id": "landing",
+    "durationSeconds": 1,
+    "loop": false,
+    "text": "A motorcycle front wheel dropping back onto the road after a wheelie: a firm rubber tire thump with a short suspension compression clunk, starts immediately, no voices, no music."
+  },
+  {
+    "id": "whoosh",
+    "durationSeconds": 1,
+    "loop": false,
+    "text": "A fast, short air whoosh of passing very close by a roadside object at high speed, doppler pass-by swish, no engine, no voices, no music."
+  },
+  {
+    "id": "splash",
+    "durationSeconds": 1,
+    "loop": false,
+    "text": "A motorcycle tire splashing fast through a shallow rain puddle, quick spray of water, starts immediately, no voices, no music."
+  },
+  {
+    "id": "horn_distant",
+    "durationSeconds": 2,
+    "loop": false,
+    "text": "A single car horn honking far away down a city street, distant and echoing between buildings, quiet, no voices, no music."
+  },
+  {
+    "id": "ui_click",
+    "durationSeconds": 0.5,
+    "loop": false,
+    "text": "A short, soft, clean user interface button click, subtle modern game menu tick, no reverb."
+  },
+  {
+    "id": "countdown_beep",
+    "durationSeconds": 0.5,
+    "loop": false,
+    "text": "A single short race countdown beep, clean electronic tone at medium pitch, no reverb."
+  },
+  {
+    "id": "go_beep",
+    "durationSeconds": 1,
+    "loop": false,
+    "text": "A single longer, higher-pitched race start signal beep, clean electronic tone, the final go signal of a race countdown."
+  },
+  {
+    "id": "multiplier_up",
+    "durationSeconds": 1,
+    "loop": false,
+    "text": "A short bright rising arcade chime for a score multiplier increasing, two quick ascending notes, clean and satisfying, no voice."
+  },
+  {
+    "id": "new_record",
+    "durationSeconds": 2,
+    "loop": false,
+    "text": "A short triumphant arcade victory sting for a new high score, bright ascending synth notes ending on a sparkle, no voice."
+  }
+]

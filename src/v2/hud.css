@@ -1,0 +1,167 @@
+/* HUD skin for the realistic version. Every rule is scoped to body.v2 so the
+   classic version keeps its original look untouched. */
+
+body.v2 #score-container {
+  top: calc(12px + env(safe-area-inset-top));
+  padding: 7px 44px 9px;
+  font-size: 30px;
+  font-style: italic;
+  letter-spacing: 1px;
+  white-space: nowrap;
+  color: #ffc81a;
+  text-shadow: 0 2px 0 #6b3d00, 0 0 14px rgba(255, 190, 40, 0.45);
+  isolation: isolate;
+  filter: drop-shadow(0 0 1px #46c0ff) drop-shadow(0 0 7px rgba(70, 192, 255, 0.45));
+}
+
+body.v2 #score-container::before {
+  content: '';
+  position: absolute;
+  inset: 0;
+  z-index: -1;
+  background: linear-gradient(180deg, rgba(20, 36, 82, 0.94), rgba(7, 12, 32, 0.94));
+  clip-path: polygon(6% 0, 94% 0, 100% 50%, 96% 100%, 4% 100%, 0 50%);
+}
+
+body.v2 #score-container::after {
+  content: '';
+  position: absolute;
+  left: 16%;
+  right: 16%;
+  bottom: 0;
+  height: 2px;
+  z-index: -1;
+  background: linear-gradient(90deg, transparent, #ffb300, transparent);
+}
+
+body.v2 #angle-multiplier-display {
+  top: calc(78px + env(safe-area-inset-top));
+}
+
+body.v2 #pause-btn {
+  width: 46px;
+  height: 46px;
+  font-size: 0 !important;
+  text-indent: -999px;
+  overflow: hidden;
+  padding: 0 !important;
+  background:
+    linear-gradient(#fff, #fff) calc(50% - 5px) 50% / 5px 16px no-repeat,
+    linear-gradient(#fff, #fff) calc(50% + 5px) 50% / 5px 16px no-repeat,
+    radial-gradient(circle at 50% 30%, #23457f, #0a1530 75%);
+  border: 2px solid #46c0ff;
+  box-shadow: 0 4px 0 #c9591a, 0 0 12px rgba(70, 192, 255, 0.5);
+}
+
+body.v2 #pause-btn:hover {
+  border-color: #8edbff;
+}
+
+/* Neon ring speedometer */
+body.v2 #speedometer {
+  --speed: 0;
+  width: 112px;
+  height: 112px;
+  right: calc(22px + env(safe-area-inset-right));
+  bottom: calc(22px + env(safe-area-inset-bottom));
+  border: none;
+  background:
+    radial-gradient(circle, #080c1a 0 61%, transparent 62%),
+    conic-gradient(from 225deg,
+      #ff2f45 0turn,
+      #ff8a3d calc(var(--speed) * 0.4turn),
+      #b45cff calc(var(--speed) * 0.75turn),
+      rgba(255, 255, 255, 0.13) calc(var(--speed) * 0.75turn + 0.004turn),
+      rgba(255, 255, 255, 0.13) 0.75turn,
+      transparent 0.75turn);
+  box-shadow: 0 0 20px rgba(255, 60, 80, 0.4), 0 6px 22px rgba(0, 0, 0, 0.6);
+}
+
+body.v2 #speedometer .gauge {
+  display: none;
+}
+
+body.v2 #speedometer::before {
+  inset: 12px;
+  width: auto;
+  height: auto;
+  background: repeating-conic-gradient(from 225deg, rgba(255, 255, 255, 0.6) 0 1.2deg, transparent 1.2deg 22.5deg);
+  -webkit-mask: radial-gradient(circle, transparent 0 80%, #000 81% 92%, transparent 93%);
+  mask: radial-gradient(circle, transparent 0 80%, #000 81% 92%, transparent 93%);
+}
+
+body.v2 #speed-text {
+  font-size: 34px;
+  letter-spacing: 0;
+  color: #ff4a3d;
+  -webkit-text-stroke: 0;
+  text-shadow: 0 0 10px rgba(255, 74, 61, 0.9), 0 0 22px rgba(255, 74, 61, 0.5);
+}
+
+body.v2 #speed-unit {
+  margin-top: 3px;
+  font-size: 11px;
+  color: #ffc81a;
+  -webkit-text-stroke: 0;
+  text-shadow: 0 0 8px rgba(255, 200, 26, 0.6);
+}
+
+/* Touch devices keep the bottom corners for the controls. */
+@media (pointer: coarse) {
+  body.v2 #speedometer {
+    width: 78px;
+    height: 78px;
+    top: calc(10px + env(safe-area-inset-top));
+    right: calc(12px + env(safe-area-inset-right));
+    bottom: auto;
+  }
+
+  body.v2 #speedometer::before {
+    inset: 8px;
+  }
+
+  body.v2 #speed-text {
+    font-size: 23px;
+  }
+
+  body.v2 #speed-unit {
+    font-size: 8px;
+    margin-top: 1px;
+  }
+
+  body.v2 #score-container {
+    font-size: 22px;
+    padding: 5px 30px 7px;
+  }
+
+  body.v2 #pause-btn {
+    width: 40px;
+    height: 40px;
+  }
+
+  /* Keep the multiplier pop-up clear of the score and the speedometer. */
+  body.v2 #time-multiplier-display {
+    top: calc(104px + env(safe-area-inset-top));
+    font-size: 38px;
+  }
+}
+
+/* Menus: let the city show through instead of a flat black panel, and keep
+   the in-game HUD out of the way while a menu is up. */
+body.v2 .screen {
+  background: linear-gradient(180deg, rgba(6, 10, 28, 0.42), rgba(6, 10, 28, 0.82));
+}
+
+body.v2:has(.screen.active) :is(#score-container, #speedometer, #pause-btn, #angle-multiplier-display,
+  #time-multiplier-display, #wheelie-percentage-display) {
+  visibility: hidden;
+}
+
+body.v2 #game-over-screen {
+  background: radial-gradient(circle at 50% 40%, rgba(6, 10, 28, 0.55), rgba(6, 10, 28, 0.9));
+}
+
+body.v2 h1 {
+  font-style: italic;
+  text-shadow: 0 3px 0 #6b3d00, 0 0 24px rgba(255, 190, 40, 0.45);
+}

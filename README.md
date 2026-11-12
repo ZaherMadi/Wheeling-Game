@@ -1,13 +1,17 @@
 # Wheelie King - Banlieue Edition 🏍️
 
-A 3D motocross wheelie game built with Three.js.
+A 3D motorcycle wheelie game built with Three.js.
 
 ## Features
-- **Realistic Physics**: Balance your bike with acceleration and gravity.
-- **Urban Environment**: Ride through a detailed city with dynamic day-night cycles.
-- **Tricks**: Perform wheelies and maintain balance for high scores.
-- **Customization**: Rider with #51 jersey and backwards cap.
-- **Voice commentary**: Optional French rider commentary generated with ElevenLabs.
+- **Two versions, one game**: the realistic V2 and the original V1 look ship
+  together and can be switched at any time (see below).
+- **Wheelie physics**: balance the bike with throttle, brake and gravity.
+- **Rider voice**: the rider reacts in French or English (ElevenLabs, voice
+  "Young Jamal").
+- **Layered sound**: engine with a simulated gearbox, wind, wet-road tyre hiss,
+  city ambience, skids, landings, close passes, crashes.
+- **Verified ranking**: ranked runs use a one-use API session and submit recorded
+  controls; the server computes the leaderboard score.
 
 ## Controls
 - **Arrow Up**: Accelerate
@@ -15,24 +19,58 @@ A 3D motocross wheelie game built with Three.js.
 - **Arrow Left/Right**: Steer
 - **Space + Arrow Up**: Wheelie (Pull back)
 
-## Generate voice commentary
+## Game versions
 
-The game uses prerecorded ElevenLabs clips, so the API key is only needed on your
-own machine during generation and is never sent to players or committed.
+`Paramètres → Version du jeu` switches between:
 
-1. In ElevenLabs, choose a French-speaking youthful masculine voice, then create
-   `.env.local` with your API key and that voice's ID:
+- **Réaliste (V2)**, the default: golden-hour city with a wet road, a rebuilt
+  articulated rider (#51 jersey), particles, crash sequence, new HUD and the
+  rider's own voice.
+- **Classique (V1)**: the original scenery, rider model, HUD and commentary.
+
+The choice is stored on the device; `?version=classic` or `?version=v2` in the
+URL forces it. Both versions run the exact same simulation, scoring and ranked
+replay (`main.js`), so scores are comparable. Everything specific to V2 lives
+in `src/v2/` and is only downloaded when V2 is selected:
+
+| File | Role |
+| --- | --- |
+| `src/v2/textures.js` | Procedural textures (sky, wet road, facades, shops) |
+| `src/v2/world.js` | City blocks (merged + pooled), lights, obstacles |
+| `src/v2/rider.js` | Bike and rider rig, IK, suspension, crash |
+| `src/v2/fx.js` | Spray, smoke and spark particles |
+| `src/v2/hud.css` | HUD skin (scoped to `body.v2`) |
+
+V2 only changes what is drawn and heard. Do not change the physics constants
+in `main.js` without updating the server replay (`wheelie_replay.py` in the
+API), or ranked scores will stop matching.
+
+## Generate character voice and sound effects
+
+The game plays prerecorded ElevenLabs clips. Audio is generated locally and is
+never requested from ElevenLabs by players.
+
+1. Create `.env.local` with your API key and the character's voice ID:
 
    ```text
    ELEVENLABS_API_KEY=your_api_key
    ELEVENLABS_VOICE_ID=your_selected_voice_id
    ```
 
-2. Run `npm run generate:voice`. This uses the current `eleven_v4` model by
-   default; the optional `ELEVENLABS_MODEL_ID` setting in `.env.local` can
-   override it.
+2. Edit the lines in `src/voice-lines.json` (`fr`, `en`) or the effect prompts
+   in `src/sound-effects.json`, then run `npm run generate:audio`. Only new or
+   changed entries are generated. To redo specific clips:
+   `npm run generate:audio -- fr_start_1 skid --force`.
 3. Commit the generated MP3 files and `public/audio/manifest.json` so they ship
    with the game. Never commit `.env.local`.
+
+Speech uses `eleven_v4`; sound effects use `eleven_text_to_sound_v2`. Override
+with `ELEVENLABS_MODEL_ID` and `ELEVENLABS_SFX_MODEL_ID`. When `ffmpeg` is
+installed, voice lines and one-shot effects are trimmed and levelled; loops are
+made seamless and levelled by the game when it loads them.
+
+The `classic` group in `src/voice-lines.json` is the V1 commentary: those clips
+are kept as they are and never regenerated.
 
 ## Tech Stack
 - Three.js
