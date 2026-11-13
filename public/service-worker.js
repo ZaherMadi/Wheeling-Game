@@ -1,4 +1,4 @@
-const CACHE_NAME = 'wheelie-king-v3';
+const CACHE_NAME = 'wheelie-king-v4';
 const APP_SHELL = [
     '/',
     '/index.html',
@@ -71,7 +71,7 @@ self.addEventListener('fetch', (event) => {
         caches.match(request).then(async (cached) => {
             if (cached) return cached;
             const response = await fetch(request);
-            if (response.ok && /\.(?:js|css|gltf|json|png|ico|mp3)$/i.test(url.pathname)) {
+            if (response.ok && /\.(?:js|css|gltf|json|png|jpg|webp|ico|mp3)$/i.test(url.pathname)) {
                 const cache = await caches.open(CACHE_NAME);
                 await cache.put(request, response.clone());
             }

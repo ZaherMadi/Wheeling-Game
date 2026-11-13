@@ -28,6 +28,30 @@ export function createRealisticVersion({ scene, renderer, camera, mobile }) {
     let peakAngle = 0;
     let highQuality = true;
 
+    // Dynamic resolution: when frames take too long, render fewer pixels;
+    // give them back when there is headroom. Measured over 1.5 s windows.
+    const resolution = { base: renderer.getPixelRatio(), scale: 1, min: mobile ? 0.6 : 0.7, last: 0, total: 0, frames: 0 };
+    function adaptResolution() {
+        const now = performance.now();
+        const delta = resolution.last ? now - resolution.last : 0;
+        resolution.last = now;
+        // Ignore pauses (menus, tab switches).
+        if (delta <= 0 || delta > 250) return;
+        resolution.total += delta;
+        resolution.frames++;
+        if (resolution.total < 1500) return;
+        const average = resolution.total / resolution.frames;
+        resolution.total = 0;
+        resolution.frames = 0;
+        let scale = resolution.scale;
+        if (average > 22 && scale > resolution.min) scale = Math.max(resolution.min, scale * 0.85);
+        else if (average < 15 && scale < 1) scale = Math.min(1, scale * 1.08);
+        if (scale !== resolution.scale) {
+            resolution.scale = scale;
+            renderer.setPixelRatio(resolution.base * scale);
+        }
+    }
+
     function reset() {
         rider.reset();
         fx.clear();
@@ -45,6 +69,7 @@ export function createRealisticVersion({ scene, renderer, camera, mobile }) {
 
     // Called once per rendered frame, after the camera has been placed.
     function frame(dt, snapshot) {
+        if (dt > 0) adaptResolution();
         const bike = rider.bikeGroup;
         if (dt > 0) {
             bikeVelocity.subVectors(bike.position, lastPosition).divideScalar(dt);
@@ -93,10 +118,13 @@ export function createRealisticVersion({ scene, renderer, camera, mobile }) {
     function setQuality(high) {
         highQuality = high;
         world.setQuality(high);
+        resolution.base = renderer.getPixelRatio();
+        resolution.scale = 1;
     }
 
     return {
         world, rider, fx, frame, reset, setQuality,
+        get resolutionScale() { return resolution.scale; },
         smoke: () => fx.smoke(rider.bikeGroup.position, bikeVelocity),
         spark: () => fx.spark(point.copy(rider.bikeGroup.position).setY(0.08), bikeVelocity, 2)
     };
