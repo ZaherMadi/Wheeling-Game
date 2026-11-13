@@ -377,8 +377,9 @@ export function createRider({ scene }) {
         surge: 0, pump: 0, throttle: 0, lastKmh: 0, lastAngle: 0
     };
     const crash = {
-        active: false, time: 0, kind: 'hit', side: 1, spin: 0, fall: 1, tumble: 0, landed: false,
-        velocity: new THREE.Vector3(), bikeVelocity: new THREE.Vector3()
+        active: false, time: 0, kind: 'hit', variant: 'tumble', side: 1, landed: false, landTime: 0,
+        bikePitch: 0, bikeYaw: 0, bikeSlide: 2.4,
+        velocity: new THREE.Vector3(), bikeVelocity: new THREE.Vector3(), spinRates: new THREE.Vector3()
     };
 
     function reset() {
@@ -545,25 +546,107 @@ export function createRider({ scene }) {
     }
 
     // --- Crash ------------------------------------------------------------
-    // kind 'loop' = flipped over backwards, 'hit' = taken down by an obstacle.
+    // The way the rider goes down depends on how he was riding:
+    //   loopFlip   wheelie over the top at low speed: back-flip, lands on his back
+    //   loopSlide  over the top at speed: thrown back, slides on his back
+    //   highside   head-on at high speed: launched over the bars, forward flips
+    //   tumble     head-on at medium speed: thrown off, rolls
+    //   lowside    while leaning or skidding: bike slides out, rider rolls sideways
+    //   bail       hit with the front wheel up: falls off the back
+    //   tipover    almost stopped: the bike tips over, the rider stumbles off
     const forward = new THREE.Vector3();
-    function startCrash(kind, unitsPerSecond) {
+    const axis = new THREE.Vector3();
+    const riderUp = new THREE.Vector3();
+    const flat = new THREE.Vector3();
+    const settle = new THREE.Quaternion();
+    const spinStep = new THREE.Quaternion();
+
+    function chooseCrash(kind, info) {
+        const kmh = info.kmh || 0;
+        if (kind === 'loop') return kmh > 60 ? 'loopSlide' : 'loopFlip';
+        if (info.skidding) return 'lowside';
+        if ((info.angleRatio || 0) > 0.22) return 'bail';
+        if (kmh < 28) return 'tipover';
+        if (Math.abs(info.steer || 0) > 0.45) return 'lowside';
+        if (kmh > 95) return 'highside';
+        return 'tumble';
+    }
+
+    // speed (units/s along the road), up, side push: all in rider units.
+    const CRASHES = {
+        loopFlip: { carry: 0.55, up: 2.6, push: 0.8, spin: [-6, 0.6, 0], bike: 'flipBack', slide: 2.6 },
+        loopSlide: { carry: 0.86, up: 1.5, push: 0.6, spin: [-4.2, 0.4, 0], bike: 'flipBack', slide: 1.7 },
+        highside: { carry: 1.02, up: 4.4, push: 0.9, spin: [7.5, 0.8, 2.5], bike: 'endo', slide: 1.9 },
+        tumble: { carry: 0.9, up: 3.2, push: 2.2, spin: [4, 0.5, 1.5], bike: 'layDown', slide: 2.4 },
+        lowside: { carry: 0.95, up: 0.9, push: 1.8, spin: [1, 0.3, 6], bike: 'layDown', slide: 1.5 },
+        bail: { carry: 0.7, up: 2.8, push: 1.2, spin: [-5, 0.6, 0.8], bike: 'flipBack', slide: 2.4 },
+        tipover: { carry: 0.6, up: 1.1, push: 1.6, spin: [0.6, 0.2, 3], bike: 'tip', slide: 4 }
+    };
+
+    function startCrash(kind, unitsPerSecond, info = {}) {
         crash.active = true;
         crash.time = 0;
         crash.kind = kind;
-        crash.side = Math.random() < 0.5 ? -1 : 1;
-        crash.fall = kind === 'loop' ? -1 : 1;
-        crash.spin = crash.fall * (kind === 'loop' ? 5 : 3.5) * (0.8 + Math.random() * 0.4);
-        crash.tumble = 0;
+        crash.variant = chooseCrash(kind, info);
+        const spec = CRASHES[crash.variant];
+        // Fall towards the side the bike was leaning or steering, else at random.
+        const lean = info.steer || bikeGroup.rotation.z || 0;
+        crash.side = Math.abs(lean) > 0.05 ? Math.sign(lean) : (Math.random() < 0.5 ? -1 : 1);
         crash.landed = false;
+        crash.landTime = 0;
+        crash.bikePitch = 0;
+        crash.bikeYaw = (Math.random() - 0.5) * (crash.variant === 'lowside' || crash.variant === 'highside' ? 5 : 2);
         forward.set(0, 0, 1).applyQuaternion(bikeGroup.quaternion);
         const speed = Math.min(unitsPerSecond, 34);
         crash.bikeVelocity.copy(forward).multiplyScalar(speed);
+        crash.bikeSlide = spec.slide;
         // Stay close to the bike so the fall is still in frame.
-        crash.velocity.copy(forward).multiplyScalar(speed * (kind === 'loop' ? 0.82 : 0.9));
-        crash.velocity.y = (kind === 'loop' ? 2.4 : 3.2) * SCALE;
-        crash.velocity.x += crash.side * 2.2 * SCALE;
+        crash.velocity.copy(forward).multiplyScalar(speed * spec.carry);
+        crash.velocity.y = spec.up * SCALE * (0.9 + Math.random() * 0.2);
+        crash.velocity.x += crash.side * spec.push * SCALE;
+        // Spin in the bike's frame: [flip forward, yaw, roll towards the fall side].
+        const jitter = () => 0.8 + Math.random() * 0.4;
+        flat.crossVectors(UP, forward).normalize();
+        crash.spinRates.set(0, 0, 0)
+            .addScaledVector(flat, spec.spin[0] * jitter())
+            .addScaledVector(UP, spec.spin[1] * (Math.random() - 0.5) * 2)
+            .addScaledVector(forward, spec.spin[2] * crash.side * jitter());
         scene.attach(riderGroup);
+    }
+
+    // Arms and legs during the fall: flailing in the air, sprawled once down.
+    function pelvisPoint(x, y, z, out) {
+        return riderGroup.worldToLocal(pelvis.localToWorld(out.set(x, y, z)));
+    }
+
+    function animateLimbs(t) {
+        const air = crash.landed ? Math.exp(-(t - crash.landTime) * 4) : 1;
+        riderGroup.updateMatrixWorld(true);
+        for (let i = 0; i < 2; i++) {
+            const side = i === 0 ? -1 : 1;
+            const wave = Math.sin(t * 13 + i * 2.1);
+            const wave2 = Math.cos(t * 10.5 + i * 1.3);
+            toRiderSpace(shoulders[i], root);
+            pelvisPoint(
+                side * (0.5 + 0.12 * air * wave),
+                0.42 + air * (0.28 * wave2 + 0.12),
+                0.12 + air * 0.25 * wave,
+                target
+            );
+            elbowHint.set(side, 0.2, -0.4);
+            solveLimb(arms[i], elbowHint);
+            hands[i].position.copy(target);
+            toRiderSpace(hips[i], root);
+            pelvisPoint(
+                side * (0.24 + 0.1 * air * wave2),
+                -0.62 + air * (0.22 + 0.12 * wave),
+                0.22 + air * 0.2 * wave2,
+                target
+            );
+            kneeHint.set(side * 0.4, 0.2, 1);
+            solveLimb(legs[i], kneeHint);
+            shoes[i].position.copy(target);
+        }
     }
 
     // Returns false once everything has come to rest.
@@ -571,42 +654,72 @@ export function createRider({ scene }) {
         if (!crash.active) return false;
         crash.time += dt;
         const t = crash.time;
-        // Bike: finish the back-flip or lay down, then scrape to a stop.
-        if (crash.kind === 'loop') {
+        const spec = CRASHES[crash.variant];
+
+        // Bike ------------------------------------------------------------
+        if (spec.bike === 'flipBack') {
             bikePivot.rotation.x = Math.max(-2.75, bikePivot.rotation.x - dt * 5.5);
             bikeGroup.rotation.z = damp(bikeGroup.rotation.z, crash.side * 0.5, 4, dt);
+        } else if (spec.bike === 'endo') {
+            // Nose dives over the front wheel, then the bike falls on its side.
+            const pitchTarget = t < 0.42 ? 1.15 : 0;
+            crash.bikePitch = damp(crash.bikePitch, pitchTarget, t < 0.42 ? 9 : 4, dt);
+            bikePivot.rotation.x = crash.bikePitch;
+            if (t > 0.3) bikeGroup.rotation.z = damp(bikeGroup.rotation.z, crash.side * 1.36, 5, dt);
+            bikeGroup.position.y = 1.45 * SCALE * Math.sin(Math.max(0, crash.bikePitch)) * 0.92 +
+                (t > 0.3 ? damp(0, 0.16 * SCALE, 6, t - 0.3) : 0);
         } else {
-            bikeGroup.rotation.z = damp(bikeGroup.rotation.z, crash.side * 1.36, 7, dt);
+            const rate = spec.bike === 'tip' ? 3.2 : 7;
+            bikeGroup.rotation.z = damp(bikeGroup.rotation.z, crash.side * 1.36, rate, dt);
             bikePivot.rotation.x = damp(bikePivot.rotation.x, 0, 8, dt);
-            bikeGroup.position.y = damp(bikeGroup.position.y, 0.16 * SCALE, 7, dt);
+            bikeGroup.position.y = damp(bikeGroup.position.y, 0.16 * SCALE, rate, dt);
+        }
+        // A bike on its side spins round as it slides.
+        if (spec.bike !== 'flipBack' && t > 0.25) {
+            bikeGroup.rotation.y += crash.bikeYaw * dt * Math.min(1, crash.bikeVelocity.length() / 10);
         }
         bikeGroup.position.addScaledVector(crash.bikeVelocity, dt);
-        crash.bikeVelocity.multiplyScalar(Math.exp(-dt * 2.4));
+        crash.bikeVelocity.multiplyScalar(Math.exp(-dt * crash.bikeSlide));
         rearWheel.rotation.x += pose.rearSpin * Math.exp(-t * 1.5) * dt;
         frontWheel.rotation.x += pose.frontSpin * Math.exp(-t * 1.5) * dt;
         contactShadow.position.set(bikeGroup.position.x, 0.02, bikeGroup.position.z);
         contactShadow.material.opacity = 0.35;
 
-        // Rider: thrown clear, tumbles in the air, slides out lying down.
+        // Rider -----------------------------------------------------------
         crash.velocity.y -= 14 * SCALE * dt;
         riderGroup.position.addScaledVector(crash.velocity, dt);
-        if (riderGroup.position.y <= 0.22 * SCALE && crash.velocity.y <= 0) {
-            riderGroup.position.y = 0.22 * SCALE;
-            crash.velocity.y = crash.velocity.y < -2.5 ? -crash.velocity.y * 0.22 : 0;
+        const ground = 0.22 * SCALE;
+        if (riderGroup.position.y <= ground && crash.velocity.y <= 0) {
+            riderGroup.position.y = ground;
+            if (!crash.landed) crash.landTime = t;
+            // Bounces once or twice on a hard landing.
+            crash.velocity.y = crash.velocity.y < -3 ? -crash.velocity.y * 0.28 : 0;
             crash.landed = true;
         }
-        let tumble;
         if (crash.landed) {
             const friction = Math.exp(-dt * 2.6);
             crash.velocity.x *= friction;
             crash.velocity.z *= friction;
-            tumble = (crash.fall * Math.PI / 2 - crash.tumble) * (1 - Math.exp(-dt * 7));
-        } else {
-            tumble = crash.spin * dt * 0.6;
+            // Keeps rolling along the ground for a moment, then settles flat.
+            crash.spinRates.multiplyScalar(Math.exp(-dt * 3.2));
         }
-        crash.tumble += tumble;
-        riderGroup.rotateX(tumble);
-        return t < 2.6;
+        if (crash.spinRates.lengthSq() > 1e-4) {
+            axis.copy(crash.spinRates).normalize();
+            spinStep.setFromAxisAngle(axis, crash.spinRates.length() * dt);
+            riderGroup.quaternion.premultiply(spinStep);
+        }
+        if (crash.landed && crash.spinRates.length() < 2.5) {
+            // Lie down in whatever direction he was tipping.
+            riderUp.set(0, 1, 0).applyQuaternion(riderGroup.quaternion);
+            flat.set(riderUp.x, 0, riderUp.z);
+            if (flat.lengthSq() < 1e-3) flat.copy(forward).multiplyScalar(-1);
+            flat.normalize();
+            settle.setFromUnitVectors(riderUp, flat);
+            spinStep.identity().slerp(settle, 1 - Math.exp(-dt * 6));
+            riderGroup.quaternion.premultiply(spinStep);
+        }
+        animateLimbs(t);
+        return t < 3;
     }
 
     function slideSpeed() {
@@ -625,6 +738,7 @@ export function createRider({ scene }) {
     return {
         bikeGroup, bikePivot, materials, update, reset, startCrash, updateCrash, slideSpeed, getHitBox,
         get crashing() { return crash.active; },
+        get crashVariant() { return crash.variant; },
         rearContact: new THREE.Vector3(0, 0, REAR_AXLE_Z)
     };
 }

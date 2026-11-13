@@ -1272,10 +1272,12 @@ async function gameOver() {
     audio.play('collision', { volume: 0.85 });
     const crashKind = state.bike.angle > CONFIG.maxAngle || GAME_SETTINGS.gameMode === 'free' ? 'loop' : 'hit';
     const crashSpeed = (GAME_SETTINGS.gameMode === 'free' ? state.freeMode.speed : state.speed) * 60;
+    // How the rider was riding decides how he falls.
+    const crashInfo = visualSnapshot();
     state.isPlaying = false;
     state.skidding = false;
     const sequence = ++crashSequence;
-    if (v2) playCrashSequence(crashKind, crashSpeed, sequence);
+    if (v2) playCrashSequence(crashKind, crashSpeed, sequence, crashInfo);
     const screenDelay = new Promise((resolve) => setTimeout(resolve, v2 ? 1150 : 0));
     const currentScore = Math.floor(state.score);
     const previousBest = state.highScore;
@@ -1347,8 +1349,8 @@ async function gameOver() {
 
 // V2 only: keep rendering after the run ends so the fall plays out.
 let crashSequence = 0;
-function playCrashSequence(kind, unitsPerSecond, sequence) {
-    v2.rider.startCrash(kind, unitsPerSecond);
+function playCrashSequence(kind, unitsPerSecond, sequence, info) {
+    v2.rider.startCrash(kind, unitsPerSecond, info);
     state.speed = 0;
     state.freeMode.speed = 0;
     updateUI();
