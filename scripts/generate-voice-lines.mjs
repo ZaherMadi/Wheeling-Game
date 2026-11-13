@@ -35,7 +35,8 @@ const frozenIds = [];
 for (const [language, groups] of Object.entries(lineGroups)) {
   for (const line of Object.values(groups).flat()) {
     if (FROZEN_GROUPS.has(language)) frozenIds.push(line.id);
-    else lineEntries.push({ ...line, language });
+    // Group names may carry a point of view (fr_self): the language comes first.
+    else lineEntries.push({ ...line, language: language.split('_')[0] });
   }
 }
 

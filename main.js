@@ -1266,7 +1266,8 @@ async function gameOver() {
         completedRankedRun = null;
     }
     state.runToken = null;
-    speak('crash', { force: true, allowWhenStopped: true });
+    // A fall in the first seconds gets laughed at.
+    speak(state.gameTime < 10 ? 'earlyCrash' : 'crash', { force: true, allowWhenStopped: true });
     audio.stopRun();
     audio.play('collision', { volume: 0.85 });
     const crashKind = state.bike.angle > CONFIG.maxAngle || GAME_SETTINGS.gameMode === 'free' ? 'loop' : 'hit';
@@ -2094,7 +2095,9 @@ const GAME_SETTINGS = {
     graphicsQuality: 'high',
     voiceEnabled: localStorage.getItem('wheelie_voice_enabled') !== 'false',
     sfxEnabled: localStorage.getItem('wheelie_sfx_enabled') !== 'false',
-    language: localStorage.getItem('wheelie_language') === 'en' ? 'en' : 'fr'
+    language: localStorage.getItem('wheelie_language') === 'en' ? 'en' : 'fr',
+    // 'player': the voice talks to the player; 'self': the rider talks about himself.
+    perspective: localStorage.getItem('wheelie_voice_perspective') === 'self' ? 'self' : 'player'
 };
 
 let audioManifestPromise;
@@ -2103,7 +2106,10 @@ let sfxAssetsAvailable = false;
 const audio = createAudioEngine({ effects: soundEffects, getManifest: () => getAudioManifest() });
 audio.setEnabled(GAME_SETTINGS.sfxEnabled);
 // The classic version keeps its original commentary; V2 uses the rider's voice.
-const voiceGroup = () => (IS_V2 ? GAME_SETTINGS.language : 'classic');
+const voiceGroup = () => {
+    if (!IS_V2) return 'classic';
+    return GAME_SETTINGS.perspective === 'self' ? `${GAME_SETTINGS.language}_self` : GAME_SETTINGS.language;
+};
 let lastVoiceAt = -Infinity;
 let lastPeriodicVoiceAt = 0;
 let announcedWheelie = false;
@@ -2140,7 +2146,9 @@ function getAudioManifest() {
 }
 
 function speak(eventName, { force = false, allowWhenStopped = false } = {}) {
-    const lines = voiceLineGroups[voiceGroup()]?.[eventName];
+    const group = voiceLineGroups[voiceGroup()];
+    // Events newer than a group (the classic voice) fall back to the closest one.
+    const lines = group?.[eventName] || (eventName === 'earlyCrash' ? group?.crash : null);
     if (!GAME_SETTINGS.voiceEnabled || !lines || (!state.isPlaying && !allowWhenStopped)) return;
     if (!force && performance.now() - lastVoiceAt < 8000) return;
 
@@ -2210,9 +2218,19 @@ function setAudioLanguage(language) {
     warmUpVoices();
 }
 
+function setVoicePerspective(perspective) {
+    if (perspective !== 'self' && perspective !== 'player') return;
+    GAME_SETTINGS.perspective = perspective;
+    localStorage.setItem('wheelie_voice_perspective', perspective);
+    updateLanguageButtons();
+    warmUpVoices();
+}
+
 function updateLanguageButtons() {
     document.getElementById('language-fr')?.classList.toggle('active', GAME_SETTINGS.language === 'fr');
     document.getElementById('language-en')?.classList.toggle('active', GAME_SETTINGS.language === 'en');
+    document.getElementById('perspective-player')?.classList.toggle('active', GAME_SETTINGS.perspective === 'player');
+    document.getElementById('perspective-self')?.classList.toggle('active', GAME_SETTINGS.perspective === 'self');
 }
 
 // Apply graphics quality settings
@@ -2647,6 +2665,14 @@ document.getElementById('sfx-toggle')?.addEventListener('click', () => {
 
 document.getElementById('language-fr')?.addEventListener('click', () => {
     setAudioLanguage('fr');
+});
+
+document.getElementById('perspective-player')?.addEventListener('click', () => {
+    setVoicePerspective('player');
+});
+
+document.getElementById('perspective-self')?.addEventListener('click', () => {
+    setVoicePerspective('self');
 });
 
 document.getElementById('language-en')?.addEventListener('click', () => {

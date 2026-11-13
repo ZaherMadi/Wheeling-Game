@@ -1,148 +1,818 @@
 {
   "fr": {
     "start": [
-      { "id": "fr_start_1", "text": "Wesh, c'est parti mon gars !" },
-      { "id": "fr_start_2", "text": "Allez frérot, on envoie !" },
-      { "id": "fr_start_3", "text": "Vas-y, on y retourne, tranquille." },
-      { "id": "fr_start_4", "text": "Chaud ? Allez, on y va !" }
+      {
+        "id": "fr_start_1",
+        "text": "Wesh, c'est parti mon gars !"
+      },
+      {
+        "id": "fr_start_2",
+        "text": "Allez frérot, on envoie !"
+      },
+      {
+        "id": "fr_start_5",
+        "text": "Vas-y, montre-leur, tranquille."
+      },
+      {
+        "id": "fr_start_6",
+        "text": "Chaud ? Allez, envoie !"
+      }
     ],
     "wheelie": [
-      { "id": "fr_wheelie_1", "text": "Tiens-la, tiens-la, tiens-la !" },
-      { "id": "fr_wheelie_2", "text": "Ouais, ça c'est propre !" },
-      { "id": "fr_wheelie_3", "text": "Vas-y, lève-moi ça !" },
-      { "id": "fr_wheelie_4", "text": "Regarde-moi cette roue, frère !" }
+      {
+        "id": "fr_wheelie_1",
+        "text": "Tiens-la, tiens-la, tiens-la !"
+      },
+      {
+        "id": "fr_wheelie_2",
+        "text": "Ouais, ça c'est propre !"
+      },
+      {
+        "id": "fr_wheelie_3",
+        "text": "Vas-y, lève-moi ça !"
+      },
+      {
+        "id": "fr_wheelie_4",
+        "text": "Regarde-moi cette roue, frère !"
+      }
     ],
     "combo": [
-      { "id": "fr_combo_1", "text": "Oh la dinguerie, ça monte !" },
-      { "id": "fr_combo_2", "text": "Wesh, on lâche rien là !" },
-      { "id": "fr_combo_3", "text": "C'est carré, c'est carré !" },
-      { "id": "fr_combo_4", "text": "Trop chaud, le mec !" }
+      {
+        "id": "fr_combo_1",
+        "text": "Oh la dinguerie, ça monte !"
+      },
+      {
+        "id": "fr_combo_5",
+        "text": "Wesh, lâche rien là !"
+      },
+      {
+        "id": "fr_combo_3",
+        "text": "C'est carré, c'est carré !"
+      },
+      {
+        "id": "fr_combo_6",
+        "text": "T'es trop chaud, le mec !"
+      }
     ],
     "speed": [
-      { "id": "fr_speed_1", "text": "Oh, ça va vite là, wesh !" },
-      { "id": "fr_speed_2", "text": "Wouah, j'envoie du lourd !" },
-      { "id": "fr_speed_3", "text": "Ça trace, ça trace !" }
+      {
+        "id": "fr_speed_1",
+        "text": "Oh, ça va vite là, wesh !"
+      },
+      {
+        "id": "fr_speed_4",
+        "text": "Wouah, t'envoies du lourd !"
+      },
+      {
+        "id": "fr_speed_3",
+        "text": "Ça trace, ça trace !"
+      }
     ],
     "nearFall": [
-      { "id": "fr_near_fall_1", "text": "Oulah, redresse, redresse !" },
-      { "id": "fr_near_fall_2", "text": "Oh putain, ça penche trop !" },
-      { "id": "fr_near_fall_3", "text": "Doucement, doucement, doucement !" }
+      {
+        "id": "fr_near_fall_1",
+        "text": "Oulah, redresse, redresse !"
+      },
+      {
+        "id": "fr_near_fall_2",
+        "text": "Oh putain, ça penche trop !"
+      },
+      {
+        "id": "fr_near_fall_3",
+        "text": "Doucement, doucement, doucement !"
+      }
     ],
     "skid": [
-      { "id": "fr_skid_1", "text": "Oh ! C'était quoi, ça ?!" },
-      { "id": "fr_skid_2", "text": "Wesh, fais gaffe frérot !" },
-      { "id": "fr_skid_3", "text": "Chaud ! C'est passé juste !" }
+      {
+        "id": "fr_skid_1",
+        "text": "Oh ! C'était quoi, ça ?!"
+      },
+      {
+        "id": "fr_skid_2",
+        "text": "Wesh, fais gaffe frérot !"
+      },
+      {
+        "id": "fr_skid_3",
+        "text": "Chaud ! C'est passé juste !"
+      }
     ],
     "landing": [
-      { "id": "fr_landing_1", "text": "Posé, tranquille." },
-      { "id": "fr_landing_2", "text": "Propre, l'atterrissage." },
-      { "id": "fr_landing_3", "text": "Et voilà le travail !" }
+      {
+        "id": "fr_landing_1",
+        "text": "Posé, tranquille."
+      },
+      {
+        "id": "fr_landing_2",
+        "text": "Propre, l'atterrissage."
+      },
+      {
+        "id": "fr_landing_3",
+        "text": "Et voilà le travail !"
+      }
     ],
     "crash": [
-      { "id": "fr_crash_1", "text": "Aïe ! Oh la vache..." },
-      { "id": "fr_crash_2", "text": "Putain, j'suis tombé !" },
-      { "id": "fr_crash_3", "text": "Oh non, pas comme ça..." },
-      { "id": "fr_crash_4", "text": "Wesh, la honte..." }
+      {
+        "id": "fr_crash_5",
+        "text": "Nan t'abuses mec !"
+      },
+      {
+        "id": "fr_crash_6",
+        "text": "Kéfa frère ?!"
+      },
+      {
+        "id": "fr_crash_7",
+        "text": "Naaan... kéfa wsh ?!"
+      },
+      {
+        "id": "fr_crash_8",
+        "text": "You're fucked up, frérot !"
+      },
+      {
+        "id": "fr_crash_4",
+        "text": "Wesh, la honte..."
+      },
+      {
+        "id": "fr_crash_3",
+        "text": "Oh non, pas comme ça..."
+      }
+    ],
+    "earlyCrash": [
+      {
+        "id": "fr_early_1",
+        "text": "[laughs] Déjà ?! Nan t'abuses frère !"
+      },
+      {
+        "id": "fr_early_2",
+        "text": "[laughs] Nan mais kéfa wsh ?!"
+      },
+      {
+        "id": "fr_early_3",
+        "text": "[laughs] Wesh... t'as même pas démarré !"
+      },
+      {
+        "id": "fr_early_4",
+        "text": "[laughs hard] You're fucked up, mec !"
+      },
+      {
+        "id": "fr_early_5",
+        "text": "[laughs] Naaan... kéfa frère ?!"
+      }
     ],
     "record": [
-      { "id": "fr_record_1", "text": "Oh, le record ! T'es un monstre !" },
-      { "id": "fr_record_2", "text": "Nouveau record, frérot ! Lourd !" }
+      {
+        "id": "fr_record_1",
+        "text": "Oh, le record ! T'es un monstre !"
+      },
+      {
+        "id": "fr_record_2",
+        "text": "Nouveau record, frérot ! Lourd !"
+      }
     ],
     "periodic": [
-      { "id": "fr_periodic_1", "text": "On est bien là, hein ?" },
-      { "id": "fr_periodic_2", "text": "Tranquille, on gère." },
-      { "id": "fr_periodic_3", "text": "Allez, on lâche rien." },
-      { "id": "fr_periodic_4", "text": "Ça roule, ma gueule !" }
+      {
+        "id": "fr_periodic_1",
+        "text": "On est bien là, hein ?"
+      },
+      {
+        "id": "fr_periodic_5",
+        "text": "Tranquille, tu gères."
+      },
+      {
+        "id": "fr_periodic_6",
+        "text": "Allez, lâche rien."
+      },
+      {
+        "id": "fr_periodic_4",
+        "text": "Ça roule, ma gueule !"
+      }
+    ]
+  },
+  "fr_self": {
+    "start": [
+      {
+        "id": "frs_start_1",
+        "text": "Wesh, c'est parti !"
+      },
+      {
+        "id": "frs_start_2",
+        "text": "Allez, j'envoie !"
+      },
+      {
+        "id": "frs_start_3",
+        "text": "Vas-y, on y retourne, tranquille."
+      },
+      {
+        "id": "frs_start_4",
+        "text": "Chaud ? Allez, j'y vais !"
+      }
+    ],
+    "wheelie": [
+      {
+        "id": "frs_wheelie_1",
+        "text": "Je la tiens, je la tiens !"
+      },
+      {
+        "id": "frs_wheelie_2",
+        "text": "Ouais, ça c'est propre !"
+      },
+      {
+        "id": "frs_wheelie_3",
+        "text": "Allez, je la lève !"
+      },
+      {
+        "id": "frs_wheelie_4",
+        "text": "Regardez-moi cette roue !"
+      }
+    ],
+    "combo": [
+      {
+        "id": "frs_combo_1",
+        "text": "Oh la dinguerie, ça monte !"
+      },
+      {
+        "id": "frs_combo_2",
+        "text": "Je lâche rien là !"
+      },
+      {
+        "id": "frs_combo_3",
+        "text": "C'est carré, c'est carré !"
+      },
+      {
+        "id": "frs_combo_4",
+        "text": "J'suis trop chaud, wesh !"
+      }
+    ],
+    "speed": [
+      {
+        "id": "frs_speed_1",
+        "text": "Oh, ça va vite là, wesh !"
+      },
+      {
+        "id": "frs_speed_2",
+        "text": "Wouah, j'envoie du lourd !"
+      },
+      {
+        "id": "frs_speed_3",
+        "text": "Ça trace, ça trace !"
+      }
+    ],
+    "nearFall": [
+      {
+        "id": "frs_nearfall_1",
+        "text": "Oulah, je redresse, je redresse !"
+      },
+      {
+        "id": "frs_nearfall_2",
+        "text": "Oh putain, ça penche trop !"
+      },
+      {
+        "id": "frs_nearfall_3",
+        "text": "Doucement, doucement..."
+      }
+    ],
+    "skid": [
+      {
+        "id": "frs_skid_1",
+        "text": "Oh ! C'était quoi, ça ?!"
+      },
+      {
+        "id": "frs_skid_2",
+        "text": "Wesh, j'ai failli !"
+      },
+      {
+        "id": "frs_skid_3",
+        "text": "Chaud ! C'est passé juste !"
+      }
+    ],
+    "landing": [
+      {
+        "id": "frs_landing_1",
+        "text": "Posé, tranquille."
+      },
+      {
+        "id": "frs_landing_2",
+        "text": "Propre, l'atterrissage."
+      },
+      {
+        "id": "frs_landing_3",
+        "text": "Et voilà le travail !"
+      }
+    ],
+    "crash": [
+      {
+        "id": "frs_crash_1",
+        "text": "Aïe ! Oh la vache..."
+      },
+      {
+        "id": "frs_crash_2",
+        "text": "Putain, j'suis tombé !"
+      },
+      {
+        "id": "frs_crash_3",
+        "text": "Nan j'abuse là..."
+      },
+      {
+        "id": "frs_crash_4",
+        "text": "Kéfa moi là ?!"
+      },
+      {
+        "id": "frs_crash_5",
+        "text": "Naaan... kéfa wsh..."
+      },
+      {
+        "id": "frs_crash_6",
+        "text": "Wesh, la honte..."
+      }
+    ],
+    "earlyCrash": [
+      {
+        "id": "frs_early_1",
+        "text": "[laughs] Déjà ?! Nan j'abuse..."
+      },
+      {
+        "id": "frs_early_2",
+        "text": "[laughs] Nan mais kéfa moi ?!"
+      },
+      {
+        "id": "frs_early_3",
+        "text": "[laughs] J'ai même pas démarré, wesh !"
+      },
+      {
+        "id": "frs_early_4",
+        "text": "[laughs hard] Je suis fucked up, là !"
+      }
+    ],
+    "record": [
+      {
+        "id": "frs_record_1",
+        "text": "Le record ! J'suis un monstre !"
+      },
+      {
+        "id": "frs_record_2",
+        "text": "Nouveau record ! Lourd !"
+      }
+    ],
+    "periodic": [
+      {
+        "id": "frs_periodic_1",
+        "text": "On est bien là, hein ?"
+      },
+      {
+        "id": "frs_periodic_2",
+        "text": "Tranquille, je gère."
+      },
+      {
+        "id": "frs_periodic_3",
+        "text": "Allez, je lâche rien."
+      },
+      {
+        "id": "frs_periodic_4",
+        "text": "Ça roule !"
+      }
     ]
   },
   "en": {
     "start": [
-      { "id": "en_start_1", "text": "Aight, let's get it!" },
-      { "id": "en_start_2", "text": "Let's ride, bro!" },
-      { "id": "en_start_3", "text": "Here we go again, man." },
-      { "id": "en_start_4", "text": "You ready? Let's go!" }
+      {
+        "id": "en_start_1",
+        "text": "Aight, let's get it!"
+      },
+      {
+        "id": "en_start_2",
+        "text": "Let's ride, bro!"
+      },
+      {
+        "id": "en_start_5",
+        "text": "Show 'em how it's done, man."
+      },
+      {
+        "id": "en_start_4",
+        "text": "You ready? Let's go!"
+      }
     ],
     "wheelie": [
-      { "id": "en_wheelie_1", "text": "Hold it, hold it, hold it!" },
-      { "id": "en_wheelie_2", "text": "Yeah, that's clean!" },
-      { "id": "en_wheelie_3", "text": "Get that wheel up, bro!" },
-      { "id": "en_wheelie_4", "text": "Look at that, man!" }
+      {
+        "id": "en_wheelie_1",
+        "text": "Hold it, hold it, hold it!"
+      },
+      {
+        "id": "en_wheelie_2",
+        "text": "Yeah, that's clean!"
+      },
+      {
+        "id": "en_wheelie_3",
+        "text": "Get that wheel up, bro!"
+      },
+      {
+        "id": "en_wheelie_4",
+        "text": "Look at that, man!"
+      }
     ],
     "combo": [
-      { "id": "en_combo_1", "text": "Yo, that's crazy, keep it going!" },
-      { "id": "en_combo_2", "text": "We ain't stopping now!" },
-      { "id": "en_combo_3", "text": "That's smooth, that's smooth!" },
-      { "id": "en_combo_4", "text": "Man's on fire!" }
+      {
+        "id": "en_combo_1",
+        "text": "Yo, that's crazy, keep it going!"
+      },
+      {
+        "id": "en_combo_5",
+        "text": "Don't stop now!"
+      },
+      {
+        "id": "en_combo_3",
+        "text": "That's smooth, that's smooth!"
+      },
+      {
+        "id": "en_combo_6",
+        "text": "You on fire, bro!"
+      }
     ],
     "speed": [
-      { "id": "en_speed_1", "text": "Yo, we flying right now!" },
-      { "id": "en_speed_2", "text": "Full send, baby!" },
-      { "id": "en_speed_3", "text": "Oh, we moving, we moving!" }
+      {
+        "id": "en_speed_4",
+        "text": "Yo, you flying right now!"
+      },
+      {
+        "id": "en_speed_2",
+        "text": "Full send, baby!"
+      },
+      {
+        "id": "en_speed_3",
+        "text": "Oh, we moving, we moving!"
+      }
     ],
     "nearFall": [
-      { "id": "en_near_fall_1", "text": "Whoa, whoa, bring it back!" },
-      { "id": "en_near_fall_2", "text": "Oh shit, too far, too far!" },
-      { "id": "en_near_fall_3", "text": "Easy, easy, easy!" }
+      {
+        "id": "en_near_fall_1",
+        "text": "Whoa, whoa, bring it back!"
+      },
+      {
+        "id": "en_near_fall_2",
+        "text": "Oh shit, too far, too far!"
+      },
+      {
+        "id": "en_near_fall_3",
+        "text": "Easy, easy, easy!"
+      }
     ],
     "skid": [
-      { "id": "en_skid_1", "text": "Yo! What was that?!" },
-      { "id": "en_skid_2", "text": "Watch out, bro!" },
-      { "id": "en_skid_3", "text": "Damn, that was close!" }
+      {
+        "id": "en_skid_1",
+        "text": "Yo! What was that?!"
+      },
+      {
+        "id": "en_skid_2",
+        "text": "Watch out, bro!"
+      },
+      {
+        "id": "en_skid_3",
+        "text": "Damn, that was close!"
+      }
     ],
     "landing": [
-      { "id": "en_landing_1", "text": "Smooth landing." },
-      { "id": "en_landing_2", "text": "Clean, real clean." },
-      { "id": "en_landing_3", "text": "That's how you do it!" }
+      {
+        "id": "en_landing_1",
+        "text": "Smooth landing."
+      },
+      {
+        "id": "en_landing_2",
+        "text": "Clean, real clean."
+      },
+      {
+        "id": "en_landing_3",
+        "text": "That's how you do it!"
+      }
     ],
     "crash": [
-      { "id": "en_crash_1", "text": "Ah! Damn..." },
-      { "id": "en_crash_2", "text": "Shit, I'm down!" },
-      { "id": "en_crash_3", "text": "Nah, not like that, man..." },
-      { "id": "en_crash_4", "text": "Bro, that's embarrassing..." }
+      {
+        "id": "en_crash_5",
+        "text": "Nah, you're tripping, man!"
+      },
+      {
+        "id": "en_crash_6",
+        "text": "Bro, what was that?!"
+      },
+      {
+        "id": "en_crash_7",
+        "text": "You're fucked up, bro!"
+      },
+      {
+        "id": "en_crash_4",
+        "text": "Bro, that's embarrassing..."
+      },
+      {
+        "id": "en_crash_3",
+        "text": "Nah, not like that, man..."
+      }
+    ],
+    "earlyCrash": [
+      {
+        "id": "en_early_1",
+        "text": "[laughs] Already?! Come on, man!"
+      },
+      {
+        "id": "en_early_2",
+        "text": "[laughs] Bro, you didn't even start!"
+      },
+      {
+        "id": "en_early_3",
+        "text": "[laughs hard] You're fucked up!"
+      },
+      {
+        "id": "en_early_4",
+        "text": "[laughs] Nah, what was that?!"
+      }
     ],
     "record": [
-      { "id": "en_record_1", "text": "New record! You a beast, bro!" },
-      { "id": "en_record_2", "text": "Yo, new high score! Let's go!" }
+      {
+        "id": "en_record_1",
+        "text": "New record! You a beast, bro!"
+      },
+      {
+        "id": "en_record_2",
+        "text": "Yo, new high score! Let's go!"
+      }
     ],
     "periodic": [
-      { "id": "en_periodic_1", "text": "We good, we good." },
-      { "id": "en_periodic_2", "text": "Just cruising, man." },
-      { "id": "en_periodic_3", "text": "Keep it rolling." },
-      { "id": "en_periodic_4", "text": "Feeling good right now!" }
+      {
+        "id": "en_periodic_1",
+        "text": "We good, we good."
+      },
+      {
+        "id": "en_periodic_2",
+        "text": "Just cruising, man."
+      },
+      {
+        "id": "en_periodic_3",
+        "text": "Keep it rolling."
+      },
+      {
+        "id": "en_periodic_4",
+        "text": "Feeling good right now!"
+      }
+    ]
+  },
+  "en_self": {
+    "start": [
+      {
+        "id": "ens_start_1",
+        "text": "Aight, let's get it!"
+      },
+      {
+        "id": "ens_start_2",
+        "text": "Here we go again."
+      },
+      {
+        "id": "ens_start_3",
+        "text": "Let's ride!"
+      },
+      {
+        "id": "ens_start_4",
+        "text": "Ready? Let's go!"
+      }
+    ],
+    "wheelie": [
+      {
+        "id": "ens_wheelie_1",
+        "text": "I got it, I got it!"
+      },
+      {
+        "id": "ens_wheelie_2",
+        "text": "Yeah, that's clean!"
+      },
+      {
+        "id": "ens_wheelie_3",
+        "text": "Wheel up, let's go!"
+      },
+      {
+        "id": "ens_wheelie_4",
+        "text": "Look at this!"
+      }
+    ],
+    "combo": [
+      {
+        "id": "ens_combo_1",
+        "text": "Yo, that's crazy, I'm keeping it going!"
+      },
+      {
+        "id": "ens_combo_2",
+        "text": "I ain't stopping now!"
+      },
+      {
+        "id": "ens_combo_3",
+        "text": "That's smooth, that's smooth!"
+      },
+      {
+        "id": "ens_combo_4",
+        "text": "I'm on fire!"
+      }
+    ],
+    "speed": [
+      {
+        "id": "ens_speed_1",
+        "text": "Yo, I'm flying right now!"
+      },
+      {
+        "id": "ens_speed_2",
+        "text": "Full send, baby!"
+      },
+      {
+        "id": "ens_speed_3",
+        "text": "Oh, we moving, we moving!"
+      }
+    ],
+    "nearFall": [
+      {
+        "id": "ens_nearfall_1",
+        "text": "Whoa, whoa, bring it back!"
+      },
+      {
+        "id": "ens_nearfall_2",
+        "text": "Oh shit, too far, too far!"
+      },
+      {
+        "id": "ens_nearfall_3",
+        "text": "Easy, easy..."
+      }
+    ],
+    "skid": [
+      {
+        "id": "ens_skid_1",
+        "text": "Yo! What was that?!"
+      },
+      {
+        "id": "ens_skid_2",
+        "text": "Damn, almost lost it!"
+      },
+      {
+        "id": "ens_skid_3",
+        "text": "That was close!"
+      }
+    ],
+    "landing": [
+      {
+        "id": "ens_landing_1",
+        "text": "Smooth landing."
+      },
+      {
+        "id": "ens_landing_2",
+        "text": "Clean, real clean."
+      },
+      {
+        "id": "ens_landing_3",
+        "text": "That's how I do it!"
+      }
+    ],
+    "crash": [
+      {
+        "id": "ens_crash_1",
+        "text": "Ah! Damn..."
+      },
+      {
+        "id": "ens_crash_2",
+        "text": "Shit, I'm down!"
+      },
+      {
+        "id": "ens_crash_3",
+        "text": "Nah, I'm tripping..."
+      },
+      {
+        "id": "ens_crash_4",
+        "text": "Bro, that's embarrassing..."
+      },
+      {
+        "id": "ens_crash_5",
+        "text": "What was I doing?!"
+      }
+    ],
+    "earlyCrash": [
+      {
+        "id": "ens_early_1",
+        "text": "[laughs] Already?! Come on..."
+      },
+      {
+        "id": "ens_early_2",
+        "text": "[laughs] I didn't even start, man!"
+      },
+      {
+        "id": "ens_early_3",
+        "text": "[laughs hard] I'm so fucked up right now!"
+      }
+    ],
+    "record": [
+      {
+        "id": "ens_record_1",
+        "text": "New record! I'm a beast!"
+      },
+      {
+        "id": "ens_record_2",
+        "text": "New high score! Let's go!"
+      }
+    ],
+    "periodic": [
+      {
+        "id": "ens_periodic_1",
+        "text": "We good, we good."
+      },
+      {
+        "id": "ens_periodic_2",
+        "text": "Just cruising."
+      },
+      {
+        "id": "ens_periodic_3",
+        "text": "Keep it rolling."
+      },
+      {
+        "id": "ens_periodic_4",
+        "text": "Feeling good right now!"
+      }
     ]
   },
   "classic": {
     "start": [
-      { "id": "start_1", "text": "Allez, c'est parti ! Montre-moi ce que tu sais faire !" },
-      { "id": "start_2", "text": "On y va ! Garde l'équilibre et fais grimper le score !" }
+      {
+        "id": "start_1",
+        "text": "Allez, c'est parti ! Montre-moi ce que tu sais faire !"
+      },
+      {
+        "id": "start_2",
+        "text": "On y va ! Garde l'équilibre et fais grimper le score !"
+      }
     ],
     "wheelie": [
-      { "id": "wheelie_1", "text": "Bien joué ! Tiens cette roue en l'air !" },
-      { "id": "wheelie_2", "text": "C'est ça ! Reste dans la zone parfaite !" },
-      { "id": "wheelie_3", "text": "Propre ! Continue comme ça !" }
+      {
+        "id": "wheelie_1",
+        "text": "Bien joué ! Tiens cette roue en l'air !"
+      },
+      {
+        "id": "wheelie_2",
+        "text": "C'est ça ! Reste dans la zone parfaite !"
+      },
+      {
+        "id": "wheelie_3",
+        "text": "Propre ! Continue comme ça !"
+      }
     ],
     "combo": [
-      { "id": "combo_1", "text": "Quel combo ! Le multiplicateur s'envole !" },
-      { "id": "combo_2", "text": "Ça, c'est du pilotage ! Enchaîne !" },
-      { "id": "combo_3", "text": "Incroyable ! Tu fais monter le score !" }
+      {
+        "id": "combo_1",
+        "text": "Quel combo ! Le multiplicateur s'envole !"
+      },
+      {
+        "id": "combo_2",
+        "text": "Ça, c'est du pilotage ! Enchaîne !"
+      },
+      {
+        "id": "combo_3",
+        "text": "Incroyable ! Tu fais monter le score !"
+      }
     ],
     "speed": [
-      { "id": "speed_1", "text": "Quelle vitesse ! Garde les yeux sur la route !" },
-      { "id": "speed_2", "text": "Ça accélère fort ! Reste concentré !" }
+      {
+        "id": "speed_1",
+        "text": "Quelle vitesse ! Garde les yeux sur la route !"
+      },
+      {
+        "id": "speed_2",
+        "text": "Ça accélère fort ! Reste concentré !"
+      }
     ],
     "nearFall": [
-      { "id": "near_fall_1", "text": "Ouh, c'était limite ! Rattrape l'équilibre !" },
-      { "id": "near_fall_2", "text": "Attention à l'angle ! Redresse un peu !" }
+      {
+        "id": "near_fall_1",
+        "text": "Ouh, c'était limite ! Rattrape l'équilibre !"
+      },
+      {
+        "id": "near_fall_2",
+        "text": "Attention à l'angle ! Redresse un peu !"
+      }
     ],
     "crash": [
-      { "id": "crash_1", "text": "Aïe ! Belle tentative, on remet ça ?" },
-      { "id": "crash_2", "text": "C'est la chute ! Relève-toi, le prochain run sera meilleur !" }
+      {
+        "id": "crash_1",
+        "text": "Aïe ! Belle tentative, on remet ça ?"
+      },
+      {
+        "id": "crash_2",
+        "text": "C'est la chute ! Relève-toi, le prochain run sera meilleur !"
+      }
     ],
     "periodic": [
-      { "id": "periodic_1", "text": "Tu tiens le rythme ! Continue de viser la zone parfaite !" },
-      { "id": "periodic_2", "text": "Reste fluide, surveille ton équilibre et protège ton combo !" },
-      { "id": "periodic_3", "text": "Chaque seconde compte. À toi de battre ton record !" },
-      { "id": "periodic_4", "text": "Bien joué jusque-là ! Voyons jusqu'où tu peux aller !" }
+      {
+        "id": "periodic_1",
+        "text": "Tu tiens le rythme ! Continue de viser la zone parfaite !"
+      },
+      {
+        "id": "periodic_2",
+        "text": "Reste fluide, surveille ton équilibre et protège ton combo !"
+      },
+      {
+        "id": "periodic_3",
+        "text": "Chaque seconde compte. À toi de battre ton record !"
+      },
+      {
+        "id": "periodic_4",
+        "text": "Bien joué jusque-là ! Voyons jusqu'où tu peux aller !"
+      }
     ]
   }
 }
