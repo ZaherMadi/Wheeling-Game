@@ -20,6 +20,12 @@ export function createRealisticVersion({ scene, renderer, camera, mobile }) {
     }
 
     const world = createWorld({ scene, renderer, mobile });
+    // Debug and tuning: ?ambience=golden|day|overcast|night, ?seed=123
+    // (same sequence of blocks on every run).
+    const params = new URLSearchParams(window.location.search);
+    if (params.has('ambience')) world.setAmbience(params.get('ambience'));
+    const seed = params.has('seed') ? Number(params.get('seed')) : null;
+    if (seed !== null) world.reseed(seed);
     const rider = createRider({ scene });
     const fx = createFx({ scene, mobile });
 
@@ -58,6 +64,7 @@ export function createRealisticVersion({ scene, renderer, camera, mobile }) {
     }
 
     function reset() {
+        if (seed !== null) world.reseed(seed);
         rider.reset();
         fx.clear();
         lastPosition.copy(rider.bikeGroup.position);

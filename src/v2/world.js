@@ -738,30 +738,82 @@ export function createWorld({ scene, renderer, mobile }) {
     }
 
     // --- Per-frame -----------------------------------------------------------------
-    const fogBase = horizon.clone();
-    const night = new THREE.Color(0x0b1226);
     let currentDusk = -1;
+    let lastDusk = 0;
     let lodDistance = mobile ? 45 : 70;
 
-    // dusk: 0 = golden hour, 1 = night.
+    // Ambiences: every lighting value of a mood in one place. The day cycle
+    // blends the chosen ambience towards night; new moods are new entries.
+    const AMBIENCES = {
+        golden: {
+            sun: 0xffd2a0, sunIntensity: 2.5, fill: 0xffc28a, fillIntensity: 0.85,
+            sky: 0xc4d8ff, ground: 0x57483c, hemisphere: 1.15, fog: HORIZON_COLOR, fogNear: 55, fogFar: 265,
+            background: 1, environment: 0.7, windows: 0.35, offices: 0.3, towers: 0.85, lamps: 0.4,
+            shops: 0.82, posters: 0.8, shadows: 1, skyline: 1, haze: [1.22, 1.03, 0.8]
+        },
+        day: {
+            sun: 0xfff3e2, sunIntensity: 3, fill: 0xfff0dc, fillIntensity: 0.3,
+            sky: 0xcfe2ff, ground: 0x6a5c4c, hemisphere: 1.35, fog: 0xd3e0ee, fogNear: 70, fogFar: 300,
+            background: 1.12, environment: 0.85, windows: 0.12, offices: 0.1, towers: 0.4, lamps: 0.12,
+            shops: 0.72, posters: 0.75, shadows: 0.9, skyline: 1.1, haze: [1.08, 1.04, 0.96]
+        },
+        overcast: {
+            sun: 0xdfe4ea, sunIntensity: 0.55, fill: 0xdde3ea, fillIntensity: 0.1,
+            sky: 0xd0d8e2, ground: 0x5a5e66, hemisphere: 1.9, fog: 0xb4bcc6, fogNear: 35, fogFar: 210,
+            background: 0.72, environment: 0.9, windows: 0.45, offices: 0.4, towers: 0.9, lamps: 0.35,
+            shops: 0.9, posters: 0.9, shadows: 0.25, skyline: 0.75, haze: [1, 1, 1]
+        },
+        night: {
+            sun: 0x8aa0ff, sunIntensity: 0.2, fill: 0x6070a0, fillIntensity: 0,
+            sky: 0xc4d8ff, ground: 0x57483c, hemisphere: 0.35, fog: 0x1d2539, fogNear: 55, fogFar: 265,
+            background: 0.18, environment: 0.1, windows: 1.85, offices: 1.6, towers: 1.75, lamps: 1.3,
+            shops: 1, posters: 1, shadows: 0.15, skyline: 0.4, haze: [1.1, 1, 1.2]
+        }
+    };
+    let ambience = AMBIENCES.golden;
+    const mixTarget = new THREE.Color();
+    const mix = (a, b, t) => a + (b - a) * t;
+    const mixHex = (out, a, b, t) => out.set(a).lerp(mixTarget.set(b), t);
+
+    // dusk: 0 = the ambience itself, 1 = night.
     function setDusk(dusk) {
+        lastDusk = dusk;
         if (Math.abs(dusk - currentDusk) < 0.004) return;
         currentDusk = dusk;
-        scene.backgroundIntensity = 1 - dusk * 0.82;
-        scene.environmentIntensity = 0.7 - dusk * 0.6;
-        scene.fog.color.copy(fogBase).lerp(night, dusk * 0.9);
-        hemisphere.intensity = 1.15 - dusk * 0.8;
-        sun.intensity = 2.5 * (1 - dusk * 0.92);
-        goldFill.intensity = 0.85 * (1 - dusk);
-        materials.glow.color.setScalar(0.4 + dusk * 0.9);
-        materials.window.emissiveIntensity = 0.35 + dusk * 1.5;
-        materials.curtain.emissiveIntensity = 0.3 + dusk * 1.3;
-        materials.shop.color.setScalar(0.82 + dusk * 0.18);
-        materials.printLit.color.setScalar(0.8 + dusk * 0.2);
-        materials.shade.opacity = 1 - dusk * 0.85;
-        for (let i = 0; i < FACADE_STYLES.length; i++) materials[`bg${i}`].emissiveIntensity = 0.85 + dusk * 0.9;
-        skyline.material.color.setScalar(1 - dusk * 0.6);
+        const a = ambience;
+        const b = AMBIENCES.night;
+        const t = dusk;
+        scene.backgroundIntensity = mix(a.background, b.background, t);
+        scene.environmentIntensity = mix(a.environment, b.environment, t);
+        mixHex(scene.fog.color, a.fog, b.fog, t);
+        scene.fog.near = mix(a.fogNear, b.fogNear, t) * (highQuality ? 1 : 0.82);
+        scene.fog.far = mix(a.fogFar, b.fogFar, t);
+        mixHex(hemisphere.color, a.sky, b.sky, t);
+        mixHex(hemisphere.groundColor, a.ground, b.ground, t);
+        hemisphere.intensity = mix(a.hemisphere, b.hemisphere, t);
+        mixHex(sun.color, a.sun, b.sun, t);
+        sun.intensity = mix(a.sunIntensity, b.sunIntensity, t);
+        mixHex(goldFill.color, a.fill, b.fill, t);
+        goldFill.intensity = mix(a.fillIntensity, b.fillIntensity, t);
+        materials.glow.color.setScalar(mix(a.lamps, b.lamps, t));
+        materials.window.emissiveIntensity = mix(a.windows, b.windows, t);
+        materials.curtain.emissiveIntensity = mix(a.offices, b.offices, t);
+        materials.shop.color.setScalar(mix(a.shops, b.shops, t));
+        materials.printLit.color.setScalar(mix(a.posters, b.posters, t));
+        materials.shade.opacity = mix(a.shadows, b.shadows, t);
+        for (let i = 0; i < FACADE_STYLES.length; i++) materials[`bg${i}`].emissiveIntensity = mix(a.towers, b.towers, t);
+        skyline.material.color.setScalar(mix(a.skyline, b.skyline, t));
+        atmosphere.uHazeTint.value.set(...a.haze.map((value, i) => mix(value, b.haze[i], t)));
     }
+
+    function setAmbience(name) {
+        if (!AMBIENCES[name]) return false;
+        ambience = AMBIENCES[name];
+        currentDusk = -1;
+        setDusk(lastDusk);
+        return true;
+    }
+    let highQuality = true;
     setDusk(0);
 
     function update(camera, focus) {
@@ -792,12 +844,15 @@ export function createWorld({ scene, renderer, mobile }) {
             }
         }
         sun.castShadow = high || !mobile;
-        scene.fog.near = high ? 55 : 45;
+        highQuality = high;
+        currentDusk = -1;
+        setDusk(lastDusk);
         lodDistance = high ? (mobile ? 50 : 75) : (mobile ? 30 : 50);
     }
 
     return {
-        acquireChunk, releaseChunk, createObstacle, update, setDusk, setQuality, reseed, sharedMaterials, sun,
+        acquireChunk, releaseChunk, createObstacle, update, setDusk, setAmbience, setQuality, reseed, sharedMaterials, sun,
+        ambiences: Object.keys(AMBIENCES),
         stats: () => variants.map((variant) => ({
             theme: variant.theme,
             hi: variant.hi.reduce((sum, spec) => sum + spec.geometry.attributes.position.count / 3, 0),
