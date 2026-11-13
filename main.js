@@ -1097,14 +1097,19 @@ function checkCollisions() {
     if (!state.isPlaying) return;
     // V2 uses a fixed hit box so the rider's animation never changes gameplay.
     const bikeBox = v2 ? v2.rider.getHitBox() : new THREE.Box3().setFromObject(bikeGroup).expandByScalar(-0.2);
+    let skidStarted = false;
     for (let i = 0; i < state.obstacles.length; i++) {
         const obs = state.obstacles[i];
         if (!obs.active) continue;
         if (bikeBox.intersectsBox(obs.box)) {
-            if (state.skidding) {
+            // A second obstacle touched in the step that started the skid is
+            // ignored: no skid frame is recorded yet, so ending the run here
+            // would produce a replay the server refuses.
+            if (state.skidding && !skidStarted) {
                 gameOver();
-            } else {
+            } else if (!state.skidding) {
                 startSkid();
+                skidStarted = true;
             }
             obs.active = false;
         } else if (!obs.passed && obs.box.min.z > bikeBox.max.z) {
@@ -1552,7 +1557,9 @@ function animate(timestamp = performance.now()) {
             }
             let accelerationScale = 1;
             if (GAME_SETTINGS.controlMode === 'analog' && analogData.active && analogData.y < -0.1) {
-                accelerationScale = Math.min(1, Math.abs(analogData.y) * 1.5);
+                // Driven with the exact value that is recorded (one byte), so the
+                // server replay sees the same throttle as the game.
+                accelerationScale = Math.round(Math.min(1, Math.abs(analogData.y) * 1.5) * 255) / 255;
             }
             const inputFlags =
                 (isAccelerating ? 0x01 : 0) |
@@ -1634,9 +1641,7 @@ function animate(timestamp = performance.now()) {
                 else if (kmh > 100) accel *= 0.5;
                 else if (kmh > 80) accel *= 0.7;
                 else if (kmh > 60) accel *= 0.85;
-                if (GAME_SETTINGS.controlMode === 'analog' && analogData.active && analogData.y < -0.1) {
-                    accel *= Math.min(1, Math.abs(analogData.y) * 1.5);
-                }
+                accel *= accelerationScale;
                 if (state.speed < CONFIG.maxSpeed) state.speed += accel;
             } else if (!isBraking) {
                 if (state.speed > CONFIG.minSpeed) state.speed -= CONFIG.deceleration;
