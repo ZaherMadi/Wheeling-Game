@@ -113,6 +113,8 @@ let state = {
     trick: { active: false, type: 'superman', was: false, spin: 0 },
     ramps: [],
     rampFreeZones: [],
+    gantries: [],
+    phase: 1,
     obstacles: [],
     animatedObjects: [],
     graffitiList: [],
@@ -187,6 +189,9 @@ const matBillboardFrame = new THREE.MeshStandardMaterial({ color: 0x333333, meta
 const matHazardLight = new THREE.MeshBasicMaterial({ color: 0xffaa00 });
 const matConstructionStripe = new THREE.MeshStandardMaterial({ color: 0xffcc00 });
 const matHole = new THREE.MeshBasicMaterial({ color: 0x000000 });
+// Bike z at the previous camera update (declared early: resetGame clears it).
+let lastCameraBikeZ = null;
+
 const sharedMaterials = new Set([
     matAsphalt, matLine, matSidewalk, matBuilding, matBuilding2, matBuilding3,
     matWindow, matWindowLit, matTrashBag, matBox, matTire, matPole,
@@ -1000,6 +1005,10 @@ function resetGame() {
     state.ramps.forEach((ramp) => scene.remove(ramp.mesh));
     state.ramps = [];
     state.rampFreeZones = [];
+    state.gantries.forEach((gantry) => scene.remove(gantry));
+    state.gantries = [];
+    state.phase = 1;
+    lastCameraBikeZ = null;
     state.keys.trick = false;
     state.keys.boost = false;
     state.boost = { charges: 0, frames: 0, gain: 0, wasHeld: false };
@@ -1423,9 +1432,126 @@ function toast(title, text) {
     document.dispatchEvent(new CustomEvent('wheelie:toast', { detail: { title, text } }));
 }
 
+// Phases of a competitive run, each opened by an overhead motorway sign:
+// 1 obstacles (0-20 s), 2 tricks on ramps without obstacles (20-35 s),
+// 3 tricks and obstacles (35 s on).
+const PHASES = [
+    null,
+    { title: 'PHASE 1', subtitle: 'OBSTACLES', color: '#0b6b3a' },
+    { title: 'PHASE 2', subtitle: 'FIGURES', color: '#1d4fa8' },
+    { title: 'PHASE 3', subtitle: 'FIGURES + OBSTACLES', color: '#a8321d' }
+];
+const gantryTextures = [];
+function gantryTexture(phase) {
+    if (gantryTextures[phase]) return gantryTextures[phase];
+    const { title, subtitle, color } = PHASES[phase];
+    const canvas = document.createElement('canvas');
+    canvas.width = 1024;
+    canvas.height = 256;
+    const ctx = canvas.getContext('2d');
+    ctx.fillStyle = color;
+    ctx.fillRect(0, 0, 1024, 256);
+    ctx.strokeStyle = '#f4f4f0';
+    ctx.lineWidth = 10;
+    ctx.strokeRect(14, 14, 996, 228);
+    ctx.fillStyle = '#f4f4f0';
+    ctx.textAlign = 'center';
+    ctx.textBaseline = 'middle';
+    ctx.font = '900 104px "Arial Black", Arial, sans-serif';
+    ctx.fillText(title, 512, 98, 940);
+    ctx.font = '700 60px Arial, sans-serif';
+    ctx.fillText(subtitle, 512, 186, 940);
+    const texture = new THREE.CanvasTexture(canvas);
+    texture.colorSpace = THREE.SRGBColorSpace;
+    texture.anisotropy = 4;
+    gantryTextures[phase] = texture;
+    return texture;
+}
+
+let gantryParts = null;
+function spawnGantry(phase, z) {
+    if (!gantryParts) {
+        const steel = new THREE.MeshLambertMaterial({ color: 0x8d939b });
+        gantryParts = {
+            steel,
+            pole: new THREE.CylinderGeometry(0.22, 0.28, 9.6, 10),
+            beam: new THREE.BoxGeometry(22, 0.55, 0.55),
+            panel: new THREE.PlaneGeometry(10, 2.5),
+            back: new THREE.BoxGeometry(10.3, 2.8, 0.18)
+        };
+        for (const key of ['pole', 'beam', 'panel', 'back']) gantryParts[key].userData.shared = true;
+        sharedMaterials.add(steel);
+    }
+    const group = new THREE.Group();
+    for (const x of [-10.8, 10.8]) {
+        const pole = new THREE.Mesh(gantryParts.pole, gantryParts.steel);
+        pole.position.set(x, 4.8, 0);
+        group.add(pole);
+    }
+    for (const y of [9.1, 8.2]) {
+        const beam = new THREE.Mesh(gantryParts.beam, gantryParts.steel);
+        beam.position.set(0, y, 0);
+        group.add(beam);
+    }
+    const back = new THREE.Mesh(gantryParts.back, gantryParts.steel);
+    back.position.set(0, 8.65, 0.25);
+    group.add(back);
+    const material = new THREE.MeshBasicMaterial({ map: gantryTexture(phase), color: 0xd8d8d8 });
+    const panel = new THREE.Mesh(gantryParts.panel, material);
+    panel.position.set(0, 8.65, 0.36);
+    group.add(panel);
+    group.position.set(0, 0, z);
+    group.userData.phase = phase;
+    group.userData.announced = false;
+    scene.add(group);
+    state.gantries.push(group);
+}
+
+// Placed where the bike will be when the phase starts.
+function updatePhases(frame) {
+    const lead = 120;
+    const ahead = (frames) => bikeGroup.position.z - state.speed * frames - 20;
+    if (frame === 1 && state.gantries.length === 0) spawnGantry(1, -45);
+    if (frame === JUMP.rampsFrom - lead) {
+        const z = ahead(lead);
+        spawnGantry(2, z);
+        // Phase 2 is for tricks: clear the obstacles past its sign.
+        state.obstacles = state.obstacles.filter((obs) => {
+            if (obs.mesh.position.z < z + 5) {
+                scene.remove(obs.mesh);
+                disposeObjectTree(obs.mesh);
+                return false;
+            }
+            return true;
+        });
+    }
+    if (frame === JUMP.groundTricksFrom - lead) spawnGantry(3, ahead(lead));
+    for (const gantry of state.gantries) {
+        if (!gantry.userData.announced && bikeGroup.position.z < gantry.position.z) {
+            gantry.userData.announced = true;
+            const { title, subtitle } = PHASES[gantry.userData.phase];
+            state.phase = gantry.userData.phase;
+            toast(`${title} · ${subtitle}`, gantry.userData.phase === 2 ? 'Tremplins : maintiens FIGURE (F) en l’air'
+                : gantry.userData.phase === 3 ? 'Un obstacle pendant une figure = chute' : 'Évite les obstacles');
+        }
+    }
+    state.gantries = state.gantries.filter((gantry) => {
+        if (gantry.position.z > bikeGroup.position.z + 80) {
+            scene.remove(gantry);
+            gantry.traverse((object) => { if (object.material && object.material.map) object.material.dispose(); });
+            return false;
+        }
+        return true;
+    });
+}
+
+// Obstacles are dropped during phase 2 (tricks only).
+function obstaclesAllowed() {
+    return state.frame < JUMP.rampsFrom - 120 || state.frame >= JUMP.groundTricksFrom - 120;
+}
+
 function announceTricks(frame) {
-    if (frame === JUMP.rampsFrom) toast('FIGURES', 'Saute sur les tremplins et maintiens FIGURE (F)');
-    if (frame === JUMP.groundTricksFrom) toast('FIGURES AU SOL', 'Attention : un obstacle pendant une figure = chute');
+    updatePhases(frame);
 }
 
 function recordRankedInput(flags, accelerationScale = 1) {
@@ -2200,8 +2326,11 @@ function animate(timestamp = performance.now()) {
             }
             // Only spawn obstacles in linear mode
             if (GAME_SETTINGS.gameMode === 'linear') {
-                // From about 20 s on, one block in two gets a ramp.
-                if (state.frame >= JUMP.rampsFrom && Math.random() < 0.5) spawnRamp(newZ + 20 + Math.random() * 60);
+                // From about 20 s on, one block in two gets a ramp. In phase 3
+                // fewer ramps: each one clears ~300 m of obstacles, which left
+                // "figures + obstacles" almost without obstacles.
+                const rampChance = state.frame >= JUMP.groundTricksFrom - 120 ? 0.25 : 0.5;
+                if (state.frame >= JUMP.rampsFrom && Math.random() < rampChance) spawnRamp(newZ + 20 + Math.random() * 60);
                 state.rampFreeZones = state.rampFreeZones.filter((zone) => zone.to < bikeGroup.position.z);
                 for (let i = 0; i < 4; i++) {
                     // Difficulty-based spawning
@@ -2211,7 +2340,7 @@ function animate(timestamp = performance.now()) {
 
                     if (Math.random() < spawnChance) {
                         const z = newZ + Math.random() * 100;
-                        if (!state.rampFreeZones.some((zone) => z <= zone.from && z >= zone.to)) spawnObstacle(z);
+                        if (obstaclesAllowed() && !state.rampFreeZones.some((zone) => z <= zone.from && z >= zone.to)) spawnObstacle(z);
                     }
                 }
             }
@@ -2265,9 +2394,9 @@ function updateCamera() {
         const target = v2 ? v2.roam.focus : bikeGroup.position;
         
         // FOV dynamique basé sur la vitesse
-        let fovBoost = state.freeMode.speed * 10;
+        let fovBoost = IS_V2 ? Math.min(state.freeMode.speed, 4) * 5 : state.freeMode.speed * 10;
         if (state.keys.up || (GAME_SETTINGS.controlMode === 'analog' && analogData.y < -0.3)) {
-            fovBoost += 8; // Boost supplémentaire lors de l'accélération
+            fovBoost += IS_V2 ? 3 : 8; // Boost supplémentaire lors de l'accélération
         }
         const targetFOV = targetBaseFOV + fovBoost;
         camera.fov += (targetFOV - camera.fov) * 0.08;
@@ -2328,9 +2457,11 @@ function updateCamera() {
     } else {
         // Dynamic FOV based on speed (Visual Acceleration)
         // Base increase + extra kick when accelerating
-        let fovBoost = state.speed * 15;
+        // V2: a much smaller widening (it reached +50° at 150 km/h and made the
+        // bike shrink into the distance). Classic keeps its original feel.
+        let fovBoost = IS_V2 ? Math.min(state.speed, 4) * 5 : state.speed * 15;
         if (state.keys.up || (GAME_SETTINGS.controlMode === 'analog' && analogData.y < -0.1)) {
-            fovBoost += 5; // Extra FOV kick when gas is pressed
+            fovBoost += IS_V2 ? 3 : 5; // Extra FOV kick when gas is pressed
         }
 
         const targetFOV = targetBaseFOV + fovBoost;
@@ -2369,7 +2500,7 @@ function updateCamera() {
 
         // Éloignement progressif dès 25 km/h
         if (kmh > 25) {
-            const speedExcess = (kmh - 25) / 125; // 0 to 1 as speed goes from 25 to 150
+            const speedExcess = IS_V2 ? Math.min(1, (kmh - 25) / 125) : (kmh - 25) / 125; // 0 to 1 as speed goes from 25 to 150
             // Sur mobile: max +0.5, sur desktop: max +2
             const maxExtraDistance = isMobileDevice ? 0.5 : 2;
             distanceOffset = baseDistance + (speedExcess * maxExtraDistance);
@@ -2404,7 +2535,13 @@ function updateCamera() {
 
         // Rattrapage plus rapide (0.15 au lieu de 0.1)
         camera.position.x += (bikeGroup.position.x - camera.position.x) * 0.1 + shakeX;
-        // Catch up during jumps and stunts so the trick can be seen.
+        // The camera rides along with most of the bike's motion, then eases
+        // the rest: at speed the bike only pulls a little ahead instead of
+        // running away from the camera (the old lag grew to ~17 m at 150 km/h).
+        const bikeDz = lastCameraBikeZ === null ? 0 : bikeGroup.position.z - lastCameraBikeZ;
+        lastCameraBikeZ = bikeGroup.position.z;
+        if (IS_V2 && Math.abs(bikeDz) < 10) camera.position.z += bikeDz * 0.9;
+        // Catch up faster during jumps and stunts so the trick can be seen.
         const followRate = state.jump.airborne || state.trick.active ? 0.35 : 0.15;
         camera.position.z += (targetZ - camera.position.z) * followRate;
         camera.position.y += (targetY - camera.position.y) * 0.1 + shakeY;
@@ -2977,7 +3114,17 @@ document.getElementById('btn-cat-gamemode')?.addEventListener('click', () => sho
 document.getElementById('btn-cat-options')?.addEventListener('click', () => showSubmenu('submenu-options'));
 document.getElementById('btn-cat-graphics')?.addEventListener('click', () => showSubmenu('submenu-graphics'));
 document.getElementById('btn-cat-version')?.addEventListener('click', () => showSubmenu('submenu-version'));
-document.getElementById('btn-cat-rider')?.addEventListener('click', () => showSubmenu('submenu-rider'));
+// Rider screen: the rider is shown turning while the look is changed.
+document.getElementById('rider-btn')?.addEventListener('click', () => {
+    document.getElementById('start-screen')?.classList.remove('active');
+    document.getElementById('rider-screen')?.classList.add('active');
+    if (v2) v2.showroom(true);
+});
+document.getElementById('back-from-rider')?.addEventListener('click', () => {
+    document.getElementById('rider-screen')?.classList.remove('active');
+    document.getElementById('start-screen')?.classList.add('active');
+    if (v2) v2.showroom(false);
+});
 
 // Switching version reloads the page: scores, nickname and settings are kept.
 function switchVersion(version) {

@@ -3,6 +3,8 @@
 // existing elements (same ids, same listeners), so main.js keeps driving
 // the game exactly as before and the classic version is left untouched.
 import { icon, installIcons } from './icons.js';
+import { totalPoints } from '../v2/freeroam.js';
+import { CAR_NAMES, CAR_UNLOCKS } from '../v2/cars.js';
 import './ui.css';
 
 const $ = (id) => document.getElementById(id);
@@ -40,11 +42,14 @@ function decorateMenu() {
     brand.append(logo, $('menu-title'), label);
 
     button($('start-btn'), { icon: 'play', label: 'JOUER', variant: 'primary' });
+    button($('rider-btn'), { icon: 'helmet', label: 'PERSONNAGE', variant: 'secondary ui-btn--wide' });
     button($('settings-btn'), { icon: 'gear', label: 'PARAMÈTRES' });
     button($('leaderboard-btn'), { icon: 'trophy', label: 'CLASSEMENT' });
     button($('fullscreen-btn'), { icon: 'fullscreen', label: 'PLEIN ÉCRAN' });
     secondary.append($('settings-btn'), $('leaderboard-btn'), $('fullscreen-btn'));
-    actions.append($('start-btn'), secondary);
+    actions.append($('start-btn'));
+    if ($('rider-btn')) actions.append($('rider-btn'));
+    actions.append(secondary);
 
     const hint = start.querySelector('.controls');
     if (hint) {
@@ -81,6 +86,33 @@ function decorateModeSelect() {
     button($('select-competitive'), { icon: 'flag', label: 'COMPÉTITIF', sub: 'Classement + obstacles', variant: 'card' });
     button($('select-freemode'), { icon: 'compass', label: 'MODE LIBRE', sub: 'Balade sans obstacles', variant: 'card ui-btn--alt' });
     button($('back-from-mode-select'), { icon: 'back', label: 'RETOUR', variant: 'ghost' });
+    // Garage: points earned in competitive runs and what they unlock.
+    const garage = document.createElement('div');
+    garage.className = 'ui-garage';
+    list.after(garage);
+    const refresh = () => {
+        const points = totalPoints();
+        const rows = [['Ta moto', 0], ...Object.entries(CAR_UNLOCKS).map(([model, needed]) => [CAR_NAMES[model], needed])];
+        garage.innerHTML = `<div class="ui-garage__points"><span>POINTS CUMULÉS</span><strong>${points}</strong></div>` +
+            '<div class="ui-garage__list">' + rows.map(([name, needed]) => {
+                const open = points >= needed;
+                return `<span class="ui-garage__item ${open ? 'is-open' : ''}">${icon(open ? 'check' : 'close')}${name}` +
+                    `${open ? '' : ` <em>${needed} pts</em>`}</span>`;
+            }).join('') + '</div><p class="ui-garage__hint">Mode libre : approche-toi d’une voiture garée et appuie sur G (ou le bouton bleu).</p>';
+        const free = $('select-freemode')?.querySelector('.ui-btn__sub');
+        if (free) free.textContent = `Ville ouverte · ${points} pts`;
+    };
+    refresh();
+    $('start-btn')?.addEventListener('click', refresh);
+}
+
+function decorateRiderScreen() {
+    const screen = $('rider-screen');
+    if (!screen) return;
+    screen.classList.add('ui-panel-screen', 'ui-rider');
+    screen.querySelector('h1').classList.add('ui-title');
+    screen.querySelector('.rider-panel').classList.add('ui-submenu');
+    button($('back-from-rider'), { icon: 'back', label: 'RETOUR', variant: 'ghost' });
 }
 
 function decorateSettings() {
@@ -371,7 +403,7 @@ export function installRacingUI() {
     installIcons();
     document.body.classList.add('ui-racing');
     // A styling problem must never stop the game: each part fails alone.
-    for (const decorate of [decorateMenu, decorateModeSelect, decorateSettings, decorateLeaderboard,
+    for (const decorate of [decorateMenu, decorateModeSelect, decorateRiderScreen, decorateSettings, decorateLeaderboard,
         decorateGameOver, decorateNickname, decorateHud, decorateControls, installToasts, installPrompt]) {
         try {
             decorate();

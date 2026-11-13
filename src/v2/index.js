@@ -163,6 +163,39 @@ export function createRealisticVersion({ scene, renderer, camera, mobile, audio,
         fx.update(dt, camera, viewport.y);
     }
 
+    // Rider screen: slow orbit around the rider, kept on the left of the view.
+    let showroomFrame = null;
+    const savedPosition = new THREE.Vector3();
+    const savedQuaternion = new THREE.Quaternion();
+    const look = new THREE.Vector3();
+    const toward = new THREE.Vector3();
+    const right = new THREE.Vector3();
+    function showroom(on) {
+        if (on && showroomFrame === null) {
+            savedPosition.copy(camera.position);
+            savedQuaternion.copy(camera.quaternion);
+            let angle = 0.9;
+            const tick = () => {
+                angle += 0.0045;
+                const b = rider.bikeGroup.position;
+                camera.position.set(b.x + Math.sin(angle) * 5.4, 2.1, b.z + Math.cos(angle) * 5.4);
+                toward.set(b.x - camera.position.x, 0, b.z - camera.position.z).normalize();
+                right.set(-toward.z, 0, toward.x);
+                look.set(b.x, 1.5, b.z).addScaledVector(right, 1.9);
+                camera.lookAt(look);
+                renderer.render(scene, camera);
+                showroomFrame = requestAnimationFrame(tick);
+            };
+            tick();
+        } else if (!on && showroomFrame !== null) {
+            cancelAnimationFrame(showroomFrame);
+            showroomFrame = null;
+            camera.position.copy(savedPosition);
+            camera.quaternion.copy(savedQuaternion);
+            renderer.render(scene, camera);
+        }
+    }
+
     function setQuality(high) {
         highQuality = high;
         world.setQuality(high);
@@ -171,7 +204,7 @@ export function createRealisticVersion({ scene, renderer, camera, mobile, audio,
     }
 
     return {
-        world, rider, fx, roam, frame, reset, setQuality,
+        world, rider, fx, roam, frame, reset, setQuality, showroom,
         get resolutionScale() { return resolution.scale; },
         smoke: () => fx.smoke(rider.bikeGroup.position, bikeVelocity),
         spark: () => fx.spark(point.copy(rider.bikeGroup.position).setY(0.08), bikeVelocity, 2)

@@ -1346,6 +1346,7 @@
     <h1 id="menu-title">WHEELIE KING</h1>
     <p id="version-label">51 Games - V2.0</p>
     <button id="start-btn">JOUER</button>
+    <button id="rider-btn" class="v2-only" style="margin-top: 10px; background: #666;">PERSONNAGE</button>
     <button id="settings-btn" style="margin-top: 10px; background: #888;">⚙️ PARAMÈTRES</button>
     <button id="leaderboard-btn" style="margin-top: 10px; background: #666;">🏆 <span style="font-size: 12px;">CLASSEMENT</span></button>
     <button id="fullscreen-btn" style="margin-top: 10px; background: #444;">⛶ PLEIN ÉCRAN</button>
@@ -1383,7 +1384,6 @@
       <button class="menu-item-btn" id="btn-cat-options">OPTIONS ➜</button>
       <button class="menu-item-btn" id="btn-cat-graphics">QUALITÉ GRAPHIQUE ➜</button>
       <button class="menu-item-btn" id="btn-cat-version">VERSION DU JEU ➜</button>
-      <button class="menu-item-btn v2-only" id="btn-cat-rider">PERSONNAGE ➜</button>
     </div>
 
     <!-- Sub-menu: Controls -->
@@ -1445,13 +1445,6 @@
       <button class="back-to-main-btn">← RETOUR</button>
     </div>
 
-    <!-- Sub-menu: Rider (V2) -->
-    <div id="submenu-rider" class="settings-submenu" style="display: none;">
-      <h3>PERSONNAGE</h3>
-      <div class="settings-group" id="rider-options"></div>
-      <button class="back-to-main-btn">← RETOUR</button>
-    </div>
-
     <!-- Sub-menu: Game version -->
     <div id="submenu-version" class="settings-submenu" style="display: none;">
       <h3>VERSION DU JEU</h3>
@@ -1464,6 +1457,15 @@
     </div>
 
     <button id="back-btn" style="margin-top: 30px; display: none;">← RETOUR AU JEU</button>
+  </div>
+
+  <!-- RIDER SCREEN (V2): the rider turns on the left, options on the right -->
+  <div id="rider-screen" class="screen">
+    <div class="rider-panel">
+      <h1>PERSONNAGE</h1>
+      <div class="settings-group" id="rider-options"></div>
+      <button id="back-from-rider">← RETOUR</button>
+    </div>
   </div>
 
   <!-- GAME OVER SCREEN -->
