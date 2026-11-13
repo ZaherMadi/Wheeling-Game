@@ -539,13 +539,20 @@ export function createSkylineTexture() {
 export function createJerseyTexture() {
     const size = 256;
     const [canvas, ctx] = makeCanvas(size, size);
+    // Hoodie fleece with a big 51 on the back, as on the 51Wheling logo.
     ctx.fillStyle = '#f6c416';
     ctx.fillRect(0, 0, size, size);
-    ctx.fillStyle = 'rgba(0,0,0,0.08)';
-    for (let i = 0; i < size; i += 6) ctx.fillRect(0, i, size, 1);
-    ctx.font = '900 150px "Arial Black", Arial, sans-serif';
+    const random = mulberry32(5);
+    for (let i = 0; i < 1400; i++) {
+        ctx.fillStyle = `rgba(${random() > 0.5 ? '255,240,180' : '120,80,0'},0.06)`;
+        ctx.fillRect(random() * size, random() * size, 2, 2);
+    }
+    ctx.font = 'italic 900 150px "Arial Black", Arial, sans-serif';
     ctx.textAlign = 'center';
     ctx.textBaseline = 'middle';
+    ctx.lineWidth = 10;
+    ctx.strokeStyle = '#111';
+    ctx.strokeText('51', size / 2, size / 2 + 8);
     ctx.fillStyle = '#111';
     ctx.fillText('51', size / 2, size / 2 + 8);
     return toTexture(canvas, { anisotropy: 4 });

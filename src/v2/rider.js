@@ -57,29 +57,63 @@ class Parts {
 
 const damp = (current, target, rate, dt) => current + (target - current) * (1 - Math.exp(-rate * dt));
 
+// Gloss black helmet with the 5HC mark on both sides and a stripe at the
+// back (sphere UVs: u 0 = left side, 0.25 = front, 0.5 = right, 0.75 = back).
+function createHelmetTexture() {
+    const canvas = document.createElement('canvas');
+    canvas.width = 512;
+    canvas.height = 256;
+    const ctx = canvas.getContext('2d');
+    ctx.fillStyle = '#0a0a0c';
+    ctx.fillRect(0, 0, 512, 256);
+    ctx.fillStyle = '#f2c014';
+    ctx.fillRect(0, 96, 512, 7);
+    ctx.font = 'italic 900 44px "Arial Black", Arial, sans-serif';
+    ctx.textAlign = 'center';
+    ctx.textBaseline = 'middle';
+    for (const u of [0, 0.5, 1]) {
+        ctx.lineWidth = 6;
+        ctx.strokeStyle = '#0a0a0c';
+        ctx.strokeText('5HC', u * 512, 76);
+        ctx.fillText('5HC', u * 512, 76);
+    }
+    ctx.font = '900 40px "Arial Black", Arial, sans-serif';
+    ctx.fillText('51', 0.75 * 512, 72);
+    const texture = new THREE.CanvasTexture(canvas);
+    texture.colorSpace = THREE.SRGBColorSpace;
+    texture.anisotropy = 4;
+    return texture;
+}
+
 export function createRider({ scene }) {
     // --- Materials --------------------------------------------------------
     const standard = (color, roughness, metalness = 0) =>
         new THREE.MeshStandardMaterial({ color, roughness, metalness });
-    const paint = standard(0x1746d1, 0.28, 0.55);
+    // Livery of the 51Wheling logo: black and yellow bike, yellow hoodie
+    // with 51 on the back, black helmet marked 5HC, black joggers, white
+    // sneakers.
+    const paint = standard(0xf2c014, 0.3, 0.35);
     const rubber = standard(0x0c0c0e, 0.88);
-    const darkMetal = standard(0x1a1c20, 0.45, 0.75);
+    const darkMetal = standard(0x17181b, 0.42, 0.7);
     const chrome = standard(0xc4cad1, 0.18, 1);
+    const gold = standard(0xd9a21b, 0.25, 1);
     const seatMaterial = standard(0x101114, 0.7);
-    const jersey = standard(0xf6c416, 0.78);
-    const jerseyPrint = new THREE.MeshStandardMaterial({ map: createJerseyTexture(), roughness: 0.78 });
-    const pants = standard(0x1b1e25, 0.82);
-    const helmet = standard(0x08080a, 0.1, 0.25);
-    const visor = standard(0x10243d, 0.04, 0.9);
+    const jersey = standard(0xf6c416, 0.86);
+    const jerseyDark = standard(0xd9a80f, 0.9);
+    const jerseyPrint = new THREE.MeshStandardMaterial({ map: createJerseyTexture(), roughness: 0.86 });
+    const pants = standard(0x16181d, 0.85);
+    const helmet = new THREE.MeshStandardMaterial({ map: createHelmetTexture(), roughness: 0.12, metalness: 0.2 });
+    const visor = standard(0x0b1622, 0.04, 0.9);
     const glove = standard(0x0e0e10, 0.6);
-    const sole = standard(0xe8e8ea, 0.7);
+    const sneaker = standard(0xf2f2f0, 0.62);
+    const sole = standard(0xd8d8d6, 0.75);
     const plate = standard(0xe9e9e4, 0.6);
     const tailLight = new THREE.MeshBasicMaterial({ color: 0xff2a1f });
     const headLight = new THREE.MeshBasicMaterial({ color: 0xfff1cf });
     const glowTexture = createGlowTexture();
     const materials = [
-        paint, rubber, darkMetal, chrome, seatMaterial, jersey, jerseyPrint, pants, helmet, visor,
-        glove, sole, plate, tailLight, headLight
+        paint, rubber, darkMetal, chrome, gold, seatMaterial, jersey, jerseyDark, jerseyPrint, pants, helmet, visor,
+        glove, sneaker, sole, plate, tailLight, headLight
     ];
 
     // --- Primitives -------------------------------------------------------
@@ -145,10 +179,14 @@ export function createRider({ scene }) {
         parts.add(chrome, axleTube, transform(width * 0.36, 0, 0, 0.012, rim * 0.72, rim * 0.72));
         parts.add(chrome, axleTube, transform(0, 0, 0, width * 0.9, 0.035, 0.035));
         for (let i = 0; i < 5; i++) {
-            parts.add(chrome, box, transform(0, 0, 0, width * 0.62, rim * 1.9, 0.03, (i / 5) * Math.PI));
+            parts.add(darkMetal, box, transform(0, 0, 0, width * 0.62, rim * 1.9, 0.03, (i / 5) * Math.PI));
         }
+        // Yellow rim stripe, as on the logo.
+        const stripe = new THREE.TorusGeometry(rim + 0.035, 0.012, 6, 32).rotateY(Math.PI / 2);
+        for (const side of [-1, 1]) parts.add(paint, stripe, transform(side * width * 0.3, 0, 0));
         parts.build(wheel);
         tyre.dispose();
+        stripe.dispose();
         return wheel;
     }
     const rearWheel = createWheel(REAR_RADIUS, 0.125, 0.3);
@@ -164,7 +202,7 @@ export function createRider({ scene }) {
     forkTilt.add(fork);
     const forkParts = new Parts();
     for (const side of [-1, 1]) {
-        forkParts.add(chrome, tube, transform(side * 0.11, -FORK_LENGTH / 2 + 0.03, 0, 0.03, FORK_LENGTH + 0.1, 0.03));
+        forkParts.add(gold, tube, transform(side * 0.11, -FORK_LENGTH / 2 + 0.03, 0, 0.03, FORK_LENGTH + 0.1, 0.03));
         forkParts.add(darkMetal, tube, transform(side * 0.11, -FORK_LENGTH + 0.16, 0, 0.042, 0.34, 0.042));
         forkParts.add(rubber, tube, transform(side * 0.33, 0.13, -0.06, 0.027, 0.13, 0.027, 0, 0, Math.PI / 2));
     }
@@ -209,10 +247,18 @@ export function createRider({ scene }) {
     for (const side of [-1, 1]) body.add(jersey, sphere, transform(side * 0.215, 0.49, 0, 0.095, 0.09, 0.095));
     const printGeometry = new THREE.CylinderGeometry(0.176, 0.176, 0.34, 14, 1, true, Math.PI - 0.95, 1.9);
     body.add(jerseyPrint, printGeometry, transform(0, 0.3, 0, 1.18, 1, 1));
+    // Hoodie: hood resting on the back, ribbed hem, front pocket, drawstrings.
+    const hood = new THREE.SphereGeometry(1, 14, 10, 0, Math.PI * 2, 0, Math.PI * 0.55);
+    body.add(jersey, hood, transform(0, 0.55, -0.1, 0.17, 0.13, 0.12, -1.9));
+    body.add(jerseyDark, new THREE.TorusGeometry(0.13, 0.035, 6, 16), transform(0, 0.6, -0.02, 1.05, 1, 0.9, Math.PI / 2 - 0.25));
+    body.add(jerseyDark, torsoGeometry, transform(0, 0.08, 0, 1.2, 0.22, 1.03));
+    body.add(jerseyDark, box, transform(0, 0.17, 0.17, 0.26, 0.13, 0.03, 0.12));
+    for (const side of [-1, 1]) body.add(sneaker, tube, transform(side * 0.045, 0.47, 0.16, 0.007, 0.16, 0.007, 0.25));
     body.add(pants, tube, transform(0, 0.6, 0.01, 0.06, 0.1, 0.06));
     body.build(pelvis);
     torsoGeometry.dispose();
     printGeometry.dispose();
+    hood.dispose();
 
     const head = new THREE.Group();
     head.position.set(0, 0.74, 0.03);
@@ -247,20 +293,27 @@ export function createRider({ scene }) {
         };
         return { upper: make(lengthA, materialA), lower: make(lengthB, materialB), lengthA, lengthB };
     }
-    const arms = [-1, 1].map(() => createLimb(0.34, 0.34, 0.058, jersey, jersey));
-    const legs = [-1, 1].map(() => createLimb(0.44, 0.46, 0.078, pants, pants));
-    const hands = [-1, 1].map(() => {
-        const mesh = new THREE.Mesh(sphere, glove);
-        mesh.scale.setScalar(0.068);
-        mesh.castShadow = true;
-        riderGroup.add(mesh);
-        return mesh;
+    const arms = [-1, 1].map(() => createLimb(0.34, 0.34, 0.062, jersey, jersey));
+    const legs = [-1, 1].map(() => createLimb(0.44, 0.46, 0.08, pants, pants));
+    // Gloves wrapped round the grips: palm, fingers, thumb and the cuff.
+    const hands = [-1, 1].map((side) => {
+        const hand = new THREE.Group();
+        const parts = new Parts();
+        parts.add(glove, box, transform(0, 0.035, -0.005, 0.11, 0.05, 0.1));
+        parts.add(glove, box, transform(0, -0.005, 0.05, 0.1, 0.075, 0.035, 0.3));
+        parts.add(glove, box, transform(side * -0.06, 0.02, 0.03, 0.035, 0.03, 0.06, 0, 0, 0.5 * side));
+        parts.add(jerseyDark, tube, transform(side * 0.08, 0.03, -0.02, 0.05, 0.05, 0.05, 0, 0, Math.PI / 2));
+        parts.build(hand);
+        riderGroup.add(hand);
+        return hand;
     });
     const shoes = [-1, 1].map(() => {
         const shoe = new THREE.Group();
         const parts = new Parts();
-        parts.add(glove, box, transform(0, 0.02, 0.05, 0.11, 0.1, 0.27));
-        parts.add(sole, box, transform(0, -0.04, 0.05, 0.115, 0.03, 0.28));
+        parts.add(sneaker, box, transform(0, 0.025, 0.04, 0.11, 0.095, 0.25));
+        parts.add(sneaker, sphere, transform(0, 0.02, 0.16, 0.056, 0.05, 0.06));
+        parts.add(sole, box, transform(0, -0.035, 0.05, 0.118, 0.035, 0.29));
+        parts.add(darkMetal, box, transform(0, 0.03, 0.05, 0.113, 0.012, 0.12, 0.35));
         parts.build(shoe);
         riderGroup.add(shoe);
         return shoe;
@@ -314,11 +367,14 @@ export function createRider({ scene }) {
     const kneeHint = new THREE.Vector3();
     const footTarget = new THREE.Vector3();
     const groundFoot = new THREE.Vector3();
+    const forkQuaternion = new THREE.Quaternion();
+    const handQuaternion = new THREE.Quaternion();
 
     // --- Animation state --------------------------------------------------
     const pose = {
         lean: 0, steer: 0, torso: 0.42, dive: 0, bounce: 0, bounceVelocity: 0, stop: 1, skid: 0,
-        brake: 0, rearSpin: 0, frontSpin: 0, wasAirborne: false, peakAngle: 0, time: 0
+        brake: 0, rearSpin: 0, frontSpin: 0, wasAirborne: false, peakAngle: 0, time: 0,
+        surge: 0, pump: 0, throttle: 0, lastKmh: 0, lastAngle: 0
     };
     const crash = {
         active: false, time: 0, kind: 'hit', side: 1, spin: 0, fall: 1, tumble: 0, landed: false,
@@ -336,7 +392,7 @@ export function createRider({ scene }) {
         crash.active = false;
         Object.assign(pose, {
             lean: 0, steer: 0, torso: 0.42, dive: 0, bounce: 0, bounceVelocity: 0, stop: 1, skid: 0,
-            brake: 0, wasAirborne: false, peakAngle: 0
+            brake: 0, wasAirborne: false, peakAngle: 0, surge: 0, pump: 0, throttle: 0, lastKmh: 0, lastAngle: 0
         });
         chassis.position.set(0, 0, 0);
         chassis.rotation.set(0, 0, 0);
@@ -359,8 +415,8 @@ export function createRider({ scene }) {
         pose.brake = damp(pose.brake, braking ? 1 : 0, 14, dt);
         if (linear && !skidding) bikeGroup.rotation.z = pose.lean + pose.stop * 0.07;
 
-        // Bars: visible steering at walking pace, a hint of it at speed.
-        const steerTarget = -steer * (0.3 - 0.24 * Math.min(1, kmh / 70)) + (skidding ? Math.sin(pose.time * 31) * 0.12 : 0);
+        // Bars: wide steering at walking pace, still visible at speed.
+        const steerTarget = -steer * (0.34 - 0.2 * Math.min(1, kmh / 70)) + (skidding ? Math.sin(pose.time * 31) * 0.12 : 0);
         pose.steer = damp(pose.steer, steerTarget, 12, dt);
         fork.rotation.y = pose.steer;
 
@@ -387,21 +443,37 @@ export function createRider({ scene }) {
         chassis.position.y = pose.bounce + buzz;
         chassis.rotation.x = pose.dive - pose.bounce * 0.35;
 
-        // Rider: stays upright in a wheelie, tucks at speed, shifts with load.
+        // Body language. The rider is pushed back when the bike surges and
+        // thrown forward when it slows, pulls on the bars while the front
+        // lifts and pushes as it comes down, slides the hips to the inside
+        // of a turn and drops the shoulders into it, tucks in at speed.
+        if (dt > 0) {
+            const accel = (kmh - pose.lastKmh) / dt;
+            const lift = (angleRatio - pose.lastAngle) / dt;
+            pose.surge = damp(pose.surge, Math.max(-1, Math.min(1, accel / 45)), 6, dt);
+            pose.pump = damp(pose.pump, Math.max(-1, Math.min(1, lift * 2.5)), 9, dt);
+        }
+        pose.lastKmh = kmh;
+        pose.lastAngle = angleRatio;
+        pose.throttle = damp(pose.throttle, throttle, 14, dt);
+        const reach = Math.min(1, kmh / 50);
+        const hang = pose.lean * reach * (airborne ? 0.5 : 1);
         const tuck = Math.max(0, Math.min(1, (kmh - 120) / 90));
-        const torsoTarget = 0.42 + angle * 0.36 + tuck * 0.24 + (braking ? 0.1 : -0.07 * throttle) - pose.stop * 0.12;
+        const torsoTarget = 0.42 + angle * 0.36 + tuck * 0.24 + (braking ? 0.12 : -0.07 * throttle) - pose.stop * 0.12
+            - pose.surge * 0.13 - pose.pump * 0.16;
         pose.torso = damp(pose.torso, torsoTarget, 7, dt);
         pelvis.rotation.x = pose.torso;
-        pelvis.rotation.z = -pose.lean * 0.3 - pose.stop * 0.05 + pose.skid * Math.sin(pose.time * 17) * 0.05;
-        pelvis.rotation.y = pose.steer * 0.25;
+        pelvis.rotation.z = hang * 0.45 - pose.stop * 0.05 + pose.skid * Math.sin(pose.time * 17) * 0.05;
+        pelvis.rotation.y = pose.steer * 0.3;
         pelvis.position.set(
-            -pose.lean * 0.05,
+            -hang * 0.2,
             PELVIS_REST.y + angleRatio * 0.04 - tuck * 0.02 - pose.bounce * 0.4,
-            PELVIS_REST.z - angleRatio * 0.13
+            PELVIS_REST.z - angleRatio * 0.13 - pose.surge * 0.025 + Math.max(0, -pose.surge) * 0.02
         );
+        // The head stays level and looks where the bike is going.
         head.rotation.x = -(pose.torso - 0.3) * 0.78 + tuck * 0.1;
         head.rotation.y = pose.steer * 1.1;
-        head.rotation.z = pose.lean * 0.45;
+        head.rotation.z = -(pose.lean + hang * 0.45) * 0.65;
 
         // Lights
         tailLight.color.setRGB(0.75 + pose.brake * 0.25, 0.06 + pose.brake * 0.12, 0.05 + pose.brake * 0.08);
@@ -416,14 +488,38 @@ export function createRider({ scene }) {
         if (crash.active) return;
         bikeGroup.updateMatrixWorld(true);
 
-        // Arms
+        // Arms: the hands stay on the grips. If the body has moved out of
+        // reach, slide it forward on the seat rather than letting go.
+        let overreach = 0;
         for (let i = 0; i < 2; i++) {
-            const side = i === 0 ? -1 : 1;
             toRiderSpace(shoulders[i], root);
             toRiderSpace(grips[i], target);
-            elbowHint.set(side * 1, -0.55, -0.35);
+            overreach = Math.max(overreach, root.distanceTo(target) - (arms[i].lengthA + arms[i].lengthB) * 0.97);
+        }
+        if (overreach > 0) {
+            pelvis.position.z += overreach;
+            pelvis.updateMatrixWorld(true);
+        }
+        fork.getWorldQuaternion(forkQuaternion);
+        riderGroup.getWorldQuaternion(handQuaternion).invert().multiply(forkQuaternion);
+        for (let i = 0; i < 2; i++) {
+            const side = i === 0 ? -1 : 1;
+            // Inside arm bends, outside arm reaches; elbows flare when tucked,
+            // drop when braking, lift when pulling the front up.
+            const inside = Math.max(0, -side * hang) * 2.2;
+            toRiderSpace(shoulders[i], root);
+            toRiderSpace(grips[i], target);
+            elbowHint.set(
+                side * (0.85 + tuck * 0.55 + inside * 0.6 + pose.brake * 0.1),
+                -0.55 + tuck * 0.3 - pose.brake * 0.25 + pose.pump * 0.25,
+                -0.35 - tuck * 0.25 + inside * 0.2
+            );
             solveLimb(arms[i], elbowHint);
             hands[i].position.copy(target);
+            hands[i].quaternion.copy(handQuaternion);
+            // Right hand (rider's right is -x): rolls the throttle open.
+            if (side < 0) hands[i].rotateX(-pose.throttle * 0.5 + pose.brake * 0.15);
+            else hands[i].rotateX(pose.brake * 0.1);
         }
         // Legs: on the pegs; one foot down at a standstill, one out in a skid.
         for (let i = 0; i < 2; i++) {
@@ -439,7 +535,9 @@ export function createRider({ scene }) {
                 footTarget.lerp(groundFoot, pose.skid);
             }
             target.copy(footTarget);
-            kneeHint.set(side * 0.35, 0.4, 1);
+            // The inside knee opens towards the turn.
+            const knee = Math.max(0, -side * hang) * 2.4;
+            kneeHint.set(side * (0.35 + knee), 0.4 - knee * 0.2, 1);
             solveLimb(legs[i], kneeHint);
             shoes[i].position.copy(target);
             shoes[i].rotation.set(0, side * 0.12, 0);
