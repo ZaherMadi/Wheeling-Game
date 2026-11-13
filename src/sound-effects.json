@@ -142,5 +142,47 @@
     "text": "Footsteps of one person walking steadily on a wet city pavement, sneakers, close up, no voices, no music",
     "durationSeconds": 4,
     "loop": true
+  },
+  {
+    "id": "car_engine_petrol",
+    "text": "Small petrol city car engine running at a steady moderate rpm, heard from outside close to the car, smooth four-cylinder hum, no music, no voices",
+    "durationSeconds": 5,
+    "loop": true
+  },
+  {
+    "id": "car_engine_diesel",
+    "text": "Diesel delivery van engine running at a steady rpm, deep clattering diesel rumble, heard from outside close to the van, no music, no voices",
+    "durationSeconds": 5,
+    "loop": true
+  },
+  {
+    "id": "car_engine_sport",
+    "text": "Sports car V8 engine running at a steady rpm, deep aggressive throaty burble, heard close to the exhaust, no music, no voices",
+    "durationSeconds": 5,
+    "loop": true
+  },
+  {
+    "id": "car_reverse",
+    "text": "Car moving slowly in reverse gear, high pitched transmission whine with a low engine hum, close up, no music, no voices",
+    "durationSeconds": 4,
+    "loop": true
+  },
+  {
+    "id": "reverse_beeper",
+    "text": "Delivery van reversing alarm, regular repeated electronic beep beep beep backup warning, close up, no music, no voices",
+    "durationSeconds": 4,
+    "loop": true
+  },
+  {
+    "id": "police_siren",
+    "text": "French police car two-tone siren, pin-pon pin-pon, passing in a city street, no music, no voices",
+    "durationSeconds": 4,
+    "loop": false
+  },
+  {
+    "id": "car_door",
+    "text": "Car door opening then shutting with a solid thud, close up, no music, no voices",
+    "durationSeconds": 1.5,
+    "loop": false
   }
 ]

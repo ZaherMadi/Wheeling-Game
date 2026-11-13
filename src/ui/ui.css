@@ -1873,3 +1873,58 @@ body.v2 .ui-garage__hint {
     width: min(430px, 94vw);
   }
 }
+
+/* Street dialogue subtitles */
+body.v2 #ui-subtitle {
+  position: absolute;
+  left: 50%;
+  bottom: calc(150px + var(--safe-b));
+  max-width: min(560px, 80vw);
+  display: flex;
+  align-items: baseline;
+  gap: 10px;
+  padding: 8px 16px;
+  font-size: 16px;
+  line-height: 1.3;
+  color: #fff;
+  background: rgba(8, 9, 12, 0.72);
+  border-left: 3px solid var(--y);
+  transform: translate(-50%, 8px);
+  opacity: 0;
+  pointer-events: none;
+  transition: opacity 0.18s ease, transform 0.18s ease;
+}
+
+body.v2 #ui-subtitle.is-shown {
+  opacity: 1;
+  transform: translate(-50%, 0);
+}
+
+body.v2 #ui-subtitle b {
+  flex: none;
+  font-family: var(--display);
+  font-size: 12px;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  color: #9fd8ff;
+}
+
+body.v2 #ui-subtitle b[data-who="Toi"] {
+  color: var(--y);
+}
+
+body.v2 #ui-subtitle b[data-who="Police"] {
+  color: #6f9bff;
+}
+
+body.v2:has(.screen.active) #ui-subtitle {
+  visibility: hidden;
+}
+
+@media (orientation: landscape) and (max-height: 520px) {
+  body.v2 #ui-subtitle {
+    bottom: calc(96px + var(--safe-b));
+    font-size: 13px;
+    padding: 6px 12px;
+  }
+}

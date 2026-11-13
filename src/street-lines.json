@@ -1,0 +1,62 @@
+{
+  "voices": {
+    "pa": { "voiceId": "FvmvwvObRqIHojkEGh5N", "name": "Chicadi", "gender": "f" },
+    "pb": { "voiceId": "ZYOBieLaunTiQrTrvNQq", "name": "Morgane", "gender": "f" },
+    "pc": { "voiceId": "O31r762Gb3WFygrEOGh0", "name": "Victoire", "gender": "f" },
+    "pd": { "voiceId": "bIHbv24MWmeRgasZH58o", "name": "Will", "gender": "m" },
+    "pe": { "voiceId": "N2lVS1w4EtoT3dr4eOWO", "name": "Callum", "gender": "m" },
+    "pf": { "voiceId": "pqHfZKP75CvOlQylNhV4", "name": "Bill", "gender": "m" },
+    "pg": { "voiceId": "CwhRBWXzGAHq8TQ4Fs17", "name": "Roger", "gender": "m" },
+    "ca": { "voiceId": "wyZnrAs18zdIj8UgFSV8", "name": "Martin Dupont", "gender": "m" },
+    "cb": { "voiceId": "AmMsHJaCw4BtwV3KoUXF", "name": "Nicolas Petit", "gender": "m" }
+  },
+  "pedestrianVoices": ["pa", "pb", "pc", "pd", "pe", "pf", "pg"],
+  "policeVoices": ["ca", "cb"],
+  "pedestrian": {
+    "compliment": [
+      "Eeh, beau casque !",
+      "Wesh, il est trop stylé ton casque !",
+      "Joli sweat, frère !",
+      "Eh, la classe la visière !",
+      "Bien ou quoi ?"
+    ],
+    "ask5hc": [
+      "Eh, tu connais 5HC ?",
+      "Attends… 5HC ! Tu connais ?"
+    ],
+    "confirm5hc": [
+      "Ouais ouais, exact !",
+      "Exact, exact !"
+    ],
+    "bump": [
+      "Fais attention où tu marches !",
+      "Eh, regarde devant toi !",
+      "Oh, doucement !",
+      "Ça va pas, non ?"
+    ]
+  },
+  "rider": {
+    "reply5hc": [
+      "Bah ouais ! Ils font des sites, des applications, tout ça, nan ?"
+    ],
+    "thanks": [
+      "Merci !",
+      "Merci, frérot !",
+      "Merci, bonne journée !"
+    ]
+  },
+  "police": {
+    "fine": [
+      "Allez, cent points en moins pour mauvaise conduite.",
+      "Contrôle de police ! Cent points en moins, et on se calme.",
+      "Vous avez percuté un véhicule de police. Cent points en moins.",
+      "On roule doucement en ville ! Allez, cent points en moins.",
+      "Mauvaise conduite, monsieur. Ça fera cent points en moins."
+    ],
+    "after": [
+      "Et que je ne vous y reprenne pas !",
+      "Circulez, maintenant.",
+      "Bonne route… et doucement."
+    ]
+  }
+}

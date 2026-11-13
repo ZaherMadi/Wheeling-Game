@@ -17,6 +17,11 @@ const PELVIS_REST = new THREE.Vector3(0, 1.0, -0.28);
 const UP = new THREE.Vector3(0, 1, 0);
 // The street is drawn at arcade scale (20-unit road), so the bike is too.
 const SCALE = 1.7;
+// Free roam is next to life-size cars and people: a smaller bike, and the
+// rider on foot at about 1.85 m (helmet included).
+export const ROAM_SCALE = 1.1;
+const WALK_SCALE = 0.95;
+const WALK_REFERENCE = 0.065;
 
 const matrix = new THREE.Matrix4();
 const position = new THREE.Vector3();
@@ -793,7 +798,7 @@ export function createRider({ scene }) {
     let walkPhase = 0;
     function dismount(x, z, yaw) {
         scene.attach(riderGroup);
-        riderGroup.scale.setScalar(SCALE);
+        riderGroup.scale.setScalar(WALK_SCALE);
         riderGroup.rotation.set(0, yaw, 0);
         riderGroup.position.set(x, 0, z);
         riderGroup.visible = true;
@@ -803,9 +808,10 @@ export function createRider({ scene }) {
 
     function updateWalk(dt, x, z, yaw, speed, y = 0, running = false) {
         // stride 0..1 walking, up to ~1.8 running (longer steps, faster).
-        const stride = Math.min(running ? 1.8 : 1, speed / 0.085);
+        const stride = Math.min(running ? 1.8 : 1, speed / WALK_REFERENCE);
         const step = Math.min(1, stride);
-        walkPhase += dt * (1.5 + stride * 5.2) * (stride > 0.05 ? 1 : 0);
+        // Quicker steps than the big rider had, so the feet keep up with the ground.
+        walkPhase += dt * (2 + stride * 6.6) * (stride > 0.05 ? 1 : 0);
         const bob = Math.abs(Math.sin(walkPhase)) * 0.03 * stride;
         const air = y > 0.02 ? 1 : 0;
         riderGroup.position.set(x, y * 1, z);
@@ -848,6 +854,15 @@ export function createRider({ scene }) {
         riderGroup.visible = visible;
     }
 
+    // Bike + rider size: arcade scale in races, smaller in free roam.
+    let worldScale = SCALE;
+    function setWorldScale(value) {
+        if (value === worldScale) return;
+        worldScale = value;
+        bikeGroup.scale.setScalar(value);
+        contactShadow.scale.set(1.5 * value, 1, 3 * value);
+    }
+
     // Rider customisation: number, hoodie, helmet and bike colours.
     const luminance = (color) => 0.2126 * color.r + 0.7152 * color.g + 0.0722 * color.b;
     function setLivery({ number = '51', hoodie = '#f6c416', helmet: helmetColor = '#0a0a0c', bike = '#f2c014' } = {}) {
@@ -871,7 +886,8 @@ export function createRider({ scene }) {
 
     reset();
     return {
-        setLivery, dismount, updateWalk, mount, setRiderVisible, setBoost, exhaustPoint,
+        setLivery, dismount, updateWalk, mount, setRiderVisible, setBoost, exhaustPoint, setWorldScale,
+        get worldScale() { return worldScale; },
         bikeGroup, bikePivot, materials, update, reset, startCrash, updateCrash, slideSpeed, getHitBox,
         get crashing() { return crash.active; },
         get crashVariant() { return crash.variant; },

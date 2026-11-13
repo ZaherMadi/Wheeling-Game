@@ -3,7 +3,7 @@
 // version, so both versions play and rank identically.
 import * as THREE from 'three';
 import { createWorld } from './world.js';
-import { createRider } from './rider.js';
+import { ROAM_SCALE, createRider } from './rider.js';
 import { createFx } from './fx.js';
 import { loadLivery, mountLiveryPanel } from './livery.js';
 import { createFreeRoam } from './freeroam.js';
@@ -93,6 +93,8 @@ export function createRealisticVersion({ scene, renderer, camera, mobile, audio,
 
     // Called once per rendered frame, after the camera has been placed.
     function frame(dt, snapshot) {
+        // Races keep the arcade-size bike; free roam is life size.
+        rider.setWorldScale(snapshot.linear ? 1.7 : ROAM_SCALE);
         if (dt > 0) adaptResolution();
         const bike = rider.bikeGroup;
         if (dt > 0) {

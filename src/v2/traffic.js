@@ -27,7 +27,7 @@ export function createTraffic({ scene, world, onHonk }) {
     }
 
     function ensure(focusZ) {
-        while (cars.length < count) {
+        while (cars.filter((car) => !car.special).length < count) {
             const model = pick(world.carModels.filter((name) => name !== 'coupe' || Math.random() < 0.3));
             const group = world.createCar(model, pick(CAR_PAINTS));
             scene.add(group);
@@ -38,6 +38,7 @@ export function createTraffic({ scene, world, onHonk }) {
     }
 
     // blockers: [{ x, z }] the player's bike, walker or car.
+    const gone = [];
     function update(dt, focus, blockers) {
         ensure(focus.z);
         for (const car of cars) {
@@ -59,8 +60,13 @@ export function createTraffic({ scene, world, onHonk }) {
                     player = true;
                 }
             }
-            const target = gap < 7 ? 0 : gap < 22 ? car.cruise * (gap - 7) / 15 : car.cruise;
+            let target = gap < 7 ? 0 : gap < 22 ? car.cruise * (gap - 7) / 15 : car.cruise;
+            // A car told to stop (the police pulling over) stays put.
+            if (car.hold) target = 0;
+            const slowing = target < car.speed - 0.5;
             car.speed += (target - car.speed) * Math.min(1, dt * (target < car.speed ? 4 : 1.2));
+            // Brake lights while slowing down or standing in traffic.
+            car.group.userData.lights?.set(slowing || (car.speed < 0.5 && (car.hold || gap < 9)), false);
             car.group.position.z += lane.dir * car.speed * dt;
             if (player && gap < 12 && !car.honked) {
                 car.honked = true;
@@ -69,15 +75,41 @@ export function createTraffic({ scene, world, onHonk }) {
             if (!player) car.honked = false;
             // Out of range: back into play on the other side.
             const offset = car.group.position.z - focus.z;
-            if (offset > 90 || offset < -260) place(car, focus.z, false);
+            if (offset > 90 || offset < -260) {
+                if (car.special) gone.push(car);
+                else place(car, focus.z, false);
+            }
         }
+        gone.forEach(leave);
+        gone.length = 0;
+    }
+
+    // Extra cars driven by other systems (the police): they come from a
+    // distance like the others, then leave for good once out of range.
+    function add(group, extra = {}) {
+        scene.add(group);
+        const car = { group, lane: LANES[0], speed: 0, cruise: 0, honked: false, special: true, hold: false, ...extra };
+        place(car, extra.focusZ ?? group.position.z, false);
+        car.cruise = range(17, 24);
+        car.speed = car.cruise;
+        cars.push(car);
+        return car;
+    }
+
+    function leave(car) {
+        const index = cars.indexOf(car);
+        if (index >= 0) cars.splice(index, 1);
+        scene.remove(car.group);
+        car.onLeave?.();
     }
 
     function respawn(focusZ) {
+        for (const car of cars.filter((other) => other.special)) leave(car);
         for (const car of cars) place(car, focusZ, true);
     }
 
     function clear() {
+        for (const car of cars.filter((other) => other.special)) leave(car);
         for (const car of cars) scene.remove(car.group);
         cars.length = 0;
     }
@@ -88,9 +120,9 @@ export function createTraffic({ scene, world, onHonk }) {
     }
 
     // Moves `position` out of any car it overlaps, along the shortest way.
-    // Returns true if it had to.
+    // Returns the car it was pushed out of (null if none).
     function pushOut(position, radius) {
-        let moved = false;
+        let moved = null;
         for (const car of cars) {
             const dx = position.x - car.group.position.x;
             const dz = position.z - car.group.position.z;
@@ -99,10 +131,10 @@ export function createTraffic({ scene, world, onHonk }) {
             if (px <= 0 || pz <= 0) continue;
             if (px < pz) position.x += (dx >= 0 ? 1 : -1) * (px + 0.02);
             else position.z += (dz >= 0 ? 1 : -1) * (pz + 0.02);
-            moved = true;
+            moved = car;
         }
         return moved;
     }
 
-    return { update, respawn, clear, hitTest, pushOut, get cars() { return cars; } };
+    return { update, respawn, clear, hitTest, pushOut, add, leave, get cars() { return cars; } };
 }

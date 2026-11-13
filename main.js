@@ -970,6 +970,8 @@ function visualSnapshot() {
         boosting: free ? !!(v2 && v2.roam.boostState().active) : state.boost.frames > 0,
         vehicle: free && v2 ? (v2.roam.mode === 'walk' ? 'foot' : v2.roam.mode) : 'bike',
         footSpeed: free && v2 ? v2.roam.footSpeed : 0,
+        carModel: free && v2 ? v2.roam.carModel : null,
+        reversing: free && v2 ? v2.roam.reversing : false,
         airborne: !free && state.jump.airborne,
         trick: state.trick.active ? state.trick.type : null
     };
@@ -2440,8 +2442,12 @@ function updateCamera() {
         }
 
         if (roamMode === 'walk') {
-            distanceOffset = 7;
-            heightOffset = 3.8;
+            distanceOffset = 4.6;
+            heightOffset = 2.5;
+        } else if (roamMode === 'bike' && v2) {
+            // The bike is smaller in free roam (life-size street).
+            distanceOffset *= 0.56;
+            heightOffset *= 0.6;
         } else if (roamMode === 'car') {
             distanceOffset = 13 + state.freeMode.speed * 4;
             heightOffset = 5.5;
@@ -2453,7 +2459,7 @@ function updateCamera() {
         camera.position.x += (targetX - camera.position.x) * 0.12;
         camera.position.z += (targetZ - camera.position.z) * 0.12;
         camera.position.y += (targetY - camera.position.y) * 0.12;
-        camera.lookAt(target.x, roamMode === 'walk' ? 1.8 : 1, target.z - 8);
+        camera.lookAt(target.x, roamMode === 'walk' ? 1.25 : 1, target.z - 8);
     } else {
         // Dynamic FOV based on speed (Visual Acceleration)
         // Base increase + extra kick when accelerating

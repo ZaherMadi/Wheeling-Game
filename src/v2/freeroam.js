@@ -4,41 +4,61 @@
 import * as THREE from 'three';
 import { createTraffic } from './traffic.js';
 import { createPeople } from './people.js';
+import { createPolicePatrol } from './police.js';
+import { createStreetTalk } from './street-talk.js';
 import { CAR_NAMES, CAR_UNLOCKS } from './cars.js';
 
 const POINTS_KEY = 'wheelie_total_points';
+// Fines (police) are kept apart, so the server total can still raise the
+// points earned without wiping them out.
+const PENALTY_KEY = 'wheelie_points_penalty';
 const STREETS = [
     'Avenue du 51', 'Rue de la Paix', 'Boulevard Haussmann', 'Rue des Lilas', 'Avenue des Fleurs', 'Rue du Marché',
     'Boulevard du Soleil', 'Rue Victor Hugo', 'Avenue de la Gare', 'Rue des Artistes', 'Quai des Brumes', 'Rue Lafayette'
 ];
 const SIDE_STREET_HALF = 4.4;
-const WALK_SPEED = 0.085;
-const RUN_SPEED = 0.2;
+// On foot at life size (the rider used to be 1.7x bigger and faster).
+const WALK_SPEED = 0.065;
+const RUN_SPEED = 0.16;
 const CAR_TOP_SPEED = 1.25;
 // Free roam boost: once every 15 s, for 2.5 s.
 const BOOST_COOLDOWN = 15;
 const BOOST_TIME = 2.5;
 
-export function totalPoints() {
+function stored(key) {
     try {
-        return Number(localStorage.getItem(POINTS_KEY)) || 0;
+        return Number(localStorage.getItem(key)) || 0;
     } catch {
         return 0;
     }
 }
 
+export function totalPoints() {
+    return Math.max(0, stored(POINTS_KEY) - stored(PENALTY_KEY));
+}
+
 export function addPoints(points) {
     try {
-        localStorage.setItem(POINTS_KEY, String(totalPoints() + Math.max(0, Math.floor(points))));
+        localStorage.setItem(POINTS_KEY, String(stored(POINTS_KEY) + Math.max(0, Math.floor(points))));
     } catch {
         // Not saved.
     }
 }
 
+// Police fine in free roam.
+export function finePoints(points) {
+    try {
+        localStorage.setItem(PENALTY_KEY, String(stored(PENALTY_KEY) + Math.max(0, Math.floor(points))));
+    } catch {
+        // Not saved.
+    }
+    document.dispatchEvent(new CustomEvent('wheelie:points'));
+}
+
 // The server keeps each player's total: never show less than that.
 export function syncPoints(serverTotal) {
     const total = Math.floor(Number(serverTotal) || 0);
-    if (total <= totalPoints()) return;
+    if (total <= stored(POINTS_KEY)) return;
     try {
         localStorage.setItem(POINTS_KEY, String(total));
     } catch {
@@ -53,11 +73,19 @@ export function createFreeRoam({ scene, world, rider, audio, onTurn }) {
         onHonk: (pan) => audio.play('horn_distant', { volume: 0.55, pan, rate: 1.1 + Math.random() * 0.2 })
     });
     const people = createPeople({ scene });
+    const talk = createStreetTalk({ audio, people });
+    const patrol = createPolicePatrol({
+        scene, world, traffic, audio, talk,
+        onFine: (points) => {
+            finePoints(points);
+            document.dispatchEvent(new CustomEvent('wheelie:toast', { detail: { title: `-${points} PTS`, text: 'Mauvaise conduite' } }));
+        }
+    });
     const focus = new THREE.Vector3();
     const walker = { x: 0, z: 0, yaw: Math.PI, speed: 0, y: 0, vy: 0, running: false, jumpHeld: false };
     const boost = { readyAt: 0, until: 0 };
     const now = () => performance.now() / 1000;
-    const drive = { group: null, model: null, speed: 0, yaw: Math.PI };
+    const drive = { group: null, model: null, speed: 0, yaw: Math.PI, braking: false, reversing: false };
     const dropped = [];
     let mode = 'bike';
     let bike = null;
@@ -101,7 +129,10 @@ export function createFreeRoam({ scene, world, rider, audio, onTurn }) {
     function clampBike(position) {
         constrain(position, 9, 0.6);
         const hit = traffic.pushOut(position, 0.6);
-        if (hit) constrain(position, 9, 0.6);
+        if (hit) {
+            constrain(position, 9, 0.6);
+            if (hit.police) patrol.bumped(hit);
+        }
         return hit;
     }
 
@@ -141,7 +172,7 @@ export function createFreeRoam({ scene, world, rider, audio, onTurn }) {
             walker.z += Math.cos(walker.yaw) * walker.speed;
             // Jump: one per press, only from the ground.
             if (keys.jump && !walker.jumpHeld && walker.y === 0) {
-                walker.vy = 0.16;
+                walker.vy = 0.12;
                 audio.play('ui_click', { volume: 0.25, rate: 0.7 });
             }
             walker.jumpHeld = !!keys.jump;
@@ -156,7 +187,7 @@ export function createFreeRoam({ scene, world, rider, audio, onTurn }) {
             }
             const position = new THREE.Vector3(walker.x, 0, walker.z);
             constrain(position, 19.4, 0);
-            traffic.pushOut(position, 0.4);
+            traffic.pushOut(position, 0.32);
             walker.x = position.x;
             walker.z = position.z;
         } else if (mode === 'car') {
@@ -167,6 +198,10 @@ export function createFreeRoam({ scene, world, rider, audio, onTurn }) {
             const boosting = now() < boost.until;
             if (boosting) drive.speed += 0.03;
             drive.speed = Math.max(-0.4, Math.min(CAR_TOP_SPEED * (boosting ? 1.6 : 1), drive.speed));
+            // Lights: red when braking or backing up, white reversing lights.
+            drive.reversing = drive.speed < -0.01;
+            drive.braking = throttle * drive.speed < 0 && Math.abs(drive.speed) > 0.01;
+            drive.group.userData.lights?.set(drive.braking || drive.reversing || (throttle < -0.05 && Math.abs(drive.speed) < 0.02), drive.reversing);
             const grip = Math.min(1, Math.abs(drive.speed) / 0.5);
             drive.yaw -= nx * 0.032 * grip * Math.sign(drive.speed || 1);
             const group = drive.group;
@@ -176,7 +211,9 @@ export function createFreeRoam({ scene, world, rider, audio, onTurn }) {
             group.rotation.y = drive.yaw;
             constrain(group.position, 8.4, 1.2);
             void previous;
-            if (traffic.pushOut(group.position, 1.4)) {
+            const hit = traffic.pushOut(group.position, 1.4);
+            if (hit) {
+                if (hit.police) patrol.bumped(hit);
                 if (Math.abs(drive.speed) > 0.3) audio.play('collision', { volume: 0.4 });
                 drive.speed *= -0.25;
                 constrain(group.position, 8.4, 1.2);
@@ -222,8 +259,8 @@ export function createFreeRoam({ scene, world, rider, audio, onTurn }) {
         if (mode === 'bike') {
             // Step off to the right of the bike.
             const yaw = bike.rotation.y;
-            walker.x = bike.position.x + Math.cos(yaw) * 1.6;
-            walker.z = bike.position.z - Math.sin(yaw) * 1.6;
+            walker.x = bike.position.x + Math.cos(yaw) * 1.1;
+            walker.z = bike.position.z - Math.sin(yaw) * 1.1;
             walker.yaw = yaw;
             walker.speed = 0;
             rider.dismount(walker.x, walker.z, walker.yaw);
@@ -238,7 +275,11 @@ export function createFreeRoam({ scene, world, rider, audio, onTurn }) {
             walker.z = group.position.z - Math.sin(yaw) * 2.4;
             walker.yaw = yaw;
             dropped.push({ group, model: drive.model });
+            group.userData.lights?.set(false, false);
             drive.group = null;
+            drive.reversing = false;
+            drive.braking = false;
+            audio.play('car_door', { volume: 0.45 });
             rider.dismount(walker.x, walker.z, walker.yaw);
             walker.y = 0;
             walker.vy = 0;
@@ -273,7 +314,8 @@ export function createFreeRoam({ scene, world, rider, audio, onTurn }) {
                 drive.speed = 0;
                 rider.setRiderVisible(false);
                 setMode('car');
-                audio.play('rev_blip', { volume: 0.6, rate: 0.75 });
+                audio.play('car_door', { volume: 0.45 });
+                audio.play('rev_blip', { volume: 0.6, rate: 0.75, delay: 0.35 });
             }
         }
         prompt = null;
@@ -283,10 +325,12 @@ export function createFreeRoam({ scene, world, rider, audio, onTurn }) {
     function update(dt, bikeGroup) {
         bike = bikeGroup;
         const here = getFocus();
-        const blockers = [{ x: here.x, z: here.z }];
+        const blockers = [{ x: here.x, z: here.z }, ...patrol.blockers()];
         if (mode !== 'bike') blockers.push({ x: bike.position.x, z: bike.position.z });
         traffic.update(dt, here, blockers);
         people.update(dt, here);
+        talk.update(dt, mode, here);
+        patrol.update(dt, here, { x: here.x, z: here.z, radius: mode === 'car' ? 1.6 : mode === 'bike' ? 0.9 : 0.4 });
         if (mode === 'walk') rider.updateWalk(dt, walker.x, walker.z, walker.yaw, walker.speed, walker.y, walker.running);
         // Cars left behind on another block go away.
         for (let i = dropped.length - 1; i >= 0; i--) {
@@ -319,6 +363,8 @@ export function createFreeRoam({ scene, world, rider, audio, onTurn }) {
         }
         for (const car of dropped) scene.remove(car.group);
         dropped.length = 0;
+        patrol.reset();
+        talk.reset();
         traffic.respawn(z);
         people.respawn(z);
         turning = false;
@@ -338,6 +384,8 @@ export function createFreeRoam({ scene, world, rider, audio, onTurn }) {
         drive.group = null;
         for (const car of dropped) scene.remove(car.group);
         dropped.length = 0;
+        patrol.reset();
+        talk.reset();
         traffic.clear();
         people.clear();
         prompt = null;
@@ -354,6 +402,12 @@ export function createFreeRoam({ scene, world, rider, audio, onTurn }) {
             return { x: g.position.x + Math.sin(drive.yaw) * back, z: g.position.z + Math.cos(drive.yaw) * back, yaw: drive.yaw };
         },
         get footSpeed() { return mode === 'walk' ? walker.speed / WALK_SPEED : 0; },
+        get carModel() { return mode === 'car' ? drive.model : null; },
+        get reversing() { return mode === 'car' && drive.reversing; },
+        get braking() { return mode === 'car' && drive.braking; },
+        patrol, talk, people, traffic,
+        // Tests: the player's position on foot.
+        debug: { walker, drive },
         get mode() { return mode; },
         get focus() { return getFocus(); },
         get speed() { return mode === 'walk' ? walker.speed : mode === 'car' ? Math.abs(drive.speed) : 0; },

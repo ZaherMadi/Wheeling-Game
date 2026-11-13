@@ -344,6 +344,28 @@ function installToasts() {
     });
 }
 
+// Street dialogue subtitles (free roam): who speaks and what they say.
+function installSubtitles() {
+    const box = document.createElement('div');
+    box.id = 'ui-subtitle';
+    box.setAttribute('aria-live', 'polite');
+    document.getElementById('ui-layer')?.append(box);
+    let timer = null;
+    document.addEventListener('wheelie:subtitle', (event) => {
+        const { who = '', text = '', seconds = 2.5 } = event.detail || {};
+        box.innerHTML = '';
+        const name = document.createElement('b');
+        name.textContent = who;
+        name.dataset.who = who;
+        const words = document.createElement('span');
+        words.textContent = text;
+        box.append(name, words);
+        box.classList.add('is-shown');
+        clearTimeout(timer);
+        timer = setTimeout(() => box.classList.remove('is-shown'), seconds * 1000);
+    });
+}
+
 // Free roam prompt: what the action (G / pad) does here.
 function installPrompt() {
     const chip = document.createElement('button');
@@ -405,7 +427,7 @@ export function installRacingUI() {
     document.body.classList.add('ui-racing');
     // A styling problem must never stop the game: each part fails alone.
     for (const decorate of [decorateMenu, decorateModeSelect, decorateRiderScreen, decorateSettings, decorateLeaderboard,
-        decorateGameOver, decorateNickname, decorateHud, decorateControls, installToasts, installPrompt]) {
+        decorateGameOver, decorateNickname, decorateHud, decorateControls, installToasts, installPrompt, installSubtitles]) {
         try {
             decorate();
         } catch (error) {

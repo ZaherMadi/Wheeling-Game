@@ -5,12 +5,14 @@ import { mkdir, readFile, rename, unlink, writeFile } from 'node:fs/promises';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { promisify } from 'node:util';
+import { streetClips } from '../src/street-lines.js';
 
 const run = promisify(execFile);
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 const outputDirectory = path.join(root, 'public', 'audio');
 const sourcePath = path.join(root, 'src', 'voice-lines.json');
 const soundEffectsPath = path.join(root, 'src', 'sound-effects.json');
+const streetLinesPath = path.join(root, 'src', 'street-lines.json');
 const manifestPath = path.join(outputDirectory, 'manifest.json');
 const apiKey = process.env.ELEVENLABS_API_KEY;
 const voiceId = process.env.ELEVENLABS_VOICE_ID;
@@ -30,6 +32,7 @@ if (!apiKey || !voiceId) {
 
 const lineGroups = JSON.parse(await readFile(sourcePath, 'utf8'));
 const soundEffects = JSON.parse(await readFile(soundEffectsPath, 'utf8'));
+const streetLines = JSON.parse(await readFile(streetLinesPath, 'utf8'));
 const lineEntries = [];
 const frozenIds = [];
 for (const [language, groups] of Object.entries(lineGroups)) {
@@ -38,6 +41,13 @@ for (const [language, groups] of Object.entries(lineGroups)) {
     // Group names may carry a point of view (fr_self): the language comes first.
     else lineEntries.push({ ...line, language: language.split('_')[0] });
   }
+}
+
+// Street dialogue (free roam): passers-by and police have their own voices,
+// the main character keeps the project's voice.
+for (const clip of streetClips(streetLines)) {
+  const voice = clip.voice === 'rider' ? null : streetLines.voices[clip.voice];
+  lineEntries.push({ id: clip.id, text: clip.text, language: 'fr', voiceId: voice ? voice.voiceId : voiceId });
 }
 
 const activeIds = new Set([...lineEntries, ...soundEffects].map(({ id }) => id).concat(frozenIds));
@@ -122,12 +132,12 @@ async function generateAudio({ id, hash, kind, requestUrl, body }) {
 }
 
 const jobs = [];
-for (const { id, text, language } of lineEntries) {
+for (const { id, text, language, voiceId: lineVoice = voiceId } of lineEntries) {
   jobs.push({
     id,
     kind: 'voice',
-    hash: createHash('sha256').update(`${modelId}\0${voiceId}\0${language}\0${text}`).digest('hex'),
-    requestUrl: `https://api.elevenlabs.io/v1/text-to-speech/${encodeURIComponent(voiceId)}?output_format=mp3_44100_128`,
+    hash: createHash('sha256').update(`${modelId}\0${lineVoice}\0${language}\0${text}`).digest('hex'),
+    requestUrl: `https://api.elevenlabs.io/v1/text-to-speech/${encodeURIComponent(lineVoice)}?output_format=mp3_44100_128`,
     body: {
       text,
       model_id: modelId,

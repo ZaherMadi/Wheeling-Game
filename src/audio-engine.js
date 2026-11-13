@@ -3,7 +3,13 @@
 // clips in /audio (see scripts/generate-voice-lines.mjs).
 
 const GEAR_TOP_KMH = [45, 80, 120, 165, 215, 300];
-const LOOP_IDS = ['engine_idle', 'engine_mid', 'engine_high', 'wind', 'tire_wet', 'city_ambience', 'scrape', 'footsteps'];
+const LOOP_IDS = [
+    'engine_idle', 'engine_mid', 'engine_high', 'wind', 'tire_wet', 'city_ambience', 'scrape', 'footsteps',
+    'car_engine_petrol', 'car_engine_diesel', 'car_engine_sport', 'car_reverse', 'reverse_beeper'
+];
+// Free roam cars: which engine each model has.
+const CAR_ENGINES = { hatch: 'car_engine_petrol', sedan: 'car_engine_petrol', van: 'car_engine_diesel', suv: 'car_engine_diesel', coupe: 'car_engine_sport' };
+const CAR_PITCH = { hatch: 1.12, sedan: 0.95, van: 0.9, suv: 1.0, coupe: 0.95 };
 
 const clamp01 = (value) => Math.max(0, Math.min(1, value));
 
@@ -329,8 +335,24 @@ export function createAudioEngine({ effects, getManifest }) {
         // On foot: no engine, footsteps instead. In a car: a lower, softer engine.
         const vehicle = frame.vehicle || 'bike';
         const onFoot = vehicle === 'foot';
-        const pitch = vehicle === 'car' ? 0.72 : 1;
-        const engineLevel = onFoot ? 0 : vehicle === 'car' ? 0.75 : 1;
+        const inCar = vehicle === 'car';
+        const pitch = 1;
+        // The bike's engine only on the bike; cars have their own.
+        const engineLevel = vehicle === 'bike' ? 1 : 0;
+        const carEngine = inCar ? CAR_ENGINES[frame.carModel] || 'car_engine_petrol' : null;
+        const carPitch = CAR_PITCH[frame.carModel] || 1;
+        const reversing = inCar && !!frame.reversing;
+        const carLoad = 0.55 + sim.throttle * 0.45;
+        for (const id of ['car_engine_petrol', 'car_engine_diesel', 'car_engine_sport']) {
+            const on = id === carEngine;
+            // In reverse the engine stays low; the gearbox whines over it.
+            const rate = reversing ? 0.8 + rpm * 0.3 : 0.7 + rpm * 0.85;
+            setLoop(id, on ? (reversing ? 0.32 : 0.5) * carLoad : 0, rate * carPitch);
+        }
+        const reverseSpeed = reversing ? clamp01(kmh / 45) : 0;
+        setLoop('car_reverse', reversing ? 0.12 + reverseSpeed * 0.3 : 0, 0.85 + reverseSpeed * 0.5);
+        // The van beeps when it backs up.
+        setLoop('reverse_beeper', reversing && frame.carModel === 'van' ? 0.32 : 0, 1);
         const footSpeed = frame.footSpeed || 0;
         setLoop('footsteps', onFoot ? Math.min(0.5, footSpeed * 0.32) : 0, 0.85 + Math.min(1.4, footSpeed) * 0.45);
         const load = (0.5 + sim.throttle * 0.5) * (sim.shiftCut > 0 ? 0.45 : 1) * engineLevel;
@@ -399,6 +421,58 @@ export function createAudioEngine({ effects, getManifest }) {
         else context.resume().catch(() => {});
     }
 
+    // Street dialogue (free roam): several speakers can follow each other.
+    // Resolves true when the line has finished, false if it could not play.
+    const sayings = new Set();
+    function say(id, { volume = 1, pan = 0 } = {}) {
+        const audioContext = getContext();
+        if (!audioContext) return Promise.resolve(false);
+        if (audioContext.state === 'suspended') audioContext.resume().catch(() => {});
+        return load(id).then((buffer) => {
+            // Not running (no gesture yet, or paused): the caller waits on its own.
+            if (!buffer || audioContext.state !== 'running') return false;
+            const source = audioContext.createBufferSource();
+            const gain = audioContext.createGain();
+            source.buffer = buffer;
+            gain.gain.value = volume;
+            source.connect(gain);
+            let tail = gain;
+            if (pan && audioContext.createStereoPanner) {
+                const panner = audioContext.createStereoPanner();
+                panner.pan.value = Math.max(-1, Math.min(1, pan));
+                gain.connect(panner);
+                tail = panner;
+            }
+            tail.connect(voiceBus);
+            sayings.add(source);
+            duck(true);
+            return new Promise((resolve) => {
+                // Never left hanging if the context stops mid-line.
+                const guard = setTimeout(() => source.onended?.(), (buffer.duration + 1.5) * 1000);
+                source.onended = () => {
+                    clearTimeout(guard);
+                    source.onended = null;
+                    sayings.delete(source);
+                    gain.disconnect();
+                    if (tail !== gain) tail.disconnect();
+                    if (!sayings.size && !voice) duck(false);
+                    resolve(true);
+                };
+                source.start();
+            });
+        }).catch(() => false);
+    }
+
+    function stopSaying() {
+        for (const source of sayings) {
+            try {
+                source.stop();
+            } catch {
+                // Already finished.
+            }
+        }
+    }
+
     // Rider's voice: one line at a time, the engine dips underneath.
     function speak(id, { volume = 1 } = {}) {
         const audioContext = getContext();
@@ -458,7 +532,7 @@ export function createAudioEngine({ effects, getManifest }) {
     }
 
     return {
-        prepare, warmUp, unlock, play, speak, stopVoice, startRun, stopRun, update, setEnabled, duck, status, setPaused,
+        prepare, warmUp, unlock, play, speak, say, stopSaying, stopVoice, startRun, stopRun, update, setEnabled, duck, status, setPaused,
         get running() { return running; },
         get speaking() { return Boolean(voice); },
         get gear() { return sim.gear + 1; },

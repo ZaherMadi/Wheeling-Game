@@ -13,7 +13,7 @@ import {
 } from './cityatlas.js';
 import { createVegetation } from './vegetation.js';
 import { createBuildingKit } from './buildings.js';
-import { buildCarGeometries, createCarMesh, createCarModels } from './cars.js';
+import { addCarLights, buildCarGeometries, createCarMesh, createCarModels } from './cars.js';
 import {
     FACADE_LINE, KERB, LAYBY_EDGE, ROAD_HALF, SHADOW_PER_METRE, createStreetKit
 } from './street.js';
@@ -747,6 +747,9 @@ export function createWorld({ scene, renderer, mobile }) {
         const car = createCarMesh(carGeometries[model], body, materials.car);
         car.userData.model = model;
         car.userData.length = cars[model].length;
+        car.userData.width = cars[model].width;
+        car.userData.height = cars[model].height;
+        addCarLights(car, cars[model]);
         return car;
     }
 

@@ -134,7 +134,7 @@ function buildModel(name) {
     add(PRIMS.box.clone().applyMatrix4(transform(0, 0.52, half + 0.04, 0.52, 0.11, 0.02)), 0xf2f2f2);
     add(PRIMS.box.clone().applyMatrix4(transform(0, 0.62, -half - 0.05, 0.52, 0.11, 0.02)), 0xf2f2f2);
     add(PRIMS.box.clone().applyMatrix4(transform(0, 0.36, 0, m.width - 0.2, 0.14, m.length - 0.4)), TRIM);
-    return { parts, length: m.length, width: m.width, height: m.roof };
+    return { parts, length: m.length, width: m.width, height: m.roof, tail: name === 'van' ? 1.0 : m.tail * 0.86 };
 }
 
 export function createCarModels() {
@@ -179,4 +179,61 @@ export function addCar(sink, model, x, z, yaw, paint, detailed = true) {
     const h = model.height;
     lo.add(PRIMS.box, part.copy(place).multiply(transform(0, 0.62, 0, model.width, 0.62, model.length)), paint);
     lo.add(PRIMS.box, part.copy(place).multiply(transform(0, h - 0.25, -0.1, model.width - 0.2, 0.5, model.length * 0.5)), GLASS);
+}
+
+// Brake and reversing lights for a car that moves (traffic, the player's,
+// the police): lit boxes over the tail lights plus a soft glow.
+let glowMap = null;
+function lightGlow() {
+    if (glowMap) return glowMap;
+    const canvas = document.createElement('canvas');
+    canvas.width = canvas.height = 64;
+    const ctx = canvas.getContext('2d');
+    const gradient = ctx.createRadialGradient(32, 32, 0, 32, 32, 32);
+    gradient.addColorStop(0, 'rgba(255,255,255,1)');
+    gradient.addColorStop(0.35, 'rgba(255,255,255,0.45)');
+    gradient.addColorStop(1, 'rgba(255,255,255,0)');
+    ctx.fillStyle = gradient;
+    ctx.fillRect(0, 0, 64, 64);
+    glowMap = new THREE.CanvasTexture(canvas);
+    return glowMap;
+}
+
+const lightBox = new THREE.BoxGeometry(1, 1, 1);
+export function addCarLights(group, model) {
+    const half = model.length / 2;
+    const brake = new THREE.MeshBasicMaterial({ color: 0x4a080a });
+    const reverse = new THREE.MeshBasicMaterial({ color: 0x3a3a3a });
+    const brakeGlow = new THREE.SpriteMaterial({ map: lightGlow(), color: 0xff2020, blending: THREE.AdditiveBlending, depthWrite: false, transparent: true, opacity: 0 });
+    const reverseGlow = new THREE.SpriteMaterial({ map: lightGlow(), color: 0xffffff, blending: THREE.AdditiveBlending, depthWrite: false, transparent: true, opacity: 0 });
+    for (const side of [-1, 1]) {
+        const x = side * (model.width / 2 - 0.25);
+        const lamp = new THREE.Mesh(lightBox, brake);
+        lamp.position.set(x, model.tail, -half - 0.055);
+        lamp.scale.set(0.3, 0.1, 0.02);
+        const glow = new THREE.Sprite(brakeGlow);
+        glow.position.set(x, model.tail, -half - 0.2);
+        glow.scale.setScalar(0.9);
+        const white = new THREE.Mesh(lightBox, reverse);
+        white.position.set(side * (model.width / 2 - 0.5), model.tail - 0.1, -half - 0.055);
+        white.scale.set(0.12, 0.06, 0.02);
+        const whiteGlow = new THREE.Sprite(reverseGlow);
+        whiteGlow.position.set(side * (model.width / 2 - 0.5), model.tail - 0.1, -half - 0.2);
+        whiteGlow.scale.setScalar(0.42);
+        group.add(lamp, glow, white, whiteGlow);
+    }
+    let state = '';
+    group.userData.lights = {
+        set(braking, reversing) {
+            const key = `${braking ? 1 : 0}${reversing ? 1 : 0}`;
+            if (key === state) return;
+            state = key;
+            brake.color.set(braking ? 0xff1a1a : 0x4a080a);
+            brakeGlow.opacity = braking ? 0.85 : 0;
+            reverse.color.set(reversing ? 0xffffff : 0x3a3a3a);
+            reverseGlow.opacity = reversing ? 0.7 : 0;
+        },
+        get braking() { return state[0] === '1'; },
+        get reversing() { return state[1] === '1'; }
+    };
 }
