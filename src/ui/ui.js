@@ -93,7 +93,8 @@ function decorateSettings() {
         'btn-cat-gamemode': ['flag', 'MODE DE JEU'],
         'btn-cat-options': ['sliders', 'SON & VOIX'],
         'btn-cat-graphics': ['sparkle', 'QUALITÉ GRAPHIQUE'],
-        'btn-cat-version': ['layers', 'VERSION DU JEU']
+        'btn-cat-version': ['layers', 'VERSION DU JEU'],
+        'btn-cat-rider': ['helmet', 'PERSONNAGE']
     };
     for (const [id, [name, label]] of Object.entries(items)) {
         button($(id), { icon: name, label, variant: 'row', trailing: 'chevron' });

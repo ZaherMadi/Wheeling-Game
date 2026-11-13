@@ -59,26 +59,26 @@ const damp = (current, target, rate, dt) => current + (target - current) * (1 - 
 
 // Gloss black helmet with the 5HC mark on both sides and a stripe at the
 // back (sphere UVs: u 0 = left side, 0.25 = front, 0.5 = right, 0.75 = back).
-function createHelmetTexture() {
+function createHelmetTexture(base = '#0a0a0c', accent = '#f2c014', number = '51') {
     const canvas = document.createElement('canvas');
     canvas.width = 512;
     canvas.height = 256;
     const ctx = canvas.getContext('2d');
-    ctx.fillStyle = '#0a0a0c';
+    ctx.fillStyle = base;
     ctx.fillRect(0, 0, 512, 256);
-    ctx.fillStyle = '#f2c014';
+    ctx.fillStyle = accent;
     ctx.fillRect(0, 96, 512, 7);
     ctx.font = 'italic 900 44px "Arial Black", Arial, sans-serif';
     ctx.textAlign = 'center';
     ctx.textBaseline = 'middle';
     for (const u of [0, 0.5, 1]) {
         ctx.lineWidth = 6;
-        ctx.strokeStyle = '#0a0a0c';
+        ctx.strokeStyle = base;
         ctx.strokeText('5HC', u * 512, 76);
         ctx.fillText('5HC', u * 512, 76);
     }
     ctx.font = '900 40px "Arial Black", Arial, sans-serif';
-    ctx.fillText('51', 0.75 * 512, 72);
+    ctx.fillText(number, 0.75 * 512, 72);
     const texture = new THREE.CanvasTexture(canvas);
     texture.colorSpace = THREE.SRGBColorSpace;
     texture.anisotropy = 4;
@@ -101,6 +101,7 @@ export function createRider({ scene }) {
     const jersey = standard(0xf6c416, 0.86);
     const jerseyDark = standard(0xd9a80f, 0.9);
     const jerseyPrint = new THREE.MeshStandardMaterial({ map: createJerseyTexture(), roughness: 0.86 });
+    const jerseyAccent = jersey.color.clone();
     const pants = standard(0x16181d, 0.85);
     const helmet = new THREE.MeshStandardMaterial({ map: createHelmetTexture(), roughness: 0.12, metalness: 0.2 });
     const visor = standard(0x0b1622, 0.04, 0.9);
@@ -734,8 +735,29 @@ export function createRider({ scene }) {
         return hitBox;
     }
 
+    // Rider customisation: number, hoodie, helmet and bike colours.
+    const luminance = (color) => 0.2126 * color.r + 0.7152 * color.g + 0.0722 * color.b;
+    function setLivery({ number = '51', hoodie = '#f6c416', helmet: helmetColor = '#0a0a0c', bike = '#f2c014' } = {}) {
+        jersey.color.set(hoodie);
+        jerseyAccent.set(hoodie);
+        jerseyDark.color.copy(jerseyAccent).multiplyScalar(0.84);
+        const ink = luminance(jerseyAccent) > 0.35 ? '#111' : '#f6c416';
+        const print = createJerseyTexture(String(number), hoodie, ink);
+        jerseyPrint.map.dispose();
+        jerseyPrint.map = print;
+        jerseyPrint.needsUpdate = true;
+        const shell = new THREE.Color(helmetColor);
+        const accent = luminance(shell) > 0.45 ? '#111111' : '#f2c014';
+        const helmetMap = createHelmetTexture(helmetColor, accent, String(number));
+        helmet.map.dispose();
+        helmet.map = helmetMap;
+        helmet.needsUpdate = true;
+        paint.color.set(bike);
+    }
+
     reset();
     return {
+        setLivery,
         bikeGroup, bikePivot, materials, update, reset, startCrash, updateCrash, slideSpeed, getHitBox,
         get crashing() { return crash.active; },
         get crashVariant() { return crash.variant; },

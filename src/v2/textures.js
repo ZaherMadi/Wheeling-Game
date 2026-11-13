@@ -536,11 +536,11 @@ export function createSkylineTexture() {
     return toTexture(canvas);
 }
 
-export function createJerseyTexture() {
+export function createJerseyTexture(number = '51', color = '#f6c416', ink = '#111') {
     const size = 256;
     const [canvas, ctx] = makeCanvas(size, size);
-    // Hoodie fleece with a big 51 on the back, as on the 51Wheling logo.
-    ctx.fillStyle = '#f6c416';
+    // Hoodie fleece with a big number on the back, as on the 51Wheling logo.
+    ctx.fillStyle = color;
     ctx.fillRect(0, 0, size, size);
     const random = mulberry32(5);
     for (let i = 0; i < 1400; i++) {
@@ -552,9 +552,9 @@ export function createJerseyTexture() {
     ctx.textBaseline = 'middle';
     ctx.lineWidth = 10;
     ctx.strokeStyle = '#111';
-    ctx.strokeText('51', size / 2, size / 2 + 8);
-    ctx.fillStyle = '#111';
-    ctx.fillText('51', size / 2, size / 2 + 8);
+    ctx.strokeText(number, size / 2, size / 2 + 8, size * 0.92);
+    ctx.fillStyle = ink;
+    ctx.fillText(number, size / 2, size / 2 + 8, size * 0.92);
     return toTexture(canvas, { anisotropy: 4 });
 }
 

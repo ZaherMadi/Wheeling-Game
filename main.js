@@ -2503,6 +2503,7 @@ document.getElementById('btn-cat-gamemode')?.addEventListener('click', () => sho
 document.getElementById('btn-cat-options')?.addEventListener('click', () => showSubmenu('submenu-options'));
 document.getElementById('btn-cat-graphics')?.addEventListener('click', () => showSubmenu('submenu-graphics'));
 document.getElementById('btn-cat-version')?.addEventListener('click', () => showSubmenu('submenu-version'));
+document.getElementById('btn-cat-rider')?.addEventListener('click', () => showSubmenu('submenu-rider'));
 
 // Switching version reloads the page: scores, nickname and settings are kept.
 function switchVersion(version) {

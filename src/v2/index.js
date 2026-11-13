@@ -5,6 +5,7 @@ import * as THREE from 'three';
 import { createWorld } from './world.js';
 import { createRider } from './rider.js';
 import { createFx } from './fx.js';
+import { loadLivery, mountLiveryPanel } from './livery.js';
 import { installRacingUI } from '../ui/ui.js';
 
 const DAY_CYCLE_SECONDS = 600;
@@ -29,6 +30,12 @@ export function createRealisticVersion({ scene, renderer, camera, mobile }) {
     if (seed !== null) world.reseed(seed);
     const rider = createRider({ scene });
     const fx = createFx({ scene, mobile });
+    rider.setLivery(loadLivery());
+    mountLiveryPanel(document.getElementById('rider-options'), (livery) => {
+        rider.setLivery(livery);
+        // The menu is a still frame: show the new look at once.
+        renderer.render(scene, camera);
+    });
 
     const bikeVelocity = new THREE.Vector3();
     const lastPosition = new THREE.Vector3();
