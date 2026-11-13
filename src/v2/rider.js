@@ -375,7 +375,7 @@ export function createRider({ scene }) {
     const pose = {
         lean: 0, steer: 0, torso: 0.42, dive: 0, bounce: 0, bounceVelocity: 0, stop: 1, skid: 0,
         brake: 0, rearSpin: 0, frontSpin: 0, wasAirborne: false, peakAngle: 0, time: 0,
-        surge: 0, pump: 0, throttle: 0, lastKmh: 0, lastAngle: 0
+        surge: 0, pump: 0, throttle: 0, lastKmh: 0, lastAngle: 0, trick: 0, trickType: 'superman', tuckAir: 0
     };
     const crash = {
         active: false, time: 0, kind: 'hit', variant: 'tumble', side: 1, landed: false, landTime: 0,
@@ -394,7 +394,8 @@ export function createRider({ scene }) {
         crash.active = false;
         Object.assign(pose, {
             lean: 0, steer: 0, torso: 0.42, dive: 0, bounce: 0, bounceVelocity: 0, stop: 1, skid: 0,
-            brake: 0, wasAirborne: false, peakAngle: 0, surge: 0, pump: 0, throttle: 0, lastKmh: 0, lastAngle: 0
+            brake: 0, wasAirborne: false, peakAngle: 0, surge: 0, pump: 0, throttle: 0, lastKmh: 0, lastAngle: 0,
+            trick: 0, tuckAir: 0
         });
         chassis.position.set(0, 0, 0);
         chassis.rotation.set(0, 0, 0);
@@ -458,18 +459,27 @@ export function createRider({ scene }) {
         pose.lastKmh = kmh;
         pose.lastAngle = angleRatio;
         pose.throttle = damp(pose.throttle, throttle, 14, dt);
+        // Stunts: superman (legs out behind), no hander (arms up), can-can
+        // (a leg swung over the tank). Blended in and out quickly.
+        if (frame.trick) pose.trickType = frame.trick;
+        pose.trick = damp(pose.trick, frame.trick ? 1 : 0, frame.trick ? 11 : 8, dt);
+        pose.tuckAir = damp(pose.tuckAir, frame.airborne ? 1 : 0, 6, dt);
+        const stunt = pose.trick;
+        const superman = pose.trickType === 'superman' ? stunt : 0;
+        const nohander = pose.trickType === 'nohander' ? stunt : 0;
+        const cancan = pose.trickType === 'cancan' ? stunt : 0;
         const reach = Math.min(1, kmh / 50);
         const hang = pose.lean * reach * (airborne ? 0.5 : 1);
         const tuck = Math.max(0, Math.min(1, (kmh - 120) / 90));
         const torsoTarget = 0.42 + angle * 0.36 + tuck * 0.24 + (braking ? 0.12 : -0.07 * throttle) - pose.stop * 0.12
-            - pose.surge * 0.13 - pose.pump * 0.16;
+            - pose.surge * 0.13 - pose.pump * 0.16 + superman * 0.62 - nohander * 0.2 + pose.tuckAir * 0.08;
         pose.torso = damp(pose.torso, torsoTarget, 7, dt);
         pelvis.rotation.x = pose.torso;
         pelvis.rotation.z = hang * 0.45 - pose.stop * 0.05 + pose.skid * Math.sin(pose.time * 17) * 0.05;
-        pelvis.rotation.y = pose.steer * 0.3;
+        pelvis.rotation.y = pose.steer * 0.3 + cancan * 0.35;
         pelvis.position.set(
             -hang * 0.2,
-            PELVIS_REST.y + angleRatio * 0.04 - tuck * 0.02 - pose.bounce * 0.4,
+            PELVIS_REST.y + angleRatio * 0.04 - tuck * 0.02 - pose.bounce * 0.4 + superman * 0.16 + nohander * 0.04,
             PELVIS_REST.z - angleRatio * 0.13 - pose.surge * 0.025 + Math.max(0, -pose.surge) * 0.02
         );
         // The head stays level and looks where the bike is going.
@@ -496,7 +506,7 @@ export function createRider({ scene }) {
         for (let i = 0; i < 2; i++) {
             toRiderSpace(shoulders[i], root);
             toRiderSpace(grips[i], target);
-            overreach = Math.max(overreach, root.distanceTo(target) - (arms[i].lengthA + arms[i].lengthB) * 0.97);
+            if (nohander < 0.5) overreach = Math.max(overreach, root.distanceTo(target) - (arms[i].lengthA + arms[i].lengthB) * 0.97);
         }
         if (overreach > 0) {
             pelvis.position.z += overreach;
@@ -516,6 +526,11 @@ export function createRider({ scene }) {
                 -0.55 + tuck * 0.3 - pose.brake * 0.25 + pose.pump * 0.25,
                 -0.35 - tuck * 0.25 + inside * 0.2
             );
+            if (nohander > 0.001) {
+                // Arms thrown up in a V.
+                target.lerp(pelvisPoint(side * 0.5, 1.05, 0.05, footTarget), nohander);
+                elbowHint.set(side, 0.3, -0.2);
+            }
             solveLimb(arms[i], elbowHint);
             hands[i].position.copy(target);
             hands[i].quaternion.copy(handQuaternion);
@@ -537,6 +552,8 @@ export function createRider({ scene }) {
                 footTarget.lerp(groundFoot, pose.skid);
             }
             target.copy(footTarget);
+            if (superman > 0.001) target.lerp(pelvisPoint(side * 0.14, 0.12, -0.95, groundFoot), superman);
+            if (cancan > 0.001 && side < 0) target.lerp(pelvisPoint(0.34, -0.4, 0.32, groundFoot), cancan);
             // The inside knee opens towards the turn.
             const knee = Math.max(0, -side * hang) * 2.4;
             kneeHint.set(side * (0.35 + knee), 0.4 - knee * 0.2, 1);

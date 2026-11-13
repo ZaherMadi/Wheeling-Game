@@ -272,12 +272,31 @@ function decorateControls() {
     }
 }
 
+// Short messages from the game (tricks unlocked, trick landed).
+function installToasts() {
+    const box = document.createElement('div');
+    box.id = 'ui-toast';
+    box.setAttribute('role', 'status');
+    box.setAttribute('aria-live', 'polite');
+    document.getElementById('ui-layer')?.append(box);
+    let timer = null;
+    document.addEventListener('wheelie:toast', (event) => {
+        const { title, text } = event.detail || {};
+        box.innerHTML = `<span class="ui-toast__title">${title || ''}</span>${text ? `<span class="ui-toast__text">${text}</span>` : ''}`;
+        box.classList.remove('is-shown');
+        void box.offsetWidth;
+        box.classList.add('is-shown');
+        clearTimeout(timer);
+        timer = setTimeout(() => box.classList.remove('is-shown'), 2600);
+    });
+}
+
 export function installRacingUI() {
     installIcons();
     document.body.classList.add('ui-racing');
     // A styling problem must never stop the game: each part fails alone.
     for (const decorate of [decorateMenu, decorateModeSelect, decorateSettings, decorateLeaderboard,
-        decorateGameOver, decorateNickname, decorateHud, decorateControls]) {
+        decorateGameOver, decorateNickname, decorateHud, decorateControls, installToasts]) {
         try {
             decorate();
         } catch (error) {

@@ -44,6 +44,7 @@ export function createRealisticVersion({ scene, renderer, camera, mobile }) {
     let cameraRoll = 0;
     let cameraKick = 0;
     let wasAirborne = false;
+    let wasJumping = false;
     let peakAngle = 0;
     let highQuality = true;
 
@@ -108,7 +109,7 @@ export function createRealisticVersion({ scene, renderer, camera, mobile }) {
         } else {
             rider.update(dt, snapshot);
             const airborne = snapshot.angleRatio > 0.015;
-            if (snapshot.kmh > 22 && !snapshot.skidding) {
+            if (snapshot.kmh > 22 && !snapshot.skidding && !snapshot.airborne) {
                 const amount = Math.min(1, snapshot.kmh / 150) * (highQuality ? 120 : 45);
                 fx.spray(wheelPoint(-0.72), bikeVelocity, amount, dt);
                 if (!airborne) fx.spray(wheelPoint(0.73), bikeVelocity, amount * 0.35, dt);
@@ -122,6 +123,13 @@ export function createRealisticVersion({ scene, renderer, camera, mobile }) {
                 peakAngle = 0;
             }
             wasAirborne = airborne;
+            // Touching down after a ramp jump: thump and spray.
+            if (!snapshot.airborne && wasJumping) {
+                cameraKick = 0.55;
+                fx.spray(wheelPoint(-0.72), bikeVelocity, 260, 1 / 30);
+                fx.spray(wheelPoint(0.73), bikeVelocity, 160, 1 / 30);
+            }
+            wasJumping = snapshot.airborne;
         }
 
         // Camera: bank gently with the bike, thump on landings.

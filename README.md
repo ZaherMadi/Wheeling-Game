@@ -51,6 +51,16 @@ V2 only changes what is drawn and heard. Do not change the physics constants
 in `main.js` without updating the server replay (`wheelie_replay.py` in the
 API), or ranked scores will stop matching.
 
+## Ramps and tricks
+
+From 20 s on, ramps appear on the road. Riding over the lip above 30 km/h
+launches the bike; holding FIGURE (`F` on the keyboard, the purple pad on
+phones) in the air scores points, and releasing it before landing adds a
+bonus. Landing with the trick held is a crash. From 35 s on, tricks also work
+on the ground, but touching any obstacle during one ends the run at once.
+Ranked replays carry two extra flags for this (`0x20` takeoff, `0x40` trick);
+the rules and constants (`JUMP` in `main.js`) are mirrored by the server.
+
 ## Generate character voice and sound effects
 
 The game plays prerecorded ElevenLabs clips. Audio is generated locally and is

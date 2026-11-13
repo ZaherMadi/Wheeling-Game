@@ -47,6 +47,24 @@ const CONFIG = {
 
 const FIXED_STEP = 1 / 60;
 const MAX_RANKED_FRAMES = 72000;
+// Ramps and tricks. The server replays these rules to verify ranked runs:
+// keep them identical to 51GamesAPI/wheelie_replay.py.
+const JUMP = {
+    rampHeight: 1.2,
+    gravity: 30 / 3600,
+    minKmh: 30,
+    rampsFrom: 1200,
+    groundTricksFrom: 2100,
+    spacing: 120,
+    groundTrickMaxAngle: 0.2,
+    airRate: 8,
+    groundRate: 3,
+    landingRate: 12
+};
+const TAKEOFF_FLAG = 0x20;
+const TRICK_FLAG = 0x40;
+const RAMP = { width: 4.4, length: 5.5 };
+const TRICK_TYPES = ['superman', 'nohander', 'cancan'];
 const daytimeSky = new THREE.Color(0x87CEEB);
 const nighttimeSky = new THREE.Color(0x0a0a2e);
 const skyColor = new THREE.Color();
@@ -77,7 +95,14 @@ let state = {
         up: false,
         down: false,
         space: false,
+        trick: false,
     },
+    // Simulation frame of the run (the server counts the same frames).
+    frame: 0,
+    jump: { airborne: false, y: 0, vy: 0, trickFrames: 0, lastLanding: -1e9, pending: false, visualY: 0 },
+    trick: { active: false, type: 'superman', was: false, spin: 0 },
+    ramps: [],
+    rampFreeZones: [],
     obstacles: [],
     animatedObjects: [],
     graffitiList: [],
@@ -924,7 +949,10 @@ function visualSnapshot() {
         angleRatio: Math.max(0, Math.min(1, state.bike.angle / CONFIG.maxAngle)),
         skidding: state.skidding,
         linear: !free,
-        gameTime: state.gameTime
+        gameTime: state.gameTime,
+        jumpHeight: free ? 0 : state.jump.visualY,
+        airborne: !free && state.jump.airborne,
+        trick: state.trick.active ? state.trick.type : null
     };
 }
 
@@ -951,6 +979,13 @@ function resetGame() {
     state.rankedRunUnavailable = false;
     state.wheeliePercentage = 0;
     state.wheelieTime = 0;
+    state.frame = 0;
+    state.jump = { airborne: false, y: 0, vy: 0, trickFrames: 0, lastLanding: -1e9, pending: false, visualY: 0 };
+    state.trick = { active: false, type: 'superman', was: false, spin: 0 };
+    state.ramps.forEach((ramp) => scene.remove(ramp.mesh));
+    state.ramps = [];
+    state.rampFreeZones = [];
+    state.keys.trick = false;
     state.angleMultiplier = 1.0;
     state.timeMultiplier = 1.0;
     state.currentMultiplier = 1.0;
@@ -1101,6 +1136,8 @@ function togglePause() {
 
 function checkCollisions() {
     if (!state.isPlaying) return;
+    // Flying over everything.
+    if (state.jump.airborne) return;
     // V2 uses a fixed hit box so the rider's animation never changes gameplay.
     const bikeBox = v2 ? v2.rider.getHitBox() : new THREE.Box3().setFromObject(bikeGroup).expandByScalar(-0.2);
     let skidStarted = false;
@@ -1111,6 +1148,12 @@ function checkCollisions() {
             // A second obstacle touched in the step that started the skid is
             // ignored: no skid frame is recorded yet, so ending the run here
             // would produce a replay the server refuses.
+            if (state.trick.active && !state.skidding) {
+                // Hit during a stunt: no saving it.
+                obs.active = false;
+                gameOver();
+                return;
+            }
             if (state.skidding && !skidStarted) {
                 gameOver();
             } else if (!state.skidding) {
@@ -1132,6 +1175,141 @@ function checkCollisions() {
             }
         }
     }
+}
+
+// Ramps ----------------------------------------------------------------------
+// Kicker ramps on the road from 20 s on. Riding over the lip (fast enough)
+// launches the bike; the jump itself is simulated in the step above.
+let rampGeometry = null;
+let rampMaterial = null;
+function createRampMesh() {
+    if (!rampGeometry) {
+        const w = RAMP.width / 2;
+        const l = RAMP.length;
+        const h = JUMP.rampHeight;
+        const positions = [];
+        const colors = [];
+        const face = (points, color) => {
+            const c = new THREE.Color(color);
+            for (const index of [0, 1, 2, 0, 2, 3]) {
+                positions.push(...points[index]);
+                colors.push(c.r, c.g, c.b);
+            }
+        };
+        // Deck in strips: dark plates with yellow chevron bands; the lip is yellow.
+        const strips = 8;
+        for (let i = 0; i < strips; i++) {
+            const z0 = l / 2 - (i / strips) * l;
+            const z1 = l / 2 - ((i + 1) / strips) * l;
+            const y0 = (i / strips) * h;
+            const y1 = ((i + 1) / strips) * h;
+            face([[-w, y0, z0], [w, y0, z0], [w, y1, z1], [-w, y1, z1]], i === strips - 1 ? 0xf6c416 : i % 2 ? 0x2b2e34 : 0x3a3e46);
+        }
+        face([[-w, 0, -l / 2], [-w, h, -l / 2], [w, h, -l / 2], [w, 0, -l / 2]], 0x1b1d21);
+        const side = (x, color) => {
+            const c = new THREE.Color(color);
+            const tri = x < 0 ? [[x, 0, l / 2], [x, h, -l / 2], [x, 0, -l / 2]] : [[x, 0, l / 2], [x, 0, -l / 2], [x, h, -l / 2]];
+            for (const point of tri) {
+                positions.push(...point);
+                colors.push(c.r, c.g, c.b);
+            }
+        };
+        side(-w, 0xd4a20f);
+        side(w, 0xd4a20f);
+        rampGeometry = new THREE.BufferGeometry();
+        rampGeometry.setAttribute('position', new THREE.Float32BufferAttribute(positions, 3));
+        rampGeometry.setAttribute('color', new THREE.Float32BufferAttribute(colors, 3));
+        rampGeometry.computeVertexNormals();
+        rampGeometry.userData.shared = true;
+        rampMaterial = new THREE.MeshLambertMaterial({ vertexColors: true });
+        sharedMaterials.add(rampMaterial);
+    }
+    const mesh = new THREE.Mesh(rampGeometry, rampMaterial);
+    mesh.castShadow = true;
+    mesh.receiveShadow = true;
+    return mesh;
+}
+
+function spawnRamp(z) {
+    const x = (Math.random() - 0.5) * 12;
+    const mesh = createRampMesh();
+    mesh.position.set(x, 0, z);
+    scene.add(mesh);
+    state.ramps.push({ mesh, x, z, front: z + RAMP.length / 2, lip: z - RAMP.length / 2, launched: false });
+    // Clear the run-up and the landing zone of obstacles.
+    const zone = { from: z + 25, to: z - 280 };
+    state.rampFreeZones.push(zone);
+    state.obstacles = state.obstacles.filter((obs) => {
+        const oz = obs.mesh.position.z;
+        if (oz <= zone.from && oz >= zone.to) {
+            scene.remove(obs.mesh);
+            disposeObjectTree(obs.mesh);
+            return false;
+        }
+        return true;
+    });
+}
+
+function rampAt(x, z) {
+    return state.ramps.find((ramp) => Math.abs(x - ramp.x) < RAMP.width / 2 && z <= ramp.front && z >= ramp.lip - 0.5);
+}
+
+// Height of the deck under the bike (visual only).
+function rampHeightAt(x, z) {
+    const ramp = rampAt(x, z);
+    if (!ramp) return 0;
+    return JUMP.rampHeight * Math.min(1, (ramp.front - z) / RAMP.length);
+}
+
+function updateRamps() {
+    const { x, z } = bikeGroup.position;
+    for (const ramp of state.ramps) {
+        if (ramp.launched || Math.abs(x - ramp.x) >= RAMP.width / 2) continue;
+        // Crossed the lip this frame: the takeoff happens on the next one.
+        if (z <= ramp.lip && z + state.speed > ramp.lip) {
+            ramp.launched = true;
+            state.jump.pending = true;
+            state.jump.visualY = JUMP.rampHeight;
+            bikeGroup.position.y = JUMP.rampHeight;
+        }
+    }
+    state.ramps = state.ramps.filter((ramp) => {
+        if (ramp.z > z + 60) {
+            scene.remove(ramp.mesh);
+            return false;
+        }
+        return true;
+    });
+}
+
+function setTrick(active) {
+    const trick = state.trick;
+    if (active && !trick.active) {
+        trick.type = TRICK_TYPES[(TRICK_TYPES.indexOf(trick.type) + 1) % TRICK_TYPES.length];
+        audio.play('whoosh', { volume: 0.4, rate: 1.2 });
+    }
+    trick.active = active;
+}
+
+function land(trickFrames, difficulty) {
+    audio.play('landing', { volume: 0.55 });
+    if (trickFrames > 0) {
+        const bonus = trickFrames * FIXED_STEP * JUMP.landingRate * difficulty;
+        state.score += bonus;
+        const air = trickFrames * FIXED_STEP * JUMP.airRate * difficulty;
+        toast(`+${Math.round(bonus + air)}`, 'FIGURE RÉUSSIE');
+        audio.play('multiplier_up', { volume: 0.45, rate: 1.15 });
+        speak('landing', { force: true });
+    }
+}
+
+function toast(title, text) {
+    document.dispatchEvent(new CustomEvent('wheelie:toast', { detail: { title, text } }));
+}
+
+function announceTricks(frame) {
+    if (frame === JUMP.rampsFrom) toast('FIGURES', 'Saute sur les tremplins et maintiens FIGURE (F)');
+    if (frame === JUMP.groundTricksFrom) toast('FIGURES AU SOL', 'Attention : un obstacle pendant une figure = chute');
 }
 
 function recordRankedInput(flags, accelerationScale = 1) {
@@ -1436,6 +1614,7 @@ function animate(timestamp = performance.now()) {
 
         if (state.skidding) {
             recordRankedInput(0x08);
+            state.frame++;
             // Every recorded skid frame slows the bike, including the last
             // one: the server replay (wheelie_replay.py) does the same.
             state.speed *= 0.98;
@@ -1572,10 +1751,36 @@ function animate(timestamp = performance.now()) {
                 // server replay sees the same throttle as the game.
                 accelerationScale = Math.round(Math.min(1, Math.abs(analogData.y) * 1.5) * 255) / 255;
             }
+            // Ramp takeoff and tricks, decided on the speed at the start of
+            // the frame exactly as the server does.
+            const frame = state.frame;
+            const startKmh = state.speed * 50;
+            const jump = state.jump;
+            const takeoff = jump.pending && !jump.airborne && startKmh > JUMP.minKmh &&
+                frame >= JUMP.rampsFrom && frame - jump.lastLanding >= JUMP.spacing;
+            jump.pending = false;
+            if (takeoff) {
+                jump.airborne = true;
+                jump.y = JUMP.rampHeight;
+                jump.vy = (10 + startKmh * 0.08) / 60;
+                jump.trickFrames = 0;
+                audio.play('rev_blip', { volume: 0.45, rate: 1.15 });
+            }
+            const trickAir = state.keys.trick && jump.airborne && frame >= JUMP.rampsFrom;
+            const trickGround = state.keys.trick && !jump.airborne && frame >= JUMP.groundTricksFrom &&
+                state.bike.angle < JUMP.groundTrickMaxAngle;
+            setTrick(trickAir || trickGround);
+            const grounded = !jump.airborne;
+            // No traction in the air; no throttle or wheelie during a stunt.
+            isAccelerating = isAccelerating && grounded && !trickGround;
+            isBraking = isBraking && grounded;
+            const wheelieInput = state.keys.space && grounded && !trickGround;
             const inputFlags =
                 (isAccelerating ? 0x01 : 0) |
                 (isBraking ? 0x02 : 0) |
-                (state.keys.space ? 0x04 : 0);
+                (wheelieInput ? 0x04 : 0) |
+                (takeoff ? TAKEOFF_FLAG : 0) |
+                (trickAir || trickGround ? TRICK_FLAG : 0);
             recordRankedInput(inputFlags, accelerationScale);
             state.bike.lateralVelocity *= CONFIG.lateralFriction;
             if (state.bike.lateralVelocity > CONFIG.maxLateralSpeed) state.bike.lateralVelocity = CONFIG.maxLateralSpeed;
@@ -1608,7 +1813,7 @@ function animate(timestamp = performance.now()) {
             bikeGroup.rotation.z = state.bike.lateralVelocity * leanFactor;
 
             let lift = 0;
-            if (state.keys.space && isAccelerating) {
+            if (wheelieInput && isAccelerating) {
                 if (kmh > 110) lift = CONFIG.wheelieLiftFast;
                 else if (kmh > 0) lift = CONFIG.wheelieLift;
                 else lift = CONFIG.wheelieLift * 0.5;
@@ -1644,7 +1849,9 @@ function animate(timestamp = performance.now()) {
             if (state.bike.angle > CONFIG.maxAngle) {
                 gameOver();
             }
-            bikePivot.rotation.x = -state.bike.angle;
+            // In the air the nose follows the flight: up off the lip, down to land.
+            const airPitch = jump.airborne ? Math.max(-0.45, Math.min(0.5, jump.vy * 3.2)) : 0;
+            bikePivot.rotation.x = -state.bike.angle - airPitch;
             if (isAccelerating) {
                 let accel = CONFIG.baseAcceleration;
                 if (kmh > 130) accel *= 0.15;
@@ -1654,7 +1861,7 @@ function animate(timestamp = performance.now()) {
                 else if (kmh > 60) accel *= 0.85;
                 accel *= accelerationScale;
                 if (state.speed < CONFIG.maxSpeed) state.speed += accel;
-            } else if (!isBraking) {
+            } else if (grounded && !isBraking) {
                 if (state.speed > CONFIG.minSpeed) state.speed -= CONFIG.deceleration;
             }
             bikeGroup.position.z -= state.speed;
@@ -1730,6 +1937,39 @@ function animate(timestamp = performance.now()) {
                 state.timeMultiplier = 1.0;
                 state.currentMultiplier = 1.0;
             }
+
+            // Tricks and the flight, in the server's order.
+            const trickDifficulty = GAME_SETTINGS.difficulty === 'hard' ? 1.4 : GAME_SETTINGS.difficulty === 'medium' ? 1.2 : 1.0;
+            if (trickAir) {
+                state.score += JUMP.airRate * FIXED_STEP * trickDifficulty;
+                jump.trickFrames += 1;
+            } else if (trickGround) {
+                state.score += JUMP.groundRate * FIXED_STEP * trickDifficulty;
+            }
+            if (jump.airborne) {
+                jump.y += jump.vy;
+                jump.vy -= JUMP.gravity;
+                if (jump.y <= 0) {
+                    jump.airborne = false;
+                    jump.y = 0;
+                    jump.lastLanding = frame;
+                    if (trickAir) {
+                        // Still in the stunt when the wheels touch down.
+                        gameOver();
+                    } else {
+                        land(jump.trickFrames, trickDifficulty);
+                    }
+                }
+            }
+            if (!IS_V2) {
+                state.trick.spin = state.trick.active ? state.trick.spin + dt * 7.5 : 0;
+                bikeGroup.rotation.z += state.trick.spin;
+            }
+            jump.visualY = jump.airborne ? jump.y : rampHeightAt(bikeGroup.position.x, bikeGroup.position.z);
+            bikeGroup.position.y = jump.visualY;
+            updateRamps();
+            announceTricks(frame);
+            state.frame++;
         }
 
         // A long wheelie brought back down cleanly gets a word from the rider.
@@ -1787,6 +2027,9 @@ function animate(timestamp = performance.now()) {
             }
             // Only spawn obstacles in linear mode
             if (GAME_SETTINGS.gameMode === 'linear') {
+                // From about 20 s on, one block in two gets a ramp.
+                if (state.frame >= JUMP.rampsFrom && Math.random() < 0.5) spawnRamp(newZ + 20 + Math.random() * 60);
+                state.rampFreeZones = state.rampFreeZones.filter((zone) => zone.to < bikeGroup.position.z);
                 for (let i = 0; i < 4; i++) {
                     // Difficulty-based spawning
                     let spawnChance = 0.3; // Easy default
@@ -1794,7 +2037,8 @@ function animate(timestamp = performance.now()) {
                     if (GAME_SETTINGS.difficulty === 'hard') spawnChance = 0.9;
 
                     if (Math.random() < spawnChance) {
-                        spawnObstacle(newZ + Math.random() * 100);
+                        const z = newZ + Math.random() * 100;
+                        if (!state.rampFreeZones.some((zone) => z <= zone.from && z >= zone.to)) spawnObstacle(z);
                     }
                 }
             }
@@ -1973,19 +2217,32 @@ function updateCamera() {
         }
 
         const targetZ = bikeGroup.position.z + distanceOffset;
-        const targetY = isMobileDevice ? (IS_V2 ? 4 : 3.5) : 4.5; // Caméra plus basse sur mobile
+        // A jump lifts the bike several metres: the camera rises with it.
+        const targetY = (isMobileDevice ? (IS_V2 ? 4 : 3.5) : 4.5) + state.jump.visualY * 0.6;
 
         // Rattrapage plus rapide (0.15 au lieu de 0.1)
         camera.position.x += (bikeGroup.position.x - camera.position.x) * 0.1 + shakeX;
-        camera.position.z += (targetZ - camera.position.z) * 0.15;
+        // Catch up during jumps and stunts so the trick can be seen.
+        const followRate = state.jump.airborne || state.trick.active ? 0.35 : 0.15;
+        camera.position.z += (targetZ - camera.position.z) * followRate;
         camera.position.y += (targetY - camera.position.y) * 0.1 + shakeY;
 
         // Look slightly ahead of the bike
-        camera.lookAt(bikeGroup.position.x, 2, bikeGroup.position.z - 20);
+        camera.lookAt(bikeGroup.position.x, 2 + state.jump.visualY * 0.5, bikeGroup.position.z - 20);
     }
 }
 
+function updateTrickButton() {
+    const button = document.getElementById('analog-trick');
+    if (!button) return;
+    const available = state.isPlaying && GAME_SETTINGS.gameMode === 'linear' && state.frame >= JUMP.rampsFrom;
+    if (button.hidden === available) button.hidden = !available;
+    const ready = state.jump.airborne || (state.frame >= JUMP.groundTricksFrom && state.bike.angle < JUMP.groundTrickMaxAngle);
+    button.classList.toggle('is-ready', available && ready);
+}
+
 function updateUI() {
+    updateTrickButton();
     const scoreEl = document.getElementById('score');
     if (scoreEl) scoreEl.innerText = Math.floor(state.score);
     const speedText = document.getElementById('speed-text');
@@ -2399,7 +2656,8 @@ function setupAnalogControls() {
     const buttons = {
         'analog-gas': 'up',
         'analog-brake': 'down',
-        'analog-wheelie': 'space'
+        'analog-wheelie': 'space',
+        'analog-trick': 'trick'
     };
     Object.entries(buttons).forEach(([id, key]) => {
         const btn = document.getElementById(id);
@@ -2436,6 +2694,8 @@ document.addEventListener('keydown', (e) => {
     if (e.code === 'ArrowUp' || e.code === 'KeyZ') state.keys.up = true;
     if (e.code === 'ArrowDown' || e.code === 'KeyS') state.keys.down = true;
 
+    if (e.code === 'KeyF' || e.code === 'KeyE') state.keys.trick = true;
+
     // Space ONLY for wheelie (no restart functionality)
     if (e.code === 'Space') {
         e.preventDefault();
@@ -2463,6 +2723,7 @@ document.addEventListener('keyup', (e) => {
     if (e.code === 'ArrowUp' || e.code === 'KeyZ') state.keys.up = false;
     if (e.code === 'ArrowDown' || e.code === 'KeyS') state.keys.down = false;
     if (e.code === 'Space') state.keys.space = false;
+    if (e.code === 'KeyF' || e.code === 'KeyE') state.keys.trick = false;
 });
 
 window.addEventListener('blur', () => {
