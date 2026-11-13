@@ -12,6 +12,11 @@ const POINTS_KEY = 'wheelie_total_points';
 // Fines (police) are kept apart, so the server total can still raise the
 // points earned without wiping them out.
 const PENALTY_KEY = 'wheelie_points_penalty';
+// Fined with no points left: two warnings, the third time the police take
+// the bike (free roam only; 100 points in a competitive run bring it back).
+const STRIKES_KEY = 'wheelie_zero_strikes';
+const CONFISCATED_KEY = 'wheelie_bike_confiscated';
+export const BIKE_RECOVERY_POINTS = 100;
 const STREETS = [
     'Avenue du 51', 'Rue de la Paix', 'Boulevard Haussmann', 'Rue des Lilas', 'Avenue des Fleurs', 'Rue du Marché',
     'Boulevard du Soleil', 'Rue Victor Hugo', 'Avenue de la Gare', 'Rue des Artistes', 'Quai des Brumes', 'Rue Lafayette'
@@ -45,14 +50,46 @@ export function addPoints(points) {
     }
 }
 
-// Police fine in free roam.
+// Police fine in free roam: never below zero (no hidden debt).
 export function finePoints(points) {
+    const applied = Math.min(totalPoints(), Math.max(0, Math.floor(points)));
     try {
-        localStorage.setItem(PENALTY_KEY, String(stored(PENALTY_KEY) + Math.max(0, Math.floor(points))));
+        localStorage.setItem(PENALTY_KEY, String(stored(PENALTY_KEY) + applied));
     } catch {
         // Not saved.
     }
     document.dispatchEvent(new CustomEvent('wheelie:points'));
+    return applied;
+}
+
+function save(key, value) {
+    try {
+        if (value === null) localStorage.removeItem(key);
+        else localStorage.setItem(key, String(value));
+    } catch {
+        // Not saved.
+    }
+}
+
+export function bikeConfiscated() {
+    try {
+        return localStorage.getItem(CONFISCATED_KEY) === '1';
+    } catch {
+        return false;
+    }
+}
+
+// A competitive run of 100 points or more: the bike is back.
+export function releaseBike() {
+    if (!bikeConfiscated()) return false;
+    save(CONFISCATED_KEY, null);
+    save(STRIKES_KEY, null);
+    document.dispatchEvent(new CustomEvent('wheelie:points'));
+    return true;
+}
+
+function notice(title, text, seconds = 7) {
+    document.dispatchEvent(new CustomEvent('wheelie:notice', { detail: { title, text, seconds } }));
 }
 
 // The server keeps each player's total: never show less than that.
@@ -67,18 +104,49 @@ export function syncPoints(serverTotal) {
     document.dispatchEvent(new CustomEvent('wheelie:points'));
 }
 
-export function createFreeRoam({ scene, world, rider, audio, onTurn }) {
+export function createFreeRoam({ scene, world, rider, audio, onTurn, playerVoice = null }) {
     const traffic = createTraffic({
         scene, world,
         onHonk: (pan) => audio.play('horn_distant', { volume: 0.55, pan, rate: 1.1 + Math.random() * 0.2 })
     });
     const people = createPeople({ scene });
-    const talk = createStreetTalk({ audio, people });
+    const talk = createStreetTalk({ audio, people, playerVoice });
+    let frozen = false;
+    const toast = (title, text) => document.dispatchEvent(new CustomEvent('wheelie:toast', { detail: { title, text } }));
+    // A fine and what it costs: cars that can no longer be driven, a
+    // warning when there is nothing left to take, the bike the third time.
+    function fine(points, reason) {
+        const before = totalPoints();
+        const applied = finePoints(points);
+        const after = totalPoints();
+        const lost = Object.entries(CAR_UNLOCKS)
+            .filter(([, needed]) => needed > 0 && needed <= before && needed > after)
+            .sort((a, b) => a[1] - b[1])
+            .map(([model]) => model);
+        let strikes = 0;
+        let confiscate = false;
+        if (before === 0) {
+            strikes = stored(STRIKES_KEY) + 1;
+            confiscate = strikes >= 3;
+            save(STRIKES_KEY, confiscate ? 0 : strikes);
+            toast('PLUS DE POINTS', confiscate ? 'La police confisque ta moto' : `Avertissement ${strikes}/3`);
+        } else {
+            toast(`-${applied} PTS`, reason === 'chase' ? 'Délit de fuite' : 'Mauvaise conduite');
+            if (lost.length) setTimeout(() => toast(lost.map((model) => CAR_NAMES[model]).join(' + '), 'Plus assez de points pour la conduire'), 2700);
+        }
+        return { before, after, applied, lost, strikes, confiscate };
+    }
     const patrol = createPolicePatrol({
         scene, world, traffic, audio, talk,
-        onFine: (points) => {
-            finePoints(points);
-            document.dispatchEvent(new CustomEvent('wheelie:toast', { detail: { title: `-${points} PTS`, text: 'Mauvaise conduite' } }));
+        onFine: fine,
+        freezePlayer: (value) => { frozen = value; },
+        onCaught: () => toast('RATTRAPÉ !', 'La police t\'arrête'),
+        onEscape: () => toast('POLICE SEMÉE', 'Changement de rue'),
+        confiscateBike: () => {
+            save(CONFISCATED_KEY, 1);
+            if (mode === 'bike') stepOff();
+            notice('MOTO CONFISQUÉE', `Repasse par le mode compétitif et atteins ${BIKE_RECOVERY_POINTS} points pour récupérer ta moto dans le monde libre.`, 9);
+            document.dispatchEvent(new CustomEvent('wheelie:points'));
         }
     });
     const focus = new THREE.Vector3();
@@ -132,6 +200,7 @@ export function createFreeRoam({ scene, world, rider, audio, onTurn }) {
         if (hit) {
             constrain(position, 9, 0.6);
             if (hit.police) patrol.bumped(hit);
+            else patrol.playerHit();
         }
         return hit;
     }
@@ -163,6 +232,13 @@ export function createFreeRoam({ scene, world, rider, audio, onTurn }) {
     // nx, nz: stick direction (-1..1), nz < 0 is forward.
     // keys: { run, jump } on foot.
     function move(dt, nx, nz, keys = {}) {
+        // Stopped by the police: no control until they are done.
+        if (frozen) {
+            nx = 0;
+            nz = 0;
+            keys = {};
+            if (mode === 'car') drive.speed *= 0.85;
+        }
         if (mode === 'walk') {
             const length = Math.min(1, Math.hypot(nx, nz));
             walker.running = !!keys.run && length > 0.05;
@@ -214,6 +290,7 @@ export function createFreeRoam({ scene, world, rider, audio, onTurn }) {
             const hit = traffic.pushOut(group.position, 1.4);
             if (hit) {
                 if (hit.police) patrol.bumped(hit);
+                else patrol.playerHit();
                 if (Math.abs(drive.speed) > 0.3) audio.play('collision', { volume: 0.4 });
                 drive.speed *= -0.25;
                 constrain(group.position, 8.4, 1.2);
@@ -230,7 +307,7 @@ export function createFreeRoam({ scene, world, rider, audio, onTurn }) {
     // What the action button would do right now.
     function nearestRide() {
         const here = getFocus();
-        if (bike && here.distanceTo(bike.position) < 3.6) return { kind: 'bike' };
+        if (bike && !bikeConfiscated() && here.distanceTo(bike.position) < 3.6) return { kind: 'bike' };
         const parked = world.parkedNear(here.x, here.z, 3.8);
         const droppedCar = dropped.find((car) => here.distanceTo(car.group.position) < 3.8);
         if (droppedCar) return { kind: 'dropped', car: droppedCar, model: droppedCar.model };
@@ -254,19 +331,24 @@ export function createFreeRoam({ scene, world, rider, audio, onTurn }) {
         return emit(locked ? `🔒 ${locked}` : `CONDUIRE : ${CAR_NAMES[ride.model].toUpperCase()}`, !locked);
     }
 
+    // Step off to the right of the bike.
+    function stepOff() {
+        const yaw = bike.rotation.y;
+        walker.x = bike.position.x + Math.cos(yaw) * 1.1;
+        walker.z = bike.position.z - Math.sin(yaw) * 1.1;
+        walker.yaw = yaw;
+        walker.speed = 0;
+        rider.dismount(walker.x, walker.z, walker.yaw);
+        walker.y = 0;
+        walker.vy = 0;
+        setMode('walk');
+        prompt = null;
+    }
+
     function action() {
-        if (turning) return;
+        if (turning || frozen) return;
         if (mode === 'bike') {
-            // Step off to the right of the bike.
-            const yaw = bike.rotation.y;
-            walker.x = bike.position.x + Math.cos(yaw) * 1.1;
-            walker.z = bike.position.z - Math.sin(yaw) * 1.1;
-            walker.yaw = yaw;
-            walker.speed = 0;
-            rider.dismount(walker.x, walker.z, walker.yaw);
-            walker.y = 0;
-            walker.vy = 0;
-            setMode('walk');
+            stepOff();
             audio.play('ui_click', { volume: 0.4 });
         } else if (mode === 'car') {
             const group = drive.group;
@@ -322,15 +404,22 @@ export function createFreeRoam({ scene, world, rider, audio, onTurn }) {
         refreshPrompt();
     }
 
+    let confiscationShown = false;
     function update(dt, bikeGroup) {
         bike = bikeGroup;
+        // No bike while it is confiscated: on foot from the start.
+        if (mode === 'bike' && bikeConfiscated() && !patrol.towing) {
+            stepOff();
+            if (!confiscationShown) notice('MOTO CONFISQUÉE', `Fais ${BIKE_RECOVERY_POINTS} points en mode compétitif pour la récupérer.`, 6);
+        }
+        confiscationShown = bikeConfiscated();
         const here = getFocus();
         const blockers = [{ x: here.x, z: here.z }, ...patrol.blockers()];
         if (mode !== 'bike') blockers.push({ x: bike.position.x, z: bike.position.z });
         traffic.update(dt, here, blockers);
         people.update(dt, here);
         talk.update(dt, mode, here);
-        patrol.update(dt, here, { x: here.x, z: here.z, radius: mode === 'car' ? 1.6 : mode === 'bike' ? 0.9 : 0.4 });
+        patrol.update(dt, here, { x: here.x, z: here.z, mode, radius: mode === 'car' ? 1.6 : mode === 'bike' ? 0.9 : 0.4 }, bike);
         if (mode === 'walk') rider.updateWalk(dt, walker.x, walker.z, walker.yaw, walker.speed, walker.y, walker.running);
         // Cars left behind on another block go away.
         for (let i = dropped.length - 1; i >= 0; i--) {
@@ -377,6 +466,8 @@ export function createFreeRoam({ scene, world, rider, audio, onTurn }) {
     function reset() {
         if (mode !== 'bike') rider.mount();
         setMode('bike');
+        frozen = false;
+        confiscationShown = false;
         boost.readyAt = 0;
         boost.until = 0;
         turning = false;
@@ -402,6 +493,10 @@ export function createFreeRoam({ scene, world, rider, audio, onTurn }) {
             return { x: g.position.x + Math.sin(drive.yaw) * back, z: g.position.z + Math.cos(drive.yaw) * back, yaw: drive.yaw };
         },
         get footSpeed() { return mode === 'walk' ? walker.speed / WALK_SPEED : 0; },
+        get frozen() { return frozen; },
+        // The bike is shown in free roam only when it is ours (or being taken away).
+        get bikeVisible() { return !bikeConfiscated() || patrol.towing; },
+        fine,
         get carModel() { return mode === 'car' ? drive.model : null; },
         get reversing() { return mode === 'car' && drive.reversing; },
         get braking() { return mode === 'car' && drive.braking; },

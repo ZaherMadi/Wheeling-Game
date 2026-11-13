@@ -1,17 +1,64 @@
 {
   "voices": {
-    "pa": { "voiceId": "FvmvwvObRqIHojkEGh5N", "name": "Chicadi", "gender": "f" },
-    "pb": { "voiceId": "ZYOBieLaunTiQrTrvNQq", "name": "Morgane", "gender": "f" },
-    "pc": { "voiceId": "O31r762Gb3WFygrEOGh0", "name": "Victoire", "gender": "f" },
-    "pd": { "voiceId": "bIHbv24MWmeRgasZH58o", "name": "Will", "gender": "m" },
-    "pe": { "voiceId": "N2lVS1w4EtoT3dr4eOWO", "name": "Callum", "gender": "m" },
-    "pf": { "voiceId": "pqHfZKP75CvOlQylNhV4", "name": "Bill", "gender": "m" },
-    "pg": { "voiceId": "CwhRBWXzGAHq8TQ4Fs17", "name": "Roger", "gender": "m" },
-    "ca": { "voiceId": "wyZnrAs18zdIj8UgFSV8", "name": "Martin Dupont", "gender": "m" },
-    "cb": { "voiceId": "AmMsHJaCw4BtwV3KoUXF", "name": "Nicolas Petit", "gender": "m" }
+    "pa": {
+      "voiceId": "FvmvwvObRqIHojkEGh5N",
+      "name": "Chicadi",
+      "gender": "f"
+    },
+    "pb": {
+      "voiceId": "ZYOBieLaunTiQrTrvNQq",
+      "name": "Morgane",
+      "gender": "f"
+    },
+    "pc": {
+      "voiceId": "O31r762Gb3WFygrEOGh0",
+      "name": "Victoire",
+      "gender": "f"
+    },
+    "pd": {
+      "voiceId": "bIHbv24MWmeRgasZH58o",
+      "name": "Will",
+      "gender": "m"
+    },
+    "pe": {
+      "voiceId": "N2lVS1w4EtoT3dr4eOWO",
+      "name": "Callum",
+      "gender": "m"
+    },
+    "pf": {
+      "voiceId": "pqHfZKP75CvOlQylNhV4",
+      "name": "Bill",
+      "gender": "m"
+    },
+    "pg": {
+      "voiceId": "CwhRBWXzGAHq8TQ4Fs17",
+      "name": "Roger",
+      "gender": "m"
+    },
+    "ca": {
+      "voiceId": "wyZnrAs18zdIj8UgFSV8",
+      "name": "Martin Dupont",
+      "gender": "m"
+    },
+    "cb": {
+      "voiceId": "AmMsHJaCw4BtwV3KoUXF",
+      "name": "Nicolas Petit",
+      "gender": "m"
+    }
   },
-  "pedestrianVoices": ["pa", "pb", "pc", "pd", "pe", "pf", "pg"],
-  "policeVoices": ["ca", "cb"],
+  "pedestrianVoices": [
+    "pa",
+    "pb",
+    "pc",
+    "pd",
+    "pe",
+    "pf",
+    "pg"
+  ],
+  "policeVoices": [
+    "ca",
+    "cb"
+  ],
   "pedestrian": {
     "compliment": [
       "Eeh, beau casque !",
@@ -57,6 +104,36 @@
       "Et que je ne vous y reprenne pas !",
       "Circulez, maintenant.",
       "Bonne route… et doucement."
+    ],
+    "chase": [
+      "Arrêtez-vous immédiatement !",
+      "Police ! Rangez-vous sur le côté !",
+      "Arrêtez le véhicule, tout de suite !",
+      "Vous ne nous échapperez pas !"
+    ],
+    "chasefine": [
+      "Course poursuite et accident : ça fait quatre cents points en moins."
+    ],
+    "zero": [
+      "Bon, vous n'avez déjà plus de points, alors évitez de faire le malin. Que ce soit la dernière fois."
+    ],
+    "confiscate": [
+      "Cette fois, ça suffit : on confisque votre moto. Au revoir."
+    ],
+    "lost_sedan": [
+      "Et vous ne pouvez plus conduire la berline à partir de maintenant. Au revoir."
+    ],
+    "lost_van": [
+      "Et vous ne pouvez plus conduire l'utilitaire à partir de maintenant. Au revoir."
+    ],
+    "lost_suv": [
+      "Et vous ne pouvez plus conduire le SUV à partir de maintenant. Au revoir."
+    ],
+    "lost_coupe": [
+      "Et vous ne pouvez plus conduire le coupé sport à partir de maintenant. Au revoir."
+    ],
+    "lost_sedan_van": [
+      "Et vous ne pouvez plus conduire ni la berline ni l'utilitaire à partir de maintenant. Au revoir."
     ]
   }
 }

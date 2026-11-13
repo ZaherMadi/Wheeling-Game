@@ -3,7 +3,7 @@
 // existing elements (same ids, same listeners), so main.js keeps driving
 // the game exactly as before and the classic version is left untouched.
 import { icon, installIcons } from './icons.js';
-import { totalPoints } from '../v2/freeroam.js';
+import { BIKE_RECOVERY_POINTS, bikeConfiscated, totalPoints } from '../v2/freeroam.js';
 import { CAR_NAMES, CAR_UNLOCKS } from '../v2/cars.js';
 import './ui.css';
 
@@ -92,13 +92,17 @@ function decorateModeSelect() {
     list.after(garage);
     const refresh = () => {
         const points = totalPoints();
-        const rows = [['Ta moto', 0], ...Object.entries(CAR_UNLOCKS).map(([model, needed]) => [CAR_NAMES[model], needed])];
+        const confiscated = bikeConfiscated();
+        const rows = [['Ta moto', confiscated ? Infinity : 0], ...Object.entries(CAR_UNLOCKS).map(([model, needed]) => [CAR_NAMES[model], needed])];
         garage.innerHTML = `<div class="ui-garage__points"><span>POINTS CUMULÉS</span><strong>${points}</strong></div>` +
             '<div class="ui-garage__list">' + rows.map(([name, needed]) => {
                 const open = points >= needed;
+                const lock = needed === Infinity ? 'confisquée' : `${needed} pts`;
                 return `<span class="ui-garage__item ${open ? 'is-open' : ''}">${icon(open ? 'check' : 'close')}${name}` +
-                    `${open ? '' : ` <em>${needed} pts</em>`}</span>`;
-            }).join('') + '</div><p class="ui-garage__hint">Mode libre : approche-toi d’une voiture garée et appuie sur G (ou le bouton bleu).</p>';
+                    `${open ? '' : ` <em>${lock}</em>`}</span>`;
+            }).join('') + '</div>' + (confiscated
+                ? `<p class="ui-garage__alert">Moto confisquée par la police : fais ${BIKE_RECOVERY_POINTS} points en compétitif pour la récupérer.</p>`
+                : '<p class="ui-garage__hint">Mode libre : approche-toi d’une voiture garée et appuie sur G (ou le bouton bleu).</p>');
         const free = $('select-freemode')?.querySelector('.ui-btn__sub');
         if (free) free.textContent = `Ville ouverte · ${points} pts`;
     };
@@ -344,6 +348,65 @@ function installToasts() {
     });
 }
 
+// Keyboard reminders (computer only): shown at the start of a run and each
+// time the player changes vehicle; H shows them again.
+const KEY_SETS = {
+    race: [['↑', 'Gaz'], ['Espace', 'Wheeling'], ['↓', 'Frein'], ['← →', 'Diriger'], ['F', 'Figure'], ['B', 'Boost'], ['Échap', 'Pause']],
+    bike: [['↑ ↓ ← →', 'Rouler'], ['B', 'Boost'], ['G', 'Descendre'], ['Échap', 'Pause']],
+    walk: [['↑ ↓ ← →', 'Marcher'], ['Maj', 'Courir'], ['Espace', 'Sauter'], ['G', 'Monter / conduire'], ['Échap', 'Pause']],
+    car: [['↑', 'Avancer'], ['↓', 'Freiner / reculer'], ['← →', 'Tourner'], ['B', 'Boost'], ['G', 'Sortir'], ['Échap', 'Pause']]
+};
+function installKeyHints() {
+    const panel = document.createElement('div');
+    panel.id = 'ui-keys';
+    document.getElementById('ui-layer')?.append(panel);
+    let timer = null;
+    document.addEventListener('wheelie:keys', (event) => {
+        const { mode = 'race', seconds = 8 } = event.detail || {};
+        const keys = KEY_SETS[mode] || KEY_SETS.race;
+        panel.innerHTML = keys.map(([key, label]) => `<span><kbd>${key}</kbd>${label}</span>`).join('') +
+            '<span class="ui-keys__more"><kbd>H</kbd>Touches</span>';
+        panel.classList.add('is-shown');
+        clearTimeout(timer);
+        timer = setTimeout(() => panel.classList.remove('is-shown'), seconds * 1000);
+    });
+    document.addEventListener('wheelie:keys-hide', () => panel.classList.remove('is-shown'));
+    // Trick key (competitive): always there once tricks are allowed.
+    const trick = document.createElement('div');
+    trick.id = 'ui-trick-key';
+    trick.hidden = true;
+    trick.innerHTML = '<kbd>F</kbd><span>FIGURE</span>';
+    document.getElementById('ui-layer')?.append(trick);
+    document.addEventListener('wheelie:trick', (event) => {
+        const { available, ready, active } = event.detail || {};
+        trick.hidden = !available;
+        trick.classList.toggle('is-ready', !!ready && !active);
+        trick.classList.toggle('is-active', !!active);
+    });
+}
+
+// Big notices: bike confiscated, bike back.
+function installNotices() {
+    const card = document.createElement('div');
+    card.id = 'ui-notice';
+    card.setAttribute('role', 'alert');
+    document.body.append(card);
+    let timer = null;
+    document.addEventListener('wheelie:notice', (event) => {
+        const { title = '', text = '', seconds = 7 } = event.detail || {};
+        card.innerHTML = '';
+        const heading = document.createElement('strong');
+        heading.textContent = title;
+        const body = document.createElement('span');
+        body.textContent = text;
+        card.append(heading, body);
+        card.classList.add('is-shown');
+        clearTimeout(timer);
+        timer = setTimeout(() => card.classList.remove('is-shown'), seconds * 1000);
+    });
+    card.addEventListener('pointerdown', () => card.classList.remove('is-shown'));
+}
+
 // Street dialogue subtitles (free roam): who speaks and what they say.
 function installSubtitles() {
     const box = document.createElement('div');
@@ -427,7 +490,7 @@ export function installRacingUI() {
     document.body.classList.add('ui-racing');
     // A styling problem must never stop the game: each part fails alone.
     for (const decorate of [decorateMenu, decorateModeSelect, decorateRiderScreen, decorateSettings, decorateLeaderboard,
-        decorateGameOver, decorateNickname, decorateHud, decorateControls, installToasts, installPrompt, installSubtitles]) {
+        decorateGameOver, decorateNickname, decorateHud, decorateControls, installToasts, installPrompt, installSubtitles, installKeyHints, installNotices]) {
         try {
             decorate();
         } catch (error) {

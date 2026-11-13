@@ -42,6 +42,8 @@ export function createTraffic({ scene, world, onHonk }) {
     function update(dt, focus, blockers) {
         ensure(focus.z);
         for (const car of cars) {
+            // The police car in a chase drives itself (police.js).
+            if (car.chasing) continue;
             const { lane } = car;
             const z = car.group.position.z;
             // Gap to whatever is ahead in the lane.
@@ -76,7 +78,10 @@ export function createTraffic({ scene, world, onHonk }) {
             // Out of range: back into play on the other side.
             const offset = car.group.position.z - focus.z;
             if (offset > 90 || offset < -260) {
-                if (car.special) gone.push(car);
+                // A patrol car that has pulled someone over stays until it is done.
+                if (car.special) {
+                    if (!car.hold) gone.push(car);
+                }
                 else place(car, focus.z, false);
             }
         }

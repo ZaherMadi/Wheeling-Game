@@ -13,7 +13,7 @@ const BUMP_RADIUS = 0.72;
 const pick = (list) => list[Math.floor(Math.random() * list.length)];
 const wait = (seconds) => new Promise((resolve) => setTimeout(resolve, seconds * 1000));
 
-export function createStreetTalk({ audio, people }) {
+export function createStreetTalk({ audio, people, playerVoice = null }) {
     const clips = streetClips(data);
     const byKey = new Map();
     for (const clip of clips) {
@@ -49,8 +49,11 @@ export function createStreetTalk({ audio, people }) {
     }
 
     // One line: subtitle, then the clip (or a pause if it cannot play).
-    async function line(voice, category, who, { volume = 0.95, pan = 0 } = {}) {
-        const clip = pick(byKey.get(`${voice}:${category}`) || []);
+    // named: a clip with the player's name, when it has been generated.
+    async function line(voice, category, who, { volume = 0.95, pan = 0, named = null } = {}) {
+        const clip = named && playerVoice?.has(named)
+            ? { id: playerVoice.clipId(named), text: playerVoice.text(named) }
+            : pick(byKey.get(`${voice}:${category}`) || []);
         if (!clip) return;
         const fallback = Math.max(1.2, clip.text.length * 0.065);
         subtitle(who, clip.text, fallback + 0.6);
@@ -140,14 +143,17 @@ export function createStreetTalk({ audio, people }) {
     }
 
     // The police speak over anything else (and count as an exchange).
-    function police(category, speaker) {
+    // named: use the line with the player's name if there is one (it is
+    // spoken by the first officer's voice).
+    function police(category, speaker, { named = false, namedClip = category } = {}) {
         stats.police++;
         if (busy) {
             token++;
             audio.stopSaying();
         }
-        const voice = data.policeVoices[speaker % data.policeVoices.length];
-        return run([() => line(voice, category, 'Police', { volume: 1 })]);
+        const useName = named && playerVoice?.has(namedClip);
+        const voice = data.policeVoices[(useName ? 0 : speaker) % data.policeVoices.length];
+        return run([() => line(voice, category, 'Police', { volume: 1, named: useName ? namedClip : null })]);
     }
 
     function warmPolice() {

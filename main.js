@@ -3,7 +3,8 @@ import './src/style.css';
 import voiceLineGroups from './src/voice-lines.json';
 import soundEffects from './src/sound-effects.json';
 import { createAudioEngine } from './src/audio-engine.js';
-import { addPoints, syncPoints } from './src/v2/freeroam.js';
+import { BIKE_RECOVERY_POINTS, addPoints, releaseBike, syncPoints } from './src/v2/freeroam.js';
+import { createPlayerVoice } from './src/player-voice.js';
 
 // Two versions share the same simulation, scoring and ranked replay:
 // 'v2' (realistic city, new rider) and 'classic' (the original V1 look).
@@ -56,7 +57,7 @@ const JUMP = {
     minKmh: 30,
     rampsFrom: 1200,
     groundTricksFrom: 2100,
-    spacing: 120,
+    spacing: 30, // frames between a landing and the next takeoff (server: TAKEOFF_SPACING_FRAMES)
     groundTrickMaxAngle: 0.2,
     airRate: 8,
     groundRate: 3,
@@ -886,7 +887,7 @@ function init() {
     // The classic version keeps its original badge.
     if (!IS_V2) document.getElementById('menu-logo')?.setAttribute('src', '/Logo51.png');
     if (IS_V2) {
-        v2 = createRealisticVersion({ scene, renderer, camera, mobile: isMobile(), audio, onTurn: (sign) => changeStreet(sign) });
+        v2 = createRealisticVersion({ scene, renderer, camera, mobile: isMobile(), audio, playerVoice, onTurn: (sign) => changeStreet(sign) });
         v2.world.sharedMaterials.forEach((material) => sharedMaterials.add(material));
     }
     const bike = createBike();
@@ -1131,8 +1132,16 @@ async function startGame() {
         if (gameOverScreen) gameOverScreen.classList.remove('active');
 
         setupMobileControls();
-        speak('start', { force: true });
+        // "C'est parti, <pseudo> !" at the first run once the voice exists, then now and then.
+        const namedStart = IS_V2 && GAME_SETTINGS.voiceEnabled ? playerVoice.startLine() : null;
+        if (namedStart) {
+            lastVoiceAt = performance.now();
+            audio.speak(namedStart, { volume: 0.95 });
+        } else {
+            speak('start', { force: true });
+        }
         startAnimationLoop();
+        setTimeout(() => showKeyHints(9), 300);
 
         if (isMobile() && !document.fullscreenElement) {
             document.documentElement.requestFullscreen().catch(err => {
@@ -1704,6 +1713,12 @@ async function gameOver() {
     const currentScore = Math.floor(state.score);
     const previousBest = state.highScore;
     if (GAME_SETTINGS.gameMode === 'linear') addPoints(currentScore);
+    // The bike taken by the police in free roam comes back with 100 points.
+    if (GAME_SETTINGS.gameMode === 'linear' && currentScore >= BIKE_RECOVERY_POINTS && releaseBike()) {
+        document.dispatchEvent(new CustomEvent('wheelie:notice', { detail: {
+            title: 'MOTO RÉCUPÉRÉE', text: 'Elle t’attend dans le monde libre.', seconds: 6
+        } }));
+    }
     
     // Récupérer le nickname
     const nickname = localStorage.getItem('wheelie_nickname');
@@ -1732,7 +1747,14 @@ async function gameOver() {
     if (currentScore > previousBest && previousBest > 0 && currentScore === highScore) {
         audio.play('new_record', { volume: 0.5 });
         setTimeout(() => {
-            if (sequence === crashSequence) speak('record', { force: true, allowWhenStopped: true });
+            if (sequence !== crashSequence) return;
+            // "Nouveau record, <pseudo> !" one time in two once the voice exists.
+            if (IS_V2 && GAME_SETTINGS.voiceEnabled && playerVoice.has('record') && Math.random() < 0.5) {
+                lastVoiceAt = performance.now();
+                audio.speak(playerVoice.clipId('record'), { volume: 0.95 });
+            } else {
+                speak('record', { force: true, allowWhenStopped: true });
+            }
         }, 900);
     }
 
@@ -1894,6 +1916,11 @@ function animate(timestamp = performance.now()) {
             if (roam && roam.mode === 'bike') {
                 moveX *= roam.boostFactor;
                 moveZ *= roam.boostFactor;
+                // Stopped by the police.
+                if (roam.frozen) {
+                    moveX = 0;
+                    moveZ = 0;
+                }
             }
             if (roam && roam.mode !== 'bike') {
                 const unit = CONFIG.freeModeSpeed * 3;
@@ -2567,14 +2594,32 @@ function updateBoostState() {
     if (detail) document.dispatchEvent(new CustomEvent('wheelie:boost', { detail }));
 }
 
+let lastTrickHint = '';
 function updateTrickButton() {
     const button = document.getElementById('analog-trick');
-    if (!button) return;
     const available = state.isPlaying && GAME_SETTINGS.gameMode === 'linear' && state.frame >= JUMP.rampsFrom;
-    if (button.hidden === available) button.hidden = !available;
     const ready = state.jump.airborne || (state.frame >= JUMP.groundTricksFrom && state.bike.angle < JUMP.groundTrickMaxAngle);
-    button.classList.toggle('is-ready', available && ready);
+    if (button) {
+        if (button.hidden === available) button.hidden = !available;
+        button.classList.toggle('is-ready', available && ready);
+    }
+    // Computer: the F key reminder (the pad only exists on touch screens).
+    const hint = `${available}${available && ready}${state.trick.active}`;
+    if (hint !== lastTrickHint) {
+        lastTrickHint = hint;
+        document.dispatchEvent(new CustomEvent('wheelie:trick', { detail: { available, ready: available && ready, active: state.trick.active } }));
+    }
 }
+
+// Keyboard reminders for the current situation (computer only, see ui.js).
+function showKeyHints(seconds = 8) {
+    if (!state.isPlaying) return;
+    const mode = GAME_SETTINGS.gameMode === 'free' ? (v2 ? v2.roam.mode : 'bike') : 'race';
+    document.dispatchEvent(new CustomEvent('wheelie:keys', { detail: { mode, seconds } }));
+}
+document.addEventListener('wheelie:controls', () => {
+    if (GAME_SETTINGS.gameMode === 'free') setTimeout(() => showKeyHints(7), 0);
+});
 
 function updateUI() {
     updateTrickButton();
@@ -3039,6 +3084,7 @@ document.addEventListener('keydown', (e) => {
 
     if (e.code === 'KeyF' || e.code === 'KeyE') state.keys.trick = true;
     if (e.code === 'KeyG' && !e.repeat) roamAction();
+    if (e.code === 'KeyH' && !e.repeat) showKeyHints(8);
     if (e.code === 'KeyB') state.keys.boost = true;
     if (e.code === 'ShiftLeft' || e.code === 'ShiftRight') {
         state.keys.run = true;
@@ -3352,6 +3398,10 @@ document.getElementById('gameover-menu-btn')?.addEventListener('click', quitToMe
 
 // API Configuration
 const API_BASE_URL = 'https://51-games-api.vercel.app/api/ranking';
+// The player's nickname spoken in some lines (see src/player-voice.js).
+// Created here, after the API address: it registers the stored clips at once.
+const playerVoice = createPlayerVoice({ apiBase: () => API_BASE_URL, audio, apiFetch });
+setTimeout(() => { if (IS_V2) playerVoice.ensure(undefined, { generate: true }); }, 3000);
 const GAME_NAME = 'WheelieKing';
 
 function setRankingStatus(message) {
@@ -3458,6 +3508,8 @@ async function submitCompletedRun(nickname) {
             const data = await response.json();
             updateLeaderboard(nickname, data.score);
             setRankingStatus(`Score classé : ${data.score} points.`);
+            // A ranked player: the server can now record their name (once).
+            if (IS_V2) playerVoice.ensure(nickname, { generate: true });
             completedRankedRun = null;
             return true;
         } catch (error) {
@@ -3724,5 +3776,5 @@ function releaseSplash() {
 
 // Development only: lets tests and the console inspect a running game.
 if (import.meta.env.DEV) {
-    window.__wheelie = { state, renderer, scene, camera, audio, CONFIG, get v2() { return v2; } };
+    window.__wheelie = { state, renderer, scene, camera, audio, CONFIG, playerVoice, gameOver, get v2() { return v2; } };
 }

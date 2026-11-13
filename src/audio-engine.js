@@ -162,8 +162,31 @@ export function createAudioEngine({ effects, getManifest }) {
         });
     }
 
+    // Clips served from elsewhere (the player's name, from the ranking API).
+    const external = new Map();
+    function registerClip(id, url) {
+        if (external.get(id) === url) return;
+        external.set(id, url);
+        buffers.delete(id);
+    }
+
     function load(id) {
         if (buffers.has(id)) return buffers.get(id);
+        if (external.has(id)) {
+            const promise = fetch(external.get(id))
+                .then((response) => {
+                    if (!response.ok) throw new Error(`HTTP ${response.status}`);
+                    return response.arrayBuffer();
+                })
+                .then((data) => decode(data))
+                .catch((error) => {
+                    console.warn(`Could not load clip "${id}":`, error);
+                    buffers.delete(id);
+                    return null;
+                });
+            buffers.set(id, promise);
+            return promise;
+        }
         const promise = getManifest().then(async ({ available, hashes }) => {
             if (!available.has(id)) return null;
             const version = hashes[id] ? `?v=${hashes[id]}` : '';
@@ -532,7 +555,7 @@ export function createAudioEngine({ effects, getManifest }) {
     }
 
     return {
-        prepare, warmUp, unlock, play, speak, say, stopSaying, stopVoice, startRun, stopRun, update, setEnabled, duck, status, setPaused,
+        prepare, warmUp, unlock, play, speak, say, stopSaying, registerClip, stopVoice, startRun, stopRun, update, setEnabled, duck, status, setPaused,
         get running() { return running; },
         get speaking() { return Boolean(voice); },
         get gear() { return sim.gear + 1; },

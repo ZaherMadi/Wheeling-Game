@@ -139,7 +139,13 @@ export function createOfficer(scene) {
     };
 }
 
-export function createPolicePatrol({ scene, world, traffic, audio, talk, onFine }) {
+// What a fine leads to (see freeroam.js fine()): { before, applied, lost: [car models], strikes, confiscate }.
+const LOST_LINES = { 'sedan,van': 'lost_sedan_van', sedan: 'lost_sedan', van: 'lost_van', suv: 'lost_suv', coupe: 'lost_coupe' };
+const FLEE_DISTANCE = 20;
+const CHASE_SHOUT_EVERY = 10;
+const CHASE_FINE = 400; // in all, with the 100 of the first stop
+
+export function createPolicePatrol({ scene, world, traffic, audio, talk, onFine, onCaught, onEscape, freezePlayer, confiscateBike }) {
     let group = null;
     let car = null;
     let clock = 0;
@@ -194,44 +200,127 @@ export function createPolicePatrol({ scene, world, traffic, audio, talk, onFine 
         officer.animate(dt, 0, talking, clock);
     }
 
+    function getOut() {
+        while (officers.length < 2) officers.push(createOfficer(scene));
+        const yaw = group.rotation.y;
+        officers.forEach((officer, index) => {
+            const side = index ? 1 : -1;
+            ahead.set(side * 1.35, 0, 0.3).applyAxisAngle(THREE.Object3D.DEFAULT_UP, yaw);
+            officer.group.position.set(group.position.x + ahead.x, 0, group.position.z + ahead.z);
+            officer.group.visible = true;
+            officer.home = officer.group.position.clone();
+        });
+        audio.play('car_door', { volume: 0.5 });
+        audio.play('car_door', { volume: 0.4, delay: 0.25, rate: 1.05 });
+    }
+
     // Player touched the patrol car while driving.
     function bumped(record) {
-        if (!car || record !== car || stop) return;
+        if (!car || record !== car || stop || car.towing) return;
         car.hold = true;
-        stop = { phase: 'brake', t: 0, speaker: 0 };
+        stop = { phase: 'brake', t: 0, speaker: 0, context: 'bump', fined: 0, token: 0, hits: 0 };
         audio.play('police_siren', { volume: 0.6 });
     }
 
-    // player: { x, z }
-    function update(dt, focus, player) {
+    // Player hit something during the chase: twice and they are caught.
+    let lastHit = -10;
+    function playerHit() {
+        if (!stop || stop.phase !== 'chase' || clock - lastHit < 0.8) return;
+        lastHit = clock;
+        stop.hits++;
+    }
+
+    // The officers' verdict: fine, then what it costs (cars lost, warning
+    // at zero points, the bike taken away the third time).
+    async function sentence(context, mine) {
+        const total = context === 'chase' ? CHASE_FINE - stop.fined : 100;
+        const result = onFine(total, context);
+        stop.fined += result.applied;
+        const lines = [];
+        if (result.before === 0) {
+            lines.push(result.confiscate ? 'confiscate' : 'zero');
+        } else {
+            lines.push(context === 'chase' ? 'chasefine' : 'fine');
+            const key = result.lost.join(',');
+            const lost = LOST_LINES[key] || (result.lost.length ? LOST_LINES[result.lost[result.lost.length - 1]] : null);
+            if (lost) lines.push(lost);
+            else if (Math.random() < 0.5) lines.push('after');
+        }
+        for (const [index, category] of lines.entries()) {
+            if (!stop || stop.token !== mine) return;
+            // The player's name now and then (always for the serious ones).
+            const named = category === 'fine' ? Math.random() < 0.5 : ['chasefine', 'zero', 'confiscate'].includes(category);
+            const other = index > 0 && (category.startsWith('lost_') || category === 'after');
+            await talk.police(category, other ? 1 - stop.speaker : stop.speaker, { named });
+        }
+        if (result.confiscate && stop && stop.token === mine) {
+            stop.towing = true;
+            confiscateBike?.();
+        }
+    }
+
+    function startChase() {
+        stop.token++;
+        talk.reset();
+        hideOfficers();
+        audio.play('car_door', { volume: 0.5 });
+        car.hold = false;
+        car.chasing = true;
+        stop.phase = 'chase';
+        stop.t = 0;
+        stop.hits = 0;
+        stop.lastShout = -8.5;
+        stop.lastSiren = -10;
+        document.dispatchEvent(new CustomEvent('wheelie:toast', { detail: { title: 'POURSUITE !', text: 'Change de rue pour les semer' } }));
+    }
+
+    function caught(player) {
+        car.chasing = false;
+        car.hold = true;
+        car.speed = 0;
+        // Pulled up just behind the player.
+        const dx = group.position.x - player.x;
+        const dz = group.position.z - player.z;
+        const length = Math.hypot(dx, dz) || 1;
+        const gap = player.radius + 3.2;
+        group.position.set(player.x + (dx / length) * gap, 0, player.z + (dz / length) * gap);
+        group.rotation.y = Math.atan2(-dx, -dz);
+        freezePlayer?.(true);
+        onCaught?.();
+        stop.context = 'chase';
+        stop.phase = 'out';
+        stop.t = 0;
+    }
+
+    // player: { x, z, radius, mode }
+    function update(dt, focus, player, bike) {
         clock += dt;
         if (!car && clock > nextAt) spawn(focus);
         if (!car) return;
         group.userData.flash(clock);
-        const distance = Math.hypot(group.position.x - focus.x, group.position.z - focus.z);
+        if (car.towing) tow(bike);
+        const distance = Math.hypot(group.position.x - player.x, group.position.z - player.z);
+        const pan = Math.max(-1, Math.min(1, (group.position.x - focus.x) / 10));
         if (!sirenDone && distance < 55) {
             sirenDone = true;
-            const pan = Math.max(-1, Math.min(1, (group.position.x - focus.x) / 10));
             audio.play('police_siren', { volume: 0.45, pan });
         }
         if (!stop) return;
         stop.t += dt;
+        const fleeing = distance > FLEE_DISTANCE;
         if (stop.phase === 'brake' && stop.t > 0.9 && car.speed < 1) {
-            // Doors open: one officer each side.
-            while (officers.length < 2) officers.push(createOfficer(scene));
-            const yaw = group.rotation.y;
-            officers.forEach((officer, index) => {
-                const side = index ? 1 : -1;
-                ahead.set(side * 1.35, 0, 0.3).applyAxisAngle(THREE.Object3D.DEFAULT_UP, yaw);
-                officer.group.position.set(group.position.x + ahead.x, 0, group.position.z + ahead.z);
-                officer.group.visible = true;
-                officer.home = officer.group.position.clone();
-            });
-            audio.play('car_door', { volume: 0.5 });
-            audio.play('car_door', { volume: 0.4, delay: 0.25, rate: 1.05 });
+            getOut();
+            stop.phase = 'approach';
+            stop.t = 0;
+        } else if (stop.phase === 'out' && stop.t > 0.6) {
+            getOut();
             stop.phase = 'approach';
             stop.t = 0;
         } else if (stop.phase === 'approach') {
+            if (fleeing && stop.context === 'bump') {
+                startChase();
+                return;
+            }
             // Up to the player, on the side of the patrol car, side by side.
             let closest = Infinity;
             const dx = group.position.x - player.x;
@@ -247,37 +336,87 @@ export function createPolicePatrol({ scene, world, traffic, audio, talk, onFine 
             if (closest < 0.4 || stop.t > 4) {
                 stop.phase = 'talk';
                 stop.t = 0;
-                const speaker = Math.floor(Math.random() * 2);
-                stop.speaker = speaker;
-                onFine(100);
-                talk.police('fine', speaker).then(() => (Math.random() < 0.6 ? talk.police('after', 1 - speaker) : null)).then(() => {
-                    if (stop && stop.phase === 'talk') {
+                stop.speaker = 0;
+                const mine = stop.token;
+                sentence(stop.context, mine).then(() => {
+                    if (stop && stop.token === mine && stop.phase === 'talk') {
                         stop.phase = 'back';
                         stop.t = 0;
                     }
                 });
             }
         } else if (stop.phase === 'talk') {
+            // Driving off in the middle of it: the chase starts.
+            if (fleeing && stop.context === 'bump' && !stop.towing) {
+                startChase();
+                return;
+            }
             officers.forEach((officer, index) => face(officer, player.x, player.z, index === stop.speaker, dt));
-            if (stop.t > 9) stop.phase = 'back';
+            if (stop.t > 16) {
+                stop.phase = 'back';
+                stop.t = 0;
+            }
+        } else if (stop.phase === 'chase') {
+            // Faster and faster: whoever does not turn off is caught.
+            const base = player.mode === 'car' ? 52 : player.mode === 'bike' ? 21 : 9;
+            const speed = Math.min(190, base + 4 * stop.t);
+            const dx = player.x - group.position.x;
+            const dz = player.z - group.position.z;
+            const length = Math.hypot(dx, dz) || 1;
+            const step = Math.min(Math.max(0, length - (player.radius + 3)), speed * dt);
+            group.position.x += (dx / length) * step;
+            group.position.z += (dz / length) * step;
+            const yaw = Math.atan2(dx, dz);
+            let turn = yaw - group.rotation.y;
+            turn = Math.atan2(Math.sin(turn), Math.cos(turn));
+            group.rotation.y += turn * Math.min(1, dt * 6);
+            car.speed = speed;
+            if (stop.t - stop.lastSiren > 3.6) {
+                stop.lastSiren = stop.t;
+                audio.play('police_siren', { volume: 0.35 + 0.4 * Math.max(0, 1 - distance / 120), pan });
+            }
+            if (stop.t - stop.lastShout > CHASE_SHOUT_EVERY) {
+                stop.lastShout = stop.t;
+                talk.police('chase', 0, { named: Math.random() < 0.5, namedClip: 'stop' });
+            }
+            if (distance < player.radius + 4.2 || stop.hits >= 2) caught(player);
         } else if (stop.phase === 'back') {
+            freezePlayer?.(false);
+            // A confiscated bike leaves with them, ridden ahead of the car.
             let farthest = 0;
-            officers.forEach((officer) => { farthest = Math.max(farthest, walk(officer, dt, officer.home.x, officer.home.z, 2.6)); });
-            if (farthest < 0.3 || stop.t > 5) {
+            officers.forEach((officer, index) => {
+                const target = stop.towing && index === 1 && bike ? bike.position : officer.home;
+                farthest = Math.max(farthest, walk(officer, dt, target.x, target.z, 2.6));
+            });
+            if (farthest < 0.5 || stop.t > 6) {
                 hideOfficers();
                 audio.play('car_door', { volume: 0.45 });
                 car.hold = false;
+                if (stop.towing) car.towing = true;
                 stop = null;
             }
         }
     }
 
+    // The bike rides off in front of the patrol car.
+    function tow(bike) {
+        if (!car || !car.towing || !bike) return false;
+        const yaw = group.rotation.y;
+        bike.position.set(group.position.x + Math.sin(yaw) * 6.5, 0, group.position.z + Math.cos(yaw) * 6.5);
+        bike.rotation.set(0, yaw, 0);
+        return true;
+    }
+
+    // New street: the police lose track of the player.
     function reset() {
+        const escaped = !!stop && stop.phase === 'chase';
         if (car) traffic.leave(car);
         car = null;
         stop = null;
         hideOfficers();
+        freezePlayer?.(false);
         nextAt = clock + range(30, 180);
+        if (escaped) onEscape?.();
     }
 
     // Officers on foot: traffic stops for them.
@@ -286,11 +425,14 @@ export function createPolicePatrol({ scene, world, traffic, audio, talk, onFine 
     }
 
     return {
-        update, bumped, reset, blockers,
+        update, bumped, playerHit, reset, blockers,
         // Tests and debugging: bring the patrol now.
         callNow() { nextAt = clock; },
         get car() { return car; },
         get stopped() { return !!stop; },
-        get phase() { return stop ? stop.phase : car ? 'patrol' : 'none'; }
+        get chasing() { return !!stop && stop.phase === 'chase'; },
+        get hits() { return stop ? stop.hits : 0; },
+        get towing() { return !!car && !!car.towing; },
+        get phase() { return stop ? stop.phase : car ? (car.towing ? 'towing' : 'patrol') : 'none'; }
     };
 }

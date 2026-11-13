@@ -11,7 +11,7 @@ import { installRacingUI } from '../ui/ui.js';
 
 const DAY_CYCLE_SECONDS = 600;
 
-export function createRealisticVersion({ scene, renderer, camera, mobile, audio, onTurn }) {
+export function createRealisticVersion({ scene, renderer, camera, mobile, audio, onTurn, playerVoice = null }) {
     renderer.toneMapping = THREE.NeutralToneMapping;
     renderer.toneMappingExposure = 1.05;
     document.body.classList.add('v2');
@@ -31,7 +31,7 @@ export function createRealisticVersion({ scene, renderer, camera, mobile, audio,
     if (seed !== null) world.reseed(seed);
     const rider = createRider({ scene });
     const fx = createFx({ scene, mobile });
-    const roam = createFreeRoam({ scene, world, rider, audio, onTurn });
+    const roam = createFreeRoam({ scene, world, rider, audio, onTurn, playerVoice });
     rider.setLivery(loadLivery());
     mountLiveryPanel(document.getElementById('rider-options'), (livery) => {
         rider.setLivery(livery);
@@ -95,8 +95,10 @@ export function createRealisticVersion({ scene, renderer, camera, mobile, audio,
     function frame(dt, snapshot) {
         // Races keep the arcade-size bike; free roam is life size.
         rider.setWorldScale(snapshot.linear ? 1.7 : ROAM_SCALE);
+        // A confiscated bike is gone from free roam (never from races).
         if (dt > 0) adaptResolution();
         const bike = rider.bikeGroup;
+        bike.visible = snapshot.linear || roam.bikeVisible;
         if (dt > 0) {
             bikeVelocity.subVectors(bike.position, lastPosition).divideScalar(dt);
             bikeVelocity.y = 0;
