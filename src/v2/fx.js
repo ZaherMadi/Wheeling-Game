@@ -114,7 +114,7 @@ function createSystem(scene, map, count, additive) {
 export function createFx({ scene, mobile }) {
     const map = createGlowTexture();
     const soft = createSystem(scene, map, mobile ? 110 : 220, false);
-    const sparks = createSystem(scene, map, mobile ? 60 : 120, true);
+    const sparks = createSystem(scene, map, mobile ? 140 : 260, true);
     const rand = (min, max) => min + Math.random() * (max - min);
     let sprayDebt = 0;
 
@@ -153,6 +153,21 @@ export function createFx({ scene, mobile }) {
         }
     }
 
+    // Boost flames out of the exhaust: hot core, orange tongue, trailing back.
+    function flame(point, backX, backZ, vehicleVelocity, amount = 4) {
+        for (let i = 0; i < amount; i++) {
+            const push = rand(5, 10);
+            const core = Math.random() < 0.35;
+            sparks.emit(
+                point.x + rand(-0.06, 0.06), point.y + rand(-0.04, 0.04), point.z + rand(-0.06, 0.06),
+                vehicleVelocity.x * 0.92 + backX * push + rand(-0.6, 0.6), rand(0.2, 1.4), vehicleVelocity.z * 0.92 + backZ * push + rand(-0.6, 0.6),
+                core
+                    ? { life: rand(0.06, 0.12), r: 1, g: 0.92, b: 0.6, alpha: 1, size: rand(0.25, 0.4), growth: 0.6, gravity: 2 }
+                    : { life: rand(0.12, 0.26), r: 1, g: rand(0.35, 0.6), b: 0.08, alpha: 0.9, size: rand(0.35, 0.6), growth: 1.4, gravity: 3 }
+            );
+        }
+    }
+
     function update(dt, camera, viewportHeight) {
         const scale = viewportHeight / (2 * Math.tan(THREE.MathUtils.degToRad(camera.fov) / 2));
         soft.update(dt, scale);
@@ -165,5 +180,5 @@ export function createFx({ scene, mobile }) {
         sprayDebt = 0;
     }
 
-    return { spray, smoke, spark, update, clear };
+    return { spray, smoke, spark, flame, update, clear };
 }

@@ -87,5 +87,22 @@ export function createTraffic({ scene, world, onHonk }) {
             Math.abs(car.group.position.z - z) < car.group.userData.length / 2 + radius);
     }
 
-    return { update, respawn, clear, hitTest, get cars() { return cars; } };
+    // Moves `position` out of any car it overlaps, along the shortest way.
+    // Returns true if it had to.
+    function pushOut(position, radius) {
+        let moved = false;
+        for (const car of cars) {
+            const dx = position.x - car.group.position.x;
+            const dz = position.z - car.group.position.z;
+            const px = 1.1 + radius - Math.abs(dx);
+            const pz = car.group.userData.length / 2 + radius - Math.abs(dz);
+            if (px <= 0 || pz <= 0) continue;
+            if (px < pz) position.x += (dx >= 0 ? 1 : -1) * (px + 0.02);
+            else position.z += (dz >= 0 ? 1 : -1) * (pz + 0.02);
+            moved = true;
+        }
+        return moved;
+    }
+
+    return { update, respawn, clear, hitTest, pushOut, get cars() { return cars; } };
 }

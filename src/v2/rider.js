@@ -753,6 +753,20 @@ export function createRider({ scene }) {
         return hitBox;
     }
 
+    // --- Boost: a flame glow at the exhaust ---------------------------------
+    const exhaustGlow = new THREE.Sprite(new THREE.SpriteMaterial({
+        map: glowTexture, color: 0xff7a1a, blending: THREE.AdditiveBlending, depthWrite: false, transparent: true, opacity: 0
+    }));
+    exhaustGlow.position.set(-0.2, 0.68, -1.05);
+    chassis.add(exhaustGlow);
+    function setBoost(level) {
+        exhaustGlow.material.opacity = level;
+        exhaustGlow.scale.setScalar(0.35 + level * (0.6 + Math.random() * 0.25));
+    }
+    function exhaustPoint(out) {
+        return chassis.localToWorld(out.set(-0.2, 0.67, -1.0));
+    }
+
     // --- On foot (free roam) ---------------------------------------------
     // The rider gets off the bike and walks: stepping legs, swinging arms.
     let walkPhase = 0;
@@ -766,14 +780,17 @@ export function createRider({ scene }) {
         updateWalk(0, x, z, yaw, 0);
     }
 
-    function updateWalk(dt, x, z, yaw, speed) {
-        const stride = Math.min(1, speed / 0.08);
-        walkPhase += dt * (1.5 + stride * 5.5) * (stride > 0.05 ? 1 : 0);
+    function updateWalk(dt, x, z, yaw, speed, y = 0, running = false) {
+        // stride 0..1 walking, up to ~1.8 running (longer steps, faster).
+        const stride = Math.min(running ? 1.8 : 1, speed / 0.085);
+        const step = Math.min(1, stride);
+        walkPhase += dt * (1.5 + stride * 5.2) * (stride > 0.05 ? 1 : 0);
         const bob = Math.abs(Math.sin(walkPhase)) * 0.03 * stride;
-        riderGroup.position.set(x, 0, z);
+        const air = y > 0.02 ? 1 : 0;
+        riderGroup.position.set(x, y * 1, z);
         riderGroup.rotation.set(0, yaw, 0);
-        pelvis.position.set(0, 0.94 + bob, 0);
-        pelvis.rotation.set(0.05 + stride * 0.05, Math.sin(walkPhase) * 0.1 * stride, 0);
+        pelvis.position.set(0, 0.94 + bob - air * 0.08, 0);
+        pelvis.rotation.set(0.05 + step * 0.05 + (running ? 0.22 : 0), Math.sin(walkPhase) * 0.1 * step, 0);
         head.rotation.set(-0.08, -Math.sin(walkPhase) * 0.06 * stride, 0);
         riderGroup.updateMatrixWorld(true);
         for (let i = 0; i < 2; i++) {
@@ -781,13 +798,17 @@ export function createRider({ scene }) {
             const phase = walkPhase + (i ? Math.PI : 0);
             toRiderSpace(hips[i], root);
             target.set(side * 0.11, 0.07 + Math.max(0, Math.sin(phase)) * 0.13 * stride, Math.cos(phase) * 0.3 * stride);
+            // In the air the knees come up.
+            if (air) target.set(side * 0.13, 0.32 + (i ? 0.08 : 0), 0.16);
             kneeHint.set(side * 0.1, 0, 1);
             solveLimb(legs[i], kneeHint);
             shoes[i].position.copy(target);
             shoes[i].rotation.set(0, 0, 0);
             toRiderSpace(shoulders[i], root);
-            target.set(side * 0.27, 0.8, -Math.cos(phase) * 0.22 * stride + 0.04);
-            elbowHint.set(side * 0.3, 0, -1);
+            target.set(side * 0.27, running ? 1.0 : 0.8, -Math.cos(phase) * (running ? 0.3 : 0.22) * stride + 0.04);
+            if (running) target.y += Math.max(0, -Math.cos(phase)) * 0.15;
+            if (air) target.set(side * 0.42, 1.55, 0.1);
+            elbowHint.set(side * 0.3, running ? -0.3 : 0, -1);
             solveLimb(arms[i], elbowHint);
             hands[i].position.copy(target);
             hands[i].rotation.set(0, 0, 0);
@@ -828,7 +849,7 @@ export function createRider({ scene }) {
 
     reset();
     return {
-        setLivery, dismount, updateWalk, mount, setRiderVisible,
+        setLivery, dismount, updateWalk, mount, setRiderVisible, setBoost, exhaustPoint,
         bikeGroup, bikePivot, materials, update, reset, startCrash, updateCrash, slideSpeed, getHitBox,
         get crashing() { return crash.active; },
         get crashVariant() { return crash.variant; },

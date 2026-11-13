@@ -105,6 +105,19 @@ export function createRealisticVersion({ scene, renderer, camera, mobile, audio,
         const phase = (snapshot.gameTime % DAY_CYCLE_SECONDS) / DAY_CYCLE_SECONDS;
         world.setDusk((0.5 - 0.5 * Math.cos(phase * Math.PI * 2)) * 0.9);
 
+        // Boost flames: from the bike's exhaust, or the back of the car.
+        const roamCar = roam.carRear;
+        if (snapshot.boosting && !rider.crashing) {
+            if (roamCar) {
+                point.set(roamCar.x, 0.45, roamCar.z);
+                fx.flame(point, -Math.sin(roamCar.yaw), -Math.cos(roamCar.yaw), bikeVelocity.set(0, 0, 0), 5);
+            } else if (roam.mode === 'bike') {
+                rider.exhaustPoint(point);
+                const yaw = bike.rotation.y;
+                fx.flame(point, -Math.sin(yaw), -Math.cos(yaw), bikeVelocity, highQuality ? 5 : 3);
+            }
+        }
+        rider.setBoost(snapshot.boosting && roam.mode === 'bike' ? 1 : 0);
         if (rider.crashing) {
             if (rider.slideSpeed() > 3 && Math.random() < 0.7) {
                 fx.spark(point.copy(bike.position).setY(0.08), bikeVelocity, highQuality ? 3 : 1);

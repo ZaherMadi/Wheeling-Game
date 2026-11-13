@@ -64,6 +64,11 @@ const JUMP = {
 };
 const TAKEOFF_FLAG = 0x20;
 const TRICK_FLAG = 0x40;
+// Boost: a clean trick landing earns a charge (up to 3); firing one pushes
+// the bike for 150 frames, then the speed gained drains away. Mirrored by
+// the server replay as well.
+const BOOST = { frames: 150, accel: 0.02, maxSpeed: 4.0, drain: 0.004, maxCharges: 3, rate: 6 };
+const BOOST_FLAG = 0x80;
 const RAMP = { width: 4.4, length: 5.5 };
 const TRICK_TYPES = ['superman', 'nohander', 'cancan'];
 const daytimeSky = new THREE.Color(0x87CEEB);
@@ -98,7 +103,10 @@ let state = {
         down: false,
         space: false,
         trick: false,
+        boost: false,
+        run: false,
     },
+    boost: { charges: 0, frames: 0, gain: 0, wasHeld: false },
     // Simulation frame of the run (the server counts the same frames).
     frame: 0,
     jump: { airborne: false, y: 0, vy: 0, trickFrames: 0, lastLanding: -1e9, pending: false, visualY: 0 },
@@ -954,6 +962,9 @@ function visualSnapshot() {
         playing: state.isPlaying,
         gameTime: state.gameTime,
         jumpHeight: free ? 0 : state.jump.visualY,
+        boosting: free ? !!(v2 && v2.roam.boostState().active) : state.boost.frames > 0,
+        vehicle: free && v2 ? (v2.roam.mode === 'walk' ? 'foot' : v2.roam.mode) : 'bike',
+        footSpeed: free && v2 ? v2.roam.footSpeed : 0,
         airborne: !free && state.jump.airborne,
         trick: state.trick.active ? state.trick.type : null
     };
@@ -990,6 +1001,8 @@ function resetGame() {
     state.ramps = [];
     state.rampFreeZones = [];
     state.keys.trick = false;
+    state.keys.boost = false;
+    state.boost = { charges: 0, frames: 0, gain: 0, wasHeld: false };
     state.angleMultiplier = 1.0;
     state.timeMultiplier = 1.0;
     state.currentMultiplier = 1.0;
@@ -1357,7 +1370,8 @@ function land(trickFrames, difficulty) {
         const bonus = trickFrames * FIXED_STEP * JUMP.landingRate * difficulty;
         state.score += bonus;
         const air = trickFrames * FIXED_STEP * JUMP.airRate * difficulty;
-        toast(`+${Math.round(bonus + air)}`, 'FIGURE RÉUSSIE');
+        state.boost.charges = Math.min(BOOST.maxCharges, state.boost.charges + 1);
+        toast(`+${Math.round(bonus + air)}`, 'FIGURE RÉUSSIE · BOOST +1 (B)');
         audio.play('multiplier_up', { volume: 0.45, rate: 1.15 });
         speak('landing', { force: true });
     }
@@ -1398,6 +1412,11 @@ function changeStreet(sign) {
         fadeOverlay.style.opacity = '0';
         streetChanging = false;
     }, 380);
+}
+
+function fireBoostEffects() {
+    audio.play('boost', { volume: 0.75 });
+    audio.play('backfire', { volume: 0.55, delay: 0.12 });
 }
 
 function toast(title, text) {
@@ -1741,9 +1760,16 @@ function animate(timestamp = performance.now()) {
                 if (state.keys.down) moveZ += CONFIG.freeModeSpeed * 3;
             }
             const roam = v2 ? v2.roam : null;
+            const boostEdge = state.keys.boost && !state.boost.wasHeld;
+            state.boost.wasHeld = state.keys.boost;
+            if (roam && boostEdge) roam.tryBoost();
+            if (roam && roam.mode === 'bike') {
+                moveX *= roam.boostFactor;
+                moveZ *= roam.boostFactor;
+            }
             if (roam && roam.mode !== 'bike') {
                 const unit = CONFIG.freeModeSpeed * 3;
-                roam.move(dt, moveX / unit, moveZ / unit);
+                roam.move(dt, moveX / unit, moveZ / unit, { run: state.keys.run, jump: state.keys.space });
                 state.freeMode.speed = roam.speed;
                 state.distance += roam.speed;
                 moveX = 0;
@@ -1885,6 +1911,15 @@ function animate(timestamp = performance.now()) {
                 state.bike.angle < JUMP.groundTrickMaxAngle;
             setTrick(trickAir || trickGround);
             const grounded = !jump.airborne;
+            const boost = state.boost;
+            const boostPressed = state.keys.boost && !boost.wasHeld;
+            boost.wasHeld = state.keys.boost;
+            const boostStart = boostPressed && boost.charges > 0 && boost.frames === 0 && grounded;
+            if (boostStart) {
+                boost.charges -= 1;
+                boost.frames = BOOST.frames;
+                fireBoostEffects();
+            }
             // No traction in the air; no throttle or wheelie during a stunt.
             isAccelerating = isAccelerating && grounded && !trickGround;
             isBraking = isBraking && grounded;
@@ -1894,7 +1929,8 @@ function animate(timestamp = performance.now()) {
                 (isBraking ? 0x02 : 0) |
                 (wheelieInput ? 0x04 : 0) |
                 (takeoff ? TAKEOFF_FLAG : 0) |
-                (trickAir || trickGround ? TRICK_FLAG : 0);
+                (trickAir || trickGround ? TRICK_FLAG : 0) |
+                (boostStart ? BOOST_FLAG : 0);
             recordRankedInput(inputFlags, accelerationScale);
             state.bike.lateralVelocity *= CONFIG.lateralFriction;
             if (state.bike.lateralVelocity > CONFIG.maxLateralSpeed) state.bike.lateralVelocity = CONFIG.maxLateralSpeed;
@@ -1977,6 +2013,18 @@ function animate(timestamp = performance.now()) {
                 if (state.speed < CONFIG.maxSpeed) state.speed += accel;
             } else if (grounded && !isBraking) {
                 if (state.speed > CONFIG.minSpeed) state.speed -= CONFIG.deceleration;
+            }
+            if (boost.frames > 0) {
+                if (grounded && state.speed < BOOST.maxSpeed) {
+                    state.speed += BOOST.accel;
+                    boost.gain += BOOST.accel;
+                }
+                state.score += BOOST.rate * FIXED_STEP * (GAME_SETTINGS.difficulty === 'hard' ? 1.4 : GAME_SETTINGS.difficulty === 'medium' ? 1.2 : 1.0);
+                boost.frames -= 1;
+            } else if (boost.gain > 0) {
+                const drain = Math.min(BOOST.drain, boost.gain);
+                state.speed -= drain;
+                boost.gain -= drain;
             }
             bikeGroup.position.z -= state.speed;
             state.distance += state.speed;
@@ -2366,6 +2414,16 @@ function updateCamera() {
     }
 }
 
+function updateBoostState() {
+    let detail;
+    if (GAME_SETTINGS.gameMode === 'free') {
+        detail = v2 ? { mode: 'free', ...v2.roam.boostState() } : null;
+    } else {
+        detail = { mode: 'ranked', charges: state.boost.charges, active: state.boost.frames > 0, ready: state.boost.charges > 0 };
+    }
+    if (detail) document.dispatchEvent(new CustomEvent('wheelie:boost', { detail }));
+}
+
 function updateTrickButton() {
     const button = document.getElementById('analog-trick');
     if (!button) return;
@@ -2377,6 +2435,7 @@ function updateTrickButton() {
 
 function updateUI() {
     updateTrickButton();
+    if (state.isPlaying) updateBoostState();
     const scoreEl = document.getElementById('score');
     if (scoreEl) scoreEl.innerText = Math.floor(state.score);
     const speedText = document.getElementById('speed-text');
@@ -2791,7 +2850,10 @@ function setupAnalogControls() {
         'analog-gas': 'up',
         'analog-brake': 'down',
         'analog-wheelie': 'space',
-        'analog-trick': 'trick'
+        'analog-trick': 'trick',
+        'analog-boost': 'boost',
+        'analog-jump': 'space',
+        'analog-run': 'run'
     };
     document.getElementById('analog-action')?.addEventListener('pointerdown', (event) => {
         event.preventDefault();
@@ -2834,6 +2896,11 @@ document.addEventListener('keydown', (e) => {
 
     if (e.code === 'KeyF' || e.code === 'KeyE') state.keys.trick = true;
     if (e.code === 'KeyG' && !e.repeat) roamAction();
+    if (e.code === 'KeyB') state.keys.boost = true;
+    if (e.code === 'ShiftLeft' || e.code === 'ShiftRight') {
+        state.keys.run = true;
+        state.keys.boost = true;
+    }
 
     // Space ONLY for wheelie (no restart functionality)
     if (e.code === 'Space') {
@@ -2863,7 +2930,14 @@ document.addEventListener('keyup', (e) => {
     if (e.code === 'ArrowDown' || e.code === 'KeyS') state.keys.down = false;
     if (e.code === 'Space') state.keys.space = false;
     if (e.code === 'KeyF' || e.code === 'KeyE') state.keys.trick = false;
+    if (e.code === 'KeyB') state.keys.boost = false;
+    if (e.code === 'ShiftLeft' || e.code === 'ShiftRight') {
+        state.keys.run = false;
+        state.keys.boost = false;
+    }
 });
+// The prompt chip at the top acts like the G key / action pad.
+document.addEventListener('wheelie:action', () => roamAction());
 
 window.addEventListener('blur', () => {
     Object.keys(state.keys).forEach((key) => { state.keys[key] = false; });

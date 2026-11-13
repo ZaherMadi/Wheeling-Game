@@ -3,7 +3,7 @@
 // clips in /audio (see scripts/generate-voice-lines.mjs).
 
 const GEAR_TOP_KMH = [45, 80, 120, 165, 215, 300];
-const LOOP_IDS = ['engine_idle', 'engine_mid', 'engine_high', 'wind', 'tire_wet', 'city_ambience', 'scrape'];
+const LOOP_IDS = ['engine_idle', 'engine_mid', 'engine_high', 'wind', 'tire_wet', 'city_ambience', 'scrape', 'footsteps'];
 
 const clamp01 = (value) => Math.max(0, Math.min(1, value));
 
@@ -326,18 +326,25 @@ export function createAudioEngine({ effects, getManifest }) {
         sim.shiftCut = Math.max(0, sim.shiftCut - dt);
 
         const rpm = sim.rpm;
-        const load = (0.5 + sim.throttle * 0.5) * (sim.shiftCut > 0 ? 0.45 : 1);
+        // On foot: no engine, footsteps instead. In a car: a lower, softer engine.
+        const vehicle = frame.vehicle || 'bike';
+        const onFoot = vehicle === 'foot';
+        const pitch = vehicle === 'car' ? 0.72 : 1;
+        const engineLevel = onFoot ? 0 : vehicle === 'car' ? 0.75 : 1;
+        const footSpeed = frame.footSpeed || 0;
+        setLoop('footsteps', onFoot ? Math.min(0.5, footSpeed * 0.32) : 0, 0.85 + Math.min(1.4, footSpeed) * 0.45);
+        const load = (0.5 + sim.throttle * 0.5) * (sim.shiftCut > 0 ? 0.45 : 1) * engineLevel;
         const idleWeight = clamp01(1 - (rpm - 0.14) / 0.24);
         const highWeight = clamp01((rpm - 0.52) / 0.3);
         const midWeight = clamp01(1 - idleWeight - highWeight);
-        setLoop('engine_idle', Math.sqrt(idleWeight) * 0.42 * load, 0.92 + rpm * 1.3);
-        setLoop('engine_mid', Math.sqrt(midWeight) * 0.5 * load, 0.62 + rpm * 0.9);
-        setLoop('engine_high', Math.sqrt(highWeight) * 0.46 * load, 0.52 + rpm * 0.62);
+        setLoop('engine_idle', Math.sqrt(idleWeight) * 0.42 * load, (0.92 + rpm * 1.3) * pitch);
+        setLoop('engine_mid', Math.sqrt(midWeight) * 0.5 * load, (0.62 + rpm * 0.9) * pitch);
+        setLoop('engine_high', Math.sqrt(highWeight) * 0.46 * load, (0.52 + rpm * 0.62) * pitch);
         engineFilter.frequency.setTargetAtTime(1500 + sim.throttle * 5200 + rpm * 4200, context.currentTime, 0.08);
 
-        const speedRatio = clamp01(kmh / 250);
+        const speedRatio = onFoot ? 0 : clamp01(kmh / 250);
         setLoop('wind', Math.pow(speedRatio, 1.5) * 0.55, 0.8 + speedRatio * 0.5);
-        setLoop('tire_wet', clamp01(kmh / 110) * 0.22, 0.75 + speedRatio * 0.5);
+        setLoop('tire_wet', onFoot ? 0 : clamp01(kmh / 110) * 0.22, 0.75 + speedRatio * 0.5);
         setLoop('city_ambience', 0.16 - speedRatio * 0.09, 1);
         setLoop('scrape', angleRatio > 0.93 && kmh > 10 ? 0.4 : 0, 0.9 + speedRatio * 0.3);
 

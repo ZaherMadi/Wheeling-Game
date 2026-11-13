@@ -180,6 +180,8 @@
     "go_beep",
     "multiplier_up",
     "new_record",
+    "boost",
+    "footsteps",
     "start_1",
     "start_2",
     "wheelie_1",
@@ -397,6 +399,8 @@
     "ens_periodic_1": "0406716a5a99e2483544b219568aa472868c1d0f7fe70ea37633dcd380926820",
     "ens_periodic_2": "e95d2fef4c3727295b6277ae863356664e7c689cce27149bcc1551a8267f6356",
     "ens_periodic_3": "fef4d698ec68b5e165e8ad05f3cb78c8f79e3a26dc69ae6508afeb2890b9cbb3",
-    "ens_periodic_4": "3b5085d1f1239889621d65f7a1ee368d769315cdb236a1fe84d99da97cc188a4"
+    "ens_periodic_4": "3b5085d1f1239889621d65f7a1ee368d769315cdb236a1fe84d99da97cc188a4",
+    "boost": "2158ee0d0e66702d7f6120c9c3646051f21df33e34a21913f1f467740f06e4c0",
+    "footsteps": "37182aa277ade0b66b11af1b60b3ed7f36daec5d367dac73e774716c8e718ee4"
   }
 }

@@ -261,11 +261,19 @@ function decorateControls() {
         // Shown by the game when tricks become available.
         analog.insertAdjacentHTML('beforeend', '<button class="action-btn ui-pad ui-pad--trick" id="analog-trick" hidden></button>');
         control($('analog-trick'), 'trick', 'FIGURE');
+        analog.insertAdjacentHTML('beforeend', '<button class="action-btn ui-pad" id="analog-boost"></button>' +
+            '<button class="action-btn ui-pad" id="analog-jump"></button><button class="action-btn ui-pad" id="analog-run"></button>');
+        control($('analog-boost'), 'throttle', 'BOOST');
+        $('analog-boost').insertAdjacentHTML('beforeend', '<span class="ui-pad__badge"></span>');
+        control($('analog-jump'), 'wheelie', 'SAUTER');
+        control($('analog-run'), 'user', 'COURIR');
         // Free roam: get off, walk to a vehicle, get in.
         analog.insertAdjacentHTML('beforeend', '<button class="action-btn ui-pad" id="analog-action" hidden></button>');
         control($('analog-action'), 'user', 'DESCENDRE');
     }
-    for (const id of ['analog-gas', 'analog-brake', 'analog-wheelie', 'analog-trick', 'analog-action']) pressFeedback($(id));
+    for (const id of ['analog-gas', 'analog-brake', 'analog-wheelie', 'analog-trick', 'analog-action', 'analog-boost', 'analog-jump', 'analog-run']) {
+        pressFeedback($(id));
+    }
     const arrows = { 'btn-left': ['back', ''], 'btn-right': ['chevron', ''], 'btn-up': ['throttle', 'GAZ'], 'btn-down': ['brake', 'FREIN'], 'btn-wheelie': ['wheelie', 'WHEELIE'] };
     for (const [id, [name, label]] of Object.entries(arrows)) {
         control($(id), name, label);
@@ -305,10 +313,45 @@ function installToasts() {
 
 // Free roam prompt: what the action (G / pad) does here.
 function installPrompt() {
-    const chip = document.createElement('div');
+    const chip = document.createElement('button');
+    chip.type = 'button';
     chip.id = 'ui-prompt';
     chip.hidden = true;
     document.getElementById('ui-layer')?.append(chip);
+    // Tapping the prompt does the same as the action pad.
+    chip.addEventListener('pointerdown', (event) => {
+        event.preventDefault();
+        document.dispatchEvent(new CustomEvent('wheelie:action'));
+    });
+    // Pads follow the player: on the bike, on foot, in a car.
+    document.addEventListener('wheelie:controls', (event) => {
+        const mode = event.detail?.mode || 'bike';
+        document.body.classList.toggle('ui-on-foot', mode === 'walk');
+        document.body.classList.toggle('ui-in-car', mode === 'car');
+    });
+    // Boost gauge: charges in competitive, recharge time in free roam.
+    const gauge = document.createElement('div');
+    gauge.id = 'ui-boost';
+    gauge.hidden = true;
+    document.getElementById('ui-layer')?.append(gauge);
+    document.addEventListener('wheelie:boost', (event) => {
+        const d = event.detail || {};
+        const pad = $('analog-boost');
+        const badge = pad?.querySelector('.ui-pad__badge');
+        let text;
+        if (d.mode === 'free') text = d.active ? 'BOOST !' : d.ready ? 'BOOST PRÊT' : `BOOST ${d.wait}s`;
+        else text = d.active ? 'BOOST !' : `BOOST ×${d.charges}`;
+        const show = d.mode === 'free' ? !document.body.classList.contains('ui-on-foot') : (d.charges > 0 || d.active);
+        gauge.hidden = !show;
+        gauge.innerHTML = `<kbd>B</kbd><span>${text}</span>`;
+        gauge.classList.toggle('is-active', !!d.active);
+        gauge.classList.toggle('is-ready', !!d.ready && !d.active);
+        if (pad) {
+            pad.classList.toggle('is-ready', !!d.ready || !!d.active);
+            pad.classList.toggle('is-empty', !d.ready && !d.active);
+            if (badge) badge.textContent = d.mode === 'free' ? (d.ready ? '' : d.wait) : (d.charges || '');
+        }
+    });
     document.addEventListener('wheelie:prompt', (event) => {
         const { text, available } = event.detail || {};
         const pad = $('analog-action');

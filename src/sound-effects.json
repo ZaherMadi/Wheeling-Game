@@ -130,5 +130,17 @@
     "durationSeconds": 2,
     "loop": false,
     "text": "A short triumphant arcade victory sting for a new high score, bright ascending synth notes ending on a sparkle, no voice."
+  },
+  {
+    "id": "boost",
+    "text": "Sport motorcycle nitrous boost: sharp exhaust flame burst with a deep roaring acceleration, close up, no music",
+    "durationSeconds": 2.4,
+    "loop": false
+  },
+  {
+    "id": "footsteps",
+    "text": "Footsteps of one person walking steadily on a wet city pavement, sneakers, close up, no voices, no music",
+    "durationSeconds": 4,
+    "loop": true
   }
 ]
