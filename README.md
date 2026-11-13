@@ -45,7 +45,7 @@ in `src/v2/` and is only downloaded when V2 is selected:
 | `src/v2/cityatlas.js`, `citytextures.js` | Painted atlases: walls, windows, shops, signs, prints, decals, foliage |
 | `src/v2/rider.js` | Bike and rider rig (51Wheling livery), IK, body language, suspension, crash |
 | `src/v2/fx.js` | Spray, smoke and spark particles |
-| `src/v2/hud.css` | HUD skin (scoped to `body.v2`) |
+| `src/ui/ui.js`, `ui.css`, `icons.js` | V2 racing interface: menu, panels, HUD, touch controls, SVG icons |
 
 V2 only changes what is drawn and heard. Do not change the physics constants
 in `main.js` without updating the server replay (`wheelie_replay.py` in the

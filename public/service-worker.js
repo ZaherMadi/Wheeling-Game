@@ -1,9 +1,9 @@
-const CACHE_NAME = 'wheelie-king-v4';
+const CACHE_NAME = 'wheelie-king-v5';
 const APP_SHELL = [
     '/',
     '/index.html',
     '/manifest.json',
-    '/Logo51.png',
+    '/icon-192.png',
     '/wheelie_rider_51.gltf',
     '/graffiti.json',
     '/audio/manifest.json'

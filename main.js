@@ -843,6 +843,8 @@ async function loadGraffiti() {
 }
 
 function init() {
+    // The classic version keeps its original badge.
+    if (!IS_V2) document.getElementById('menu-logo')?.setAttribute('src', '/Logo51.png');
     if (IS_V2) {
         v2 = createRealisticVersion({ scene, renderer, camera, mobile: isMobile() });
         v2.world.sharedMaterials.forEach((material) => sharedMaterials.add(material));

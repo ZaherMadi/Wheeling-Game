@@ -1,18 +1,36 @@
 {
-    "name": "Wheelie King",
-    "short_name": "Wheelie King",
-    "description": "Urban motorcycle wheelie game - Banlieue Edition",
+    "name": "51Wheling",
+    "short_name": "51Wheling",
+    "description": "Wheelies in the city: ride, lift the front, beat the leaderboard.",
     "start_url": "/",
     "display": "fullscreen",
     "orientation": "landscape",
-    "background_color": "#0a0a2e",
-    "theme_color": "#ffaa00",
+    "background_color": "#0b0c0f",
+    "theme_color": "#0b0c0f",
     "icons": [
         {
-            "src": "/Logo51.png",
+            "src": "/icon-192.png",
+            "sizes": "192x192",
+            "type": "image/png",
+            "purpose": "any"
+        },
+        {
+            "src": "/icon-512.png",
             "sizes": "512x512",
             "type": "image/png",
-            "purpose": "any maskable"
+            "purpose": "any"
+        },
+        {
+            "src": "/icon-maskable-512.png",
+            "sizes": "512x512",
+            "type": "image/png",
+            "purpose": "maskable"
+        },
+        {
+            "src": "/icon.svg",
+            "sizes": "any",
+            "type": "image/svg+xml",
+            "purpose": "any"
         }
     ],
     "categories": [

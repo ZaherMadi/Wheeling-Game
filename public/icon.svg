@@ -1,0 +1,24 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64">
+  <defs>
+    <linearGradient id="bg" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#2a2e37"/>
+      <stop offset="1" stop-color="#0b0c0f"/>
+    </linearGradient>
+    <linearGradient id="digits" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#ffe066"/>
+      <stop offset="0.55" stop-color="#f6c416"/>
+      <stop offset="1" stop-color="#d99a06"/>
+    </linearGradient>
+  </defs>
+  <rect x="2" y="2" width="60" height="60" rx="14" fill="url(#bg)"/>
+  <rect x="3" y="3" width="58" height="58" rx="13" fill="none" stroke="#f6c416" stroke-opacity="0.55" stroke-width="2"/>
+  <g stroke="#f6c416" stroke-width="2.6" stroke-linecap="round" opacity="0.9">
+    <path d="M8 26h7M6 33h8M9 40h6"/>
+  </g>
+  <g transform="translate(17 17) skewX(-12)">
+    <path fill="url(#digits)" stroke="#0b0c0f" stroke-width="1.6" stroke-linejoin="round"
+      d="M3 0H23V6.5H10V11.5H19.5C22.5 11.5 24 13 24 16V25.5C24 28.5 22.5 30 19.5 30H2V23.5H17V18H3Z"/>
+    <path fill="url(#digits)" stroke="#0b0c0f" stroke-width="1.6" stroke-linejoin="round"
+      d="M28 5L35 0H41V30H34V8.5L28 11.5Z"/>
+  </g>
+</svg>

@@ -5,7 +5,7 @@ import * as THREE from 'three';
 import { createWorld } from './world.js';
 import { createRider } from './rider.js';
 import { createFx } from './fx.js';
-import './hud.css';
+import { installRacingUI } from '../ui/ui.js';
 
 const DAY_CYCLE_SECONDS = 600;
 
@@ -13,6 +13,7 @@ export function createRealisticVersion({ scene, renderer, camera, mobile }) {
     renderer.toneMapping = THREE.NeutralToneMapping;
     renderer.toneMappingExposure = 1.05;
     document.body.classList.add('v2');
+    installRacingUI();
     const menuLogo = document.getElementById('menu-logo');
     if (menuLogo) {
         menuLogo.src = `${import.meta.env.BASE_URL}logo-51wheling.webp`;
