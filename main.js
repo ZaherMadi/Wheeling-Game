@@ -1420,6 +1420,10 @@ function animate(timestamp = performance.now()) {
 
         if (state.skidding) {
             recordRankedInput(0x08);
+            // Every recorded skid frame slows the bike, including the last
+            // one: the server replay (wheelie_replay.py) does the same.
+            state.speed *= 0.98;
+            bikeGroup.position.z -= state.speed;
             state.skidTimer -= dt;
             if (state.skidTimer <= 0) {
                 state.skidding = false;
@@ -1430,8 +1434,6 @@ function animate(timestamp = performance.now()) {
                     createSmokeParticle();
                 }
                 bikeGroup.rotation.z = (Math.PI / 8) + Math.sin(Date.now() * 0.02) * 0.1;
-                state.speed *= 0.98;
-                bikeGroup.position.z -= state.speed;
             }
         } else if (GAME_SETTINGS.gameMode === 'free') {
             let moveX = 0;
