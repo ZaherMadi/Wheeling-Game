@@ -882,7 +882,11 @@ function init() {
     setSfxEnabled(GAME_SETTINGS.sfxEnabled);
     updateLanguageButtons();
     applyGraphicsQuality();
-    getAudioManifest();
+    getAudioManifest().then(() => {
+        // After the first frame: decoding competes with building the city.
+        const idle = window.requestIdleCallback || ((callback) => setTimeout(callback, 400));
+        idle(() => warmUpVoices());
+    });
     updateVersionUI();
     if (IS_V2) {
         // Menu backdrop: a three-quarter view of the rider on the wet street.
@@ -1011,7 +1015,7 @@ async function startGame() {
     let runToken = null;
     if (GAME_SETTINGS.gameMode === 'linear') {
         try {
-            runToken = await createWheelieRun();
+            runToken = await takeWheelieRun();
         } catch (error) {
             console.error('Classement indisponible:', error);
         }
@@ -1310,6 +1314,8 @@ async function gameOver() {
     if (finalScore) finalScore.innerText = currentScore;
     if (bestScore) bestScore.innerText = highScore;
     if (gameOverScreen) gameOverScreen.classList.add('active');
+    // "Rejouer" is the likely next tap: open the next ranked session now.
+    if (GAME_SETTINGS.gameMode === 'linear') prefetchWheelieRun();
     if (completedRankedRun) {
         setRankingStatus('');
     } else if (GAME_SETTINGS.gameMode === 'free') {
@@ -2089,17 +2095,11 @@ const GAME_SETTINGS = {
     language: localStorage.getItem('wheelie_language') === 'en' ? 'en' : 'fr'
 };
 
-const voiceAudio = new Audio();
-voiceAudio.preload = 'none';
-voiceAudio.volume = 0.8;
 let audioManifestPromise;
 let voiceAssetsAvailable = false;
 let sfxAssetsAvailable = false;
 const audio = createAudioEngine({ effects: soundEffects, getManifest: () => getAudioManifest() });
 audio.setEnabled(GAME_SETTINGS.sfxEnabled);
-voiceAudio.addEventListener('playing', () => audio.duck(true));
-voiceAudio.addEventListener('pause', () => audio.duck(false));
-voiceAudio.addEventListener('ended', () => audio.duck(false));
 // The classic version keeps its original commentary; V2 uses the rider's voice.
 const voiceGroup = () => (IS_V2 ? GAME_SETTINGS.language : 'classic');
 let lastVoiceAt = -Infinity;
@@ -2146,23 +2146,21 @@ function speak(eventName, { force = false, allowWhenStopped = false } = {}) {
     getAudioManifest().then(({ available, hashes }) => {
         if (!GAME_SETTINGS.voiceEnabled || (!state.isPlaying && !allowWhenStopped)) return;
         const choices = lines.filter((line) => available.has(line.id));
-        if (choices.length === 0 || (!force && !voiceAudio.paused)) return;
-        if (force) voiceAudio.pause();
-
+        if (choices.length === 0 || (!force && audio.speaking)) return;
+        void hashes;
         const line = choices[Math.floor(Math.random() * choices.length)];
-        const version = hashes[line.id] ? `?v=${hashes[line.id]}` : '';
-        voiceAudio.src = `/audio/${line.id}.mp3${version}`;
-        voiceAudio.currentTime = 0;
-        voiceAudio.play().catch((error) => {
-            // A newer line cutting this one off is expected, not a failure.
-            if (error.name !== 'AbortError') console.warn(`Could not play voice line "${line.id}":`, error);
-        });
+        audio.speak(line.id, { volume: 0.9 });
     });
 }
 
 function stopVoice() {
-    voiceAudio.pause();
-    voiceAudio.currentTime = 0;
+    audio.stopVoice();
+}
+
+// Decode the voice lines of the current group ahead of the first ride.
+function warmUpVoices() {
+    const ids = Object.values(voiceLineGroups[voiceGroup()] || {}).flat().map((line) => line.id);
+    audio.warmUp(GAME_SETTINGS.voiceEnabled ? ids : []);
 }
 
 function setVoiceEnabled(enabled) {
@@ -2207,6 +2205,7 @@ function setAudioLanguage(language) {
     GAME_SETTINGS.language = language;
     localStorage.setItem('wheelie_language', language);
     updateLanguageButtons();
+    warmUpVoices();
 }
 
 function updateLanguageButtons() {
@@ -2614,6 +2613,7 @@ document.getElementById('quality-low').addEventListener('click', () => {
 });
 
 document.getElementById('start-btn').addEventListener('click', () => {
+    prefetchWheelieRun();
     document.getElementById('start-screen').classList.remove('active');
     document.getElementById('mode-select-screen').classList.add('active');
 });
@@ -2696,6 +2696,24 @@ async function createWheelieRun() {
     const data = await response.json();
     if (!data.run_token) throw new Error('L’API n’a pas fourni de jeton de partie');
     return data.run_token;
+}
+
+// A ranked session is opened ahead of the ride (the API can take a couple of
+// seconds to wake up) and kept for the next competitive start.
+let pendingRun = null;
+function prefetchWheelieRun() {
+    if (pendingRun && Date.now() - pendingRun.at < 20 * 60 * 1000) return;
+    const promise = createWheelieRun();
+    promise.catch(() => {
+        if (pendingRun && pendingRun.promise === promise) pendingRun = null;
+    });
+    pendingRun = { promise, at: Date.now() };
+}
+
+function takeWheelieRun() {
+    const pending = pendingRun && Date.now() - pendingRun.at < 20 * 60 * 1000 ? pendingRun : null;
+    pendingRun = null;
+    return pending ? pending.promise.catch(() => createWheelieRun()) : createWheelieRun();
 }
 
 function encodeInputLog(inputLog) {

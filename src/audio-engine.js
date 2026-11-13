@@ -7,9 +7,32 @@ const LOOP_IDS = ['engine_idle', 'engine_mid', 'engine_high', 'wind', 'tire_wet'
 
 const clamp01 = (value) => Math.max(0, Math.min(1, value));
 
+// Clips are decoded on an offline context: decoding needs no user gesture,
+// so every sound is ready before the first ride. The buffers then play on
+// the live context, which can only start after a tap or a key press.
+let decoder = null;
+function getDecoder() {
+    if (!decoder) {
+        const Offline = window.OfflineAudioContext || window.webkitOfflineAudioContext;
+        decoder = Offline ? new Offline(2, 1, 44100) : null;
+    }
+    return decoder;
+}
+
+function createBuffer(channels, length, sampleRate) {
+    if (typeof AudioBuffer === 'function') {
+        try {
+            return new AudioBuffer({ numberOfChannels: channels, length, sampleRate });
+        } catch {
+            // Old Safari: fall through to the decoder context.
+        }
+    }
+    return getDecoder().createBuffer(channels, length, sampleRate);
+}
+
 // MP3 encoding pads both ends of a clip with silence, which makes a looped
 // buffer click. Trim the padding and fold the tail into the head.
-function makeSeamless(context, buffer) {
+function makeSeamless(buffer) {
     const threshold = 0.002;
     const length = buffer.length;
     let start = length;
@@ -28,7 +51,7 @@ function makeSeamless(context, buffer) {
     if (usable < fade * 4) return buffer;
 
     const outLength = usable - fade;
-    const out = context.createBuffer(buffer.numberOfChannels, outLength, buffer.sampleRate);
+    const out = createBuffer(buffer.numberOfChannels, outLength, buffer.sampleRate);
     let sumSquares = 0;
     let peak = 0;
     for (let channel = 0; channel < buffer.numberOfChannels; channel++) {
@@ -65,8 +88,11 @@ export function createAudioEngine({ effects, getManifest }) {
     const loops = new Map();
     let context = null;
     let master = null;
+    let output = null;
     let engineBus = null;
     let engineFilter = null;
+    let voiceBus = null;
+    let voice = null;
     let enabled = true;
     let running = false;
 
@@ -102,6 +128,11 @@ export function createAudioEngine({ effects, getManifest }) {
             master.gain.value = enabled ? 1 : 0;
             master.connect(limiter);
             limiter.connect(context.destination);
+            output = limiter;
+            // The voice has its own switch: it bypasses the effects master.
+            voiceBus = context.createGain();
+            voiceBus.gain.value = 0.9;
+            voiceBus.connect(output);
 
             engineFilter = context.createBiquadFilter();
             engineFilter.type = 'lowpass';
@@ -115,17 +146,26 @@ export function createAudioEngine({ effects, getManifest }) {
         return context;
     }
 
+    function decode(data) {
+        const target = getDecoder() || getContext();
+        if (!target) return Promise.resolve(null);
+        // Old Safari only has the callback form.
+        return new Promise((resolve, reject) => {
+            const result = target.decodeAudioData(data, resolve, reject);
+            if (result && result.then) result.then(resolve, reject);
+        });
+    }
+
     function load(id) {
         if (buffers.has(id)) return buffers.get(id);
         const promise = getManifest().then(async ({ available, hashes }) => {
             if (!available.has(id)) return null;
-            const audioContext = getContext();
-            if (!audioContext) return null;
             const version = hashes[id] ? `?v=${hashes[id]}` : '';
             const response = await fetch(`/audio/${id}.mp3${version}`);
             if (!response.ok) throw new Error(`HTTP ${response.status}`);
-            const decoded = await audioContext.decodeAudioData(await response.arrayBuffer());
-            return loopIds.has(id) ? makeSeamless(audioContext, decoded) : decoded;
+            const decoded = await decode(await response.arrayBuffer());
+            if (!decoded) return null;
+            return loopIds.has(id) ? makeSeamless(decoded) : decoded;
         }).catch((error) => {
             console.warn(`Could not load sound effect "${id}":`, error);
             buffers.delete(id);
@@ -135,14 +175,41 @@ export function createAudioEngine({ effects, getManifest }) {
         return promise;
     }
 
-    function prepare() {
-        if (!enabled) return;
+    // Starts the live context. Browsers only allow it during a user gesture;
+    // iOS also wants a sound started in that same gesture.
+    let primed = false;
+    function unlock() {
         const audioContext = getContext();
         if (!audioContext) return;
         if (audioContext.state !== 'running') {
             audioContext.resume().catch((error) => console.warn('Could not enable game audio:', error));
         }
+        if (!primed) {
+            primed = true;
+            const silence = audioContext.createBufferSource();
+            silence.buffer = audioContext.createBuffer(1, 1, audioContext.sampleRate);
+            silence.connect(audioContext.destination);
+            silence.start(0);
+        }
+    }
+    const GESTURES = ['pointerdown', 'touchend', 'keydown', 'click'];
+    const onGesture = () => {
+        unlock();
+        if (context && context.state === 'running') {
+            GESTURES.forEach((type) => window.removeEventListener(type, onGesture, true));
+        }
+    };
+    GESTURES.forEach((type) => window.addEventListener(type, onGesture, true));
+
+    // Downloads and decodes clips ahead of time (no gesture needed).
+    function warmUp(extraIds = []) {
         effects.forEach(({ id }) => load(id));
+        extraIds.forEach((id) => load(id));
+    }
+
+    function prepare() {
+        unlock();
+        warmUp();
     }
 
     function play(id, { volume = 1, rate = 1, pan = 0, delay = 0 } = {}) {
@@ -204,6 +271,7 @@ export function createAudioEngine({ effects, getManifest }) {
     function startRun() {
         if (!enabled || running) return;
         if (!getContext()) return;
+        if (context.state !== 'running') context.resume().catch(() => {});
         running = true;
         Object.assign(sim, {
             gear: 0, rpm: 0.12, shiftCut: 0, throttle: 0, wasThrottle: false, wasBraking: false,
@@ -315,18 +383,68 @@ export function createAudioEngine({ effects, getManifest }) {
         engineBus.gain.setTargetAtTime(active ? 0.55 : 1, context.currentTime, 0.12);
     }
 
+    // Rider's voice: one line at a time, the engine dips underneath.
+    function speak(id, { volume = 1 } = {}) {
+        const audioContext = getContext();
+        if (!audioContext) return Promise.resolve(false);
+        if (audioContext.state === 'suspended') audioContext.resume().catch(() => {});
+        if (voice && voice.source) {
+            try {
+                voice.source.stop();
+            } catch {
+                // Already finished.
+            }
+        }
+        const request = {};
+        voice = { request, source: null };
+        return load(id).then((buffer) => {
+            if (!buffer || !voice || voice.request !== request) return false;
+            const source = audioContext.createBufferSource();
+            const gain = audioContext.createGain();
+            source.buffer = buffer;
+            gain.gain.value = volume;
+            source.connect(gain);
+            gain.connect(voiceBus);
+            source.onended = () => {
+                gain.disconnect();
+                if (voice && voice.source === source) {
+                    voice = null;
+                    duck(false);
+                }
+            };
+            voice.source = source;
+            duck(true);
+            source.start();
+            return true;
+        });
+    }
+
+    function stopVoice() {
+        if (voice && voice.source) {
+            try {
+                voice.source.stop();
+            } catch {
+                // Already finished.
+            }
+        }
+        voice = null;
+        duck(false);
+    }
+
     // Resolves with what actually decoded, for diagnostics.
     async function status() {
         const loaded = [];
         for (const [id, promise] of buffers) {
             if (await promise) loaded.push(id);
         }
-        return { context: context ? context.state : 'none', loaded, activeLoops: [...loops.keys()] };
+        const activeLoops = [...loops].filter(([, loop]) => loop.source).map(([id]) => id);
+        return { context: context ? context.state : 'none', loaded, activeLoops };
     }
 
     return {
-        prepare, play, startRun, stopRun, update, setEnabled, duck, status,
+        prepare, warmUp, unlock, play, speak, stopVoice, startRun, stopRun, update, setEnabled, duck, status,
         get running() { return running; },
+        get speaking() { return Boolean(voice); },
         get gear() { return sim.gear + 1; },
         get rpm() { return sim.rpm; }
     };
