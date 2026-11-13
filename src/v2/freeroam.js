@@ -35,6 +35,18 @@ export function addPoints(points) {
     }
 }
 
+// The server keeps each player's total: never show less than that.
+export function syncPoints(serverTotal) {
+    const total = Math.floor(Number(serverTotal) || 0);
+    if (total <= totalPoints()) return;
+    try {
+        localStorage.setItem(POINTS_KEY, String(total));
+    } catch {
+        return;
+    }
+    document.dispatchEvent(new CustomEvent('wheelie:points'));
+}
+
 export function createFreeRoam({ scene, world, rider, audio, onTurn }) {
     const traffic = createTraffic({
         scene, world,

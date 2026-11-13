@@ -104,6 +104,7 @@ function decorateModeSelect() {
     };
     refresh();
     $('start-btn')?.addEventListener('click', refresh);
+    document.addEventListener('wheelie:points', refresh);
 }
 
 function decorateRiderScreen() {

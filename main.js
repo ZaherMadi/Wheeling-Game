@@ -3,7 +3,7 @@ import './src/style.css';
 import voiceLineGroups from './src/voice-lines.json';
 import soundEffects from './src/sound-effects.json';
 import { createAudioEngine } from './src/audio-engine.js';
-import { addPoints } from './src/v2/freeroam.js';
+import { addPoints, syncPoints } from './src/v2/freeroam.js';
 
 // Two versions share the same simulation, scoring and ranked replay:
 // 'v2' (realistic city, new rider) and 'classic' (the original V1 look).
@@ -3256,8 +3256,21 @@ document.getElementById('quality-low').addEventListener('click', () => {
     applyGraphicsQuality();
 });
 
+// Cumulative points shown on the mode screen start from the player's
+// total on the server (read only; nothing is sent).
+function syncServerPoints() {
+    const nickname = localStorage.getItem('wheelie_nickname');
+    if (!nickname || !IS_V2) return;
+    getPlayerStats(nickname).then((stats) => {
+        if (stats && typeof stats.total_score === 'number') syncPoints(stats.total_score);
+    });
+}
+// Deferred: the API constants are declared further down this module.
+setTimeout(syncServerPoints, 1500);
+
 document.getElementById('start-btn').addEventListener('click', () => {
     prefetchWheelieRun();
+    syncServerPoints();
     document.getElementById('start-screen').classList.remove('active');
     document.getElementById('mode-select-screen').classList.add('active');
 });
