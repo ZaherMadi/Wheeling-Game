@@ -165,3 +165,16 @@ body.v2 h1 {
   font-style: italic;
   text-shadow: 0 3px 0 #6b3d00, 0 0 24px rgba(255, 190, 40, 0.45);
 }
+
+/* The 51Wheling logo replaces the old badge and title in the menu. */
+body.v2 #menu-logo {
+  width: min(440px, 72vw) !important;
+  max-height: 34vh;
+  object-fit: contain;
+  margin-bottom: 4px !important;
+  filter: drop-shadow(0 6px 18px rgba(0, 0, 0, 0.55)) drop-shadow(0 0 14px rgba(246, 196, 22, 0.35)) !important;
+}
+
+body.v2 #menu-title {
+  display: none;
+}

@@ -36,8 +36,14 @@ in `src/v2/` and is only downloaded when V2 is selected:
 | File | Role |
 | --- | --- |
 | `src/v2/textures.js` | Procedural textures (sky, wet road, facades, shops) |
-| `src/v2/world.js` | City blocks (merged + pooled), lights, obstacles |
-| `src/v2/rider.js` | Bike and rider rig, IK, suspension, crash |
+| `src/v2/world.js` | Block variants (themes, side streets), materials, lights, LOD, pool, obstacles |
+| `src/v2/geometry.js` | Batching: merged vertex-coloured meshes, two levels of detail |
+| `src/v2/buildings.js` | Facades: windows, balconies, cornices, mansards, curtain walls, shop fronts |
+| `src/v2/street.js` | Kerbs, parking bays, crossings, lamps, lights, furniture, terraces, baked shadows |
+| `src/v2/vegetation.js` | Trees (skeleton + leaf cards), shrubs, hedges, flowers |
+| `src/v2/cars.js` | Parked cars extruded from side profiles |
+| `src/v2/cityatlas.js`, `citytextures.js` | Painted atlases: walls, windows, shops, signs, prints, decals, foliage |
+| `src/v2/rider.js` | Bike and rider rig (51Wheling livery), IK, body language, suspension, crash |
 | `src/v2/fx.js` | Spray, smoke and spark particles |
 | `src/v2/hud.css` | HUD skin (scoped to `body.v2`) |
 

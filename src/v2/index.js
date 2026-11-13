@@ -13,6 +13,11 @@ export function createRealisticVersion({ scene, renderer, camera, mobile }) {
     renderer.toneMapping = THREE.NeutralToneMapping;
     renderer.toneMappingExposure = 1.05;
     document.body.classList.add('v2');
+    const menuLogo = document.getElementById('menu-logo');
+    if (menuLogo) {
+        menuLogo.src = `${import.meta.env.BASE_URL}logo-51wheling.webp`;
+        menuLogo.alt = '51Wheling';
+    }
 
     const world = createWorld({ scene, renderer, mobile });
     const rider = createRider({ scene });

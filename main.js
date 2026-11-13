@@ -2917,6 +2917,44 @@ document.getElementById('back-from-leaderboard')?.addEventListener('click', () =
 displayNickname();
 
 init();
+releaseSplash();
+
+// The intro animation plays while the city is generated. It leaves once the
+// game is ready and the animation has finished, or on a tap once ready;
+// later visits in the same session do not wait for the end.
+function releaseSplash() {
+    const splash = document.getElementById('splash');
+    const video = document.getElementById('splash-video');
+    if (!splash) return;
+    let seen = false;
+    try {
+        seen = sessionStorage.getItem('wheelie_splash_seen') === '1';
+        sessionStorage.setItem('wheelie_splash_seen', '1');
+    } catch {
+        // Storage can be unavailable (private mode): just play it.
+    }
+    let done = seen || !video || video.ended || video.error;
+    const close = () => {
+        if (splash.classList.contains('hidden')) return;
+        splash.classList.add('hidden');
+        setTimeout(() => {
+            if (video) video.pause();
+            splash.remove();
+        }, 800);
+    };
+    splash.classList.add('ready');
+    if (done) {
+        close();
+        return;
+    }
+    video.addEventListener('ended', close);
+    video.addEventListener('error', close);
+    splash.addEventListener('pointerdown', close);
+    // Autoplay can be refused (power saving): never keep the player waiting.
+    const playing = video.play();
+    if (playing && playing.catch) playing.catch(close);
+    setTimeout(close, Math.max(1500, ((video.duration || 10) - video.currentTime) * 1000 + 500));
+}
 
 // Development only: lets tests and the console inspect a running game.
 if (import.meta.env.DEV) {
