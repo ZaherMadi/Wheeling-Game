@@ -6,11 +6,12 @@ import { createWorld } from './world.js';
 import { createRider } from './rider.js';
 import { createFx } from './fx.js';
 import { loadLivery, mountLiveryPanel } from './livery.js';
+import { createFreeRoam } from './freeroam.js';
 import { installRacingUI } from '../ui/ui.js';
 
 const DAY_CYCLE_SECONDS = 600;
 
-export function createRealisticVersion({ scene, renderer, camera, mobile }) {
+export function createRealisticVersion({ scene, renderer, camera, mobile, audio, onTurn }) {
     renderer.toneMapping = THREE.NeutralToneMapping;
     renderer.toneMappingExposure = 1.05;
     document.body.classList.add('v2');
@@ -30,6 +31,7 @@ export function createRealisticVersion({ scene, renderer, camera, mobile }) {
     if (seed !== null) world.reseed(seed);
     const rider = createRider({ scene });
     const fx = createFx({ scene, mobile });
+    const roam = createFreeRoam({ scene, world, rider, audio, onTurn });
     rider.setLivery(loadLivery());
     mountLiveryPanel(document.getElementById('rider-options'), (livery) => {
         rider.setLivery(livery);
@@ -74,6 +76,7 @@ export function createRealisticVersion({ scene, renderer, camera, mobile }) {
 
     function reset() {
         if (seed !== null) world.reseed(seed);
+        roam.reset();
         rider.reset();
         fx.clear();
         lastPosition.copy(rider.bikeGroup.position);
@@ -106,6 +109,8 @@ export function createRealisticVersion({ scene, renderer, camera, mobile }) {
             if (rider.slideSpeed() > 3 && Math.random() < 0.7) {
                 fx.spark(point.copy(bike.position).setY(0.08), bikeVelocity, highQuality ? 3 : 1);
             }
+        } else if (roam.mode !== 'bike') {
+            // On foot or in a car: the rider is driven by free roam.
         } else {
             rider.update(dt, snapshot);
             const airborne = snapshot.angleRatio > 0.015;
@@ -138,7 +143,9 @@ export function createRealisticVersion({ scene, renderer, camera, mobile }) {
         camera.rotateZ(rider.crashing ? 0 : cameraRoll);
         camera.position.y -= cameraKick * 0.5;
 
-        world.update(camera, bike.position);
+        const roaming = snapshot.playing && !snapshot.linear;
+        if (roaming) roam.update(dt, bike);
+        world.update(camera, roaming ? roam.focus : bike.position);
         renderer.getDrawingBufferSize(viewport);
         fx.update(dt, camera, viewport.y);
     }
@@ -151,7 +158,7 @@ export function createRealisticVersion({ scene, renderer, camera, mobile }) {
     }
 
     return {
-        world, rider, fx, frame, reset, setQuality,
+        world, rider, fx, roam, frame, reset, setQuality,
         get resolutionScale() { return resolution.scale; },
         smoke: () => fx.smoke(rider.bikeGroup.position, bikeVelocity),
         spark: () => fx.spark(point.copy(rider.bikeGroup.position).setY(0.08), bikeVelocity, 2)

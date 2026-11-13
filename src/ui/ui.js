@@ -252,8 +252,11 @@ function decorateControls() {
         // Shown by the game when tricks become available.
         analog.insertAdjacentHTML('beforeend', '<button class="action-btn ui-pad ui-pad--trick" id="analog-trick" hidden></button>');
         control($('analog-trick'), 'trick', 'FIGURE');
+        // Free roam: get off, walk to a vehicle, get in.
+        analog.insertAdjacentHTML('beforeend', '<button class="action-btn ui-pad" id="analog-action" hidden></button>');
+        control($('analog-action'), 'user', 'DESCENDRE');
     }
-    for (const id of ['analog-gas', 'analog-brake', 'analog-wheelie', 'analog-trick']) pressFeedback($(id));
+    for (const id of ['analog-gas', 'analog-brake', 'analog-wheelie', 'analog-trick', 'analog-action']) pressFeedback($(id));
     const arrows = { 'btn-left': ['back', ''], 'btn-right': ['chevron', ''], 'btn-up': ['throttle', 'GAZ'], 'btn-down': ['brake', 'FREIN'], 'btn-wheelie': ['wheelie', 'WHEELIE'] };
     for (const [id, [name, label]] of Object.entries(arrows)) {
         control($(id), name, label);
@@ -291,12 +294,33 @@ function installToasts() {
     });
 }
 
+// Free roam prompt: what the action (G / pad) does here.
+function installPrompt() {
+    const chip = document.createElement('div');
+    chip.id = 'ui-prompt';
+    chip.hidden = true;
+    document.getElementById('ui-layer')?.append(chip);
+    document.addEventListener('wheelie:prompt', (event) => {
+        const { text, available } = event.detail || {};
+        const pad = $('analog-action');
+        chip.hidden = !text;
+        chip.classList.toggle('is-locked', !available);
+        chip.innerHTML = text ? `${available ? '<kbd>G</kbd>' : ''}<span>${text}</span>` : '';
+        if (pad) {
+            pad.hidden = !text;
+            pad.classList.toggle('is-locked', !available);
+            const label = pad.querySelector('.ui-pad__label');
+            if (label && text) label.textContent = available ? text.split(/[ :]/)[0] : 'VERROUILLÉ';
+        }
+    });
+}
+
 export function installRacingUI() {
     installIcons();
     document.body.classList.add('ui-racing');
     // A styling problem must never stop the game: each part fails alone.
     for (const decorate of [decorateMenu, decorateModeSelect, decorateSettings, decorateLeaderboard,
-        decorateGameOver, decorateNickname, decorateHud, decorateControls, installToasts]) {
+        decorateGameOver, decorateNickname, decorateHud, decorateControls, installToasts, installPrompt]) {
         try {
             decorate();
         } catch (error) {

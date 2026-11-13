@@ -391,6 +391,7 @@ export function createRider({ scene }) {
             riderGroup.scale.set(1, 1, 1);
             riderGroup.quaternion.identity();
         }
+        riderGroup.visible = true;
         crash.active = false;
         Object.assign(pose, {
             lean: 0, steer: 0, torso: 0.42, dive: 0, bounce: 0, bounceVelocity: 0, stop: 1, skid: 0,
@@ -752,6 +753,59 @@ export function createRider({ scene }) {
         return hitBox;
     }
 
+    // --- On foot (free roam) ---------------------------------------------
+    // The rider gets off the bike and walks: stepping legs, swinging arms.
+    let walkPhase = 0;
+    function dismount(x, z, yaw) {
+        scene.attach(riderGroup);
+        riderGroup.scale.setScalar(SCALE);
+        riderGroup.rotation.set(0, yaw, 0);
+        riderGroup.position.set(x, 0, z);
+        riderGroup.visible = true;
+        walkPhase = 0;
+        updateWalk(0, x, z, yaw, 0);
+    }
+
+    function updateWalk(dt, x, z, yaw, speed) {
+        const stride = Math.min(1, speed / 0.08);
+        walkPhase += dt * (1.5 + stride * 5.5) * (stride > 0.05 ? 1 : 0);
+        const bob = Math.abs(Math.sin(walkPhase)) * 0.03 * stride;
+        riderGroup.position.set(x, 0, z);
+        riderGroup.rotation.set(0, yaw, 0);
+        pelvis.position.set(0, 0.94 + bob, 0);
+        pelvis.rotation.set(0.05 + stride * 0.05, Math.sin(walkPhase) * 0.1 * stride, 0);
+        head.rotation.set(-0.08, -Math.sin(walkPhase) * 0.06 * stride, 0);
+        riderGroup.updateMatrixWorld(true);
+        for (let i = 0; i < 2; i++) {
+            const side = i === 0 ? -1 : 1;
+            const phase = walkPhase + (i ? Math.PI : 0);
+            toRiderSpace(hips[i], root);
+            target.set(side * 0.11, 0.07 + Math.max(0, Math.sin(phase)) * 0.13 * stride, Math.cos(phase) * 0.3 * stride);
+            kneeHint.set(side * 0.1, 0, 1);
+            solveLimb(legs[i], kneeHint);
+            shoes[i].position.copy(target);
+            shoes[i].rotation.set(0, 0, 0);
+            toRiderSpace(shoulders[i], root);
+            target.set(side * 0.27, 0.8, -Math.cos(phase) * 0.22 * stride + 0.04);
+            elbowHint.set(side * 0.3, 0, -1);
+            solveLimb(arms[i], elbowHint);
+            hands[i].position.copy(target);
+            hands[i].rotation.set(0, 0, 0);
+        }
+    }
+
+    function mount() {
+        chassis.add(riderGroup);
+        riderGroup.position.set(0, 0, 0);
+        riderGroup.rotation.set(0, 0, 0);
+        riderGroup.scale.set(1, 1, 1);
+        riderGroup.visible = true;
+    }
+
+    function setRiderVisible(visible) {
+        riderGroup.visible = visible;
+    }
+
     // Rider customisation: number, hoodie, helmet and bike colours.
     const luminance = (color) => 0.2126 * color.r + 0.7152 * color.g + 0.0722 * color.b;
     function setLivery({ number = '51', hoodie = '#f6c416', helmet: helmetColor = '#0a0a0c', bike = '#f2c014' } = {}) {
@@ -774,7 +828,7 @@ export function createRider({ scene }) {
 
     reset();
     return {
-        setLivery,
+        setLivery, dismount, updateWalk, mount, setRiderVisible,
         bikeGroup, bikePivot, materials, update, reset, startCrash, updateCrash, slideSpeed, getHitBox,
         get crashing() { return crash.active; },
         get crashVariant() { return crash.variant; },

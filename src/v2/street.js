@@ -29,7 +29,6 @@ export function createStreetKit({ random, atlases, vegetation, cars }) {
     const pick = (list) => list[Math.floor(random() * list.length)];
     const chance = (p) => random() < p;
     const { prints, decals } = atlases;
-    const carModels = Object.values(cars);
 
     // Pavement and kerb ------------------------------------------------------
     function paving(sink, x0, z0, x1, z1, tint = 0xffffff) {
@@ -77,7 +76,11 @@ export function createStreetKit({ random, atlases, vegetation, cars }) {
     let lightZ = SHADOW_PER_METRE.z;
     // +1 on the right side: local +z then points towards the camera.
     let towardsCamera = 1;
+    let currentSide = 1;
+    // Parked cars of the block being built, in block coordinates.
+    const parked = [];
     function setSide(side) {
+        currentSide = side;
         towardsCamera = side;
         lightX = SHADOW_PER_METRE.x * side;
         lightZ = SHADOW_PER_METRE.z * side;
@@ -362,10 +365,18 @@ export function createStreetKit({ random, atlases, vegetation, cars }) {
     return {
         paving, kerbZ, kerbX, asphalt, decal, shade, castShade, setEdge, setSide, lamp, bench, bin, bollards, hydrant, bikeRack, poleSign,
         trafficLight, busShelter, mupi, adColumn, planter, cafeTerrace, streetTree,
+        parked,
         parkedCar(sink, x, z) {
-            const model = pick(carModels);
-            const yaw = chance(0.85) ? Math.PI : 0;
-            addCar(sink, model, x, z, yaw + range(-0.02, 0.02), pick(CAR_PAINTS));
+            const name = pick(Object.keys(cars));
+            const model = cars[name];
+            const yaw = (chance(0.85) ? Math.PI : 0) + range(-0.02, 0.02);
+            const paint = pick(CAR_PAINTS);
+            // Detailed version drawn as an instance; the distant stand-in stays merged.
+            addCar(sink, model, x, z, yaw, paint, false);
+            parked.push({
+                model: name, paint,
+                x: x * currentSide, z: z * currentSide, yaw: yaw + (currentSide < 0 ? Math.PI : 0)
+            });
             castShade(sink, 'box', x, z, 0.95, model.length / 2, 0, model.height * 0.8, 0.9);
             return model.length;
         }

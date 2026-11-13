@@ -3,6 +3,7 @@ import './src/style.css';
 import voiceLineGroups from './src/voice-lines.json';
 import soundEffects from './src/sound-effects.json';
 import { createAudioEngine } from './src/audio-engine.js';
+import { addPoints } from './src/v2/freeroam.js';
 
 // Two versions share the same simulation, scoring and ranked replay:
 // 'v2' (realistic city, new rider) and 'classic' (the original V1 look).
@@ -871,7 +872,7 @@ function init() {
     // The classic version keeps its original badge.
     if (!IS_V2) document.getElementById('menu-logo')?.setAttribute('src', '/Logo51.png');
     if (IS_V2) {
-        v2 = createRealisticVersion({ scene, renderer, camera, mobile: isMobile() });
+        v2 = createRealisticVersion({ scene, renderer, camera, mobile: isMobile(), audio, onTurn: (sign) => changeStreet(sign) });
         v2.world.sharedMaterials.forEach((material) => sharedMaterials.add(material));
     }
     const bike = createBike();
@@ -949,6 +950,7 @@ function visualSnapshot() {
         angleRatio: Math.max(0, Math.min(1, state.bike.angle / CONFIG.maxAngle)),
         skidding: state.skidding,
         linear: !free,
+        playing: state.isPlaying,
         gameTime: state.gameTime,
         jumpHeight: free ? 0 : state.jump.visualY,
         airborne: !free && state.jump.airborne,
@@ -1303,6 +1305,43 @@ function land(trickFrames, difficulty) {
     }
 }
 
+// Free roam ----------------------------------------------------------------------
+function roamAction() {
+    if (!v2 || !state.isPlaying || state.isPaused || GAME_SETTINGS.gameMode !== 'free') return;
+    v2.roam.action();
+}
+
+// Turned into a side street: fade, rebuild a new street around the player.
+let streetChanging = false;
+let fadeOverlay = null;
+function changeStreet(sign) {
+    if (!v2 || streetChanging) return;
+    streetChanging = true;
+    if (!fadeOverlay) {
+        fadeOverlay = document.createElement('div');
+        fadeOverlay.style.cssText = 'position:fixed;inset:0;background:#05060a;opacity:0;pointer-events:none;transition:opacity .35s ease;z-index:30';
+        document.body.append(fadeOverlay);
+    }
+    fadeOverlay.style.opacity = '1';
+    setTimeout(() => {
+        const z = v2.roam.focus.z;
+        groundChunks.forEach(dropChunk);
+        groundChunks = [];
+        const base = Math.round(z / 100) * 100;
+        for (let i = -1; i < 5; i++) {
+            const chunk = makeChunk(base - i * 100);
+            scene.add(chunk);
+            groundChunks.push(chunk);
+        }
+        const street = v2.roam.afterTurn(bikeGroup);
+        const focus = v2.roam.focus;
+        camera.position.set(focus.x, 6, focus.z + 12);
+        toast(street.toUpperCase(), sign > 0 ? 'Tu as tourné à droite' : 'Tu as tourné à gauche');
+        fadeOverlay.style.opacity = '0';
+        streetChanging = false;
+    }, 380);
+}
+
 function toast(title, text) {
     document.dispatchEvent(new CustomEvent('wheelie:toast', { detail: { title, text } }));
 }
@@ -1459,6 +1498,7 @@ async function gameOver() {
     const screenDelay = new Promise((resolve) => setTimeout(resolve, v2 ? 1150 : 0));
     const currentScore = Math.floor(state.score);
     const previousBest = state.highScore;
+    if (GAME_SETTINGS.gameMode === 'linear') addPoints(currentScore);
     
     // Récupérer le nickname
     const nickname = localStorage.getItem('wheelie_nickname');
@@ -1642,6 +1682,16 @@ function animate(timestamp = performance.now()) {
                 if (state.keys.up) moveZ -= CONFIG.freeModeSpeed * 3;
                 if (state.keys.down) moveZ += CONFIG.freeModeSpeed * 3;
             }
+            const roam = v2 ? v2.roam : null;
+            if (roam && roam.mode !== 'bike') {
+                const unit = CONFIG.freeModeSpeed * 3;
+                roam.move(dt, moveX / unit, moveZ / unit);
+                state.freeMode.speed = roam.speed;
+                state.distance += roam.speed;
+                moveX = 0;
+                moveZ = 0;
+            } else {
+            const previous = bikeGroup.position.clone();
             bikeGroup.position.x += moveX;
             bikeGroup.position.z += moveZ;
             if (Math.abs(moveX) > 0.01 || Math.abs(moveZ) > 0.01) {
@@ -1652,8 +1702,13 @@ function animate(timestamp = performance.now()) {
             state.freeMode.speed = speed;
             if (bikeGroup.userData.frontWheel) bikeGroup.userData.frontWheel.rotation.x -= speed * 2;
             if (bikeGroup.userData.backWheel) bikeGroup.userData.backWheel.rotation.x -= speed * 2;
-            if (bikeGroup.position.x > 9) bikeGroup.position.x = 9;
-            if (bikeGroup.position.x < -9) bikeGroup.position.x = -9;
+            if (roam) {
+                // Side streets open the way; traffic blocks it.
+                roam.clampBike(bikeGroup.position, previous);
+            } else {
+                if (bikeGroup.position.x > 9) bikeGroup.position.x = 9;
+                if (bikeGroup.position.x < -9) bikeGroup.position.x = -9;
+            }
 
             // Wheelie mechanics in free mode
             let lift = 0;
@@ -1724,6 +1779,7 @@ function animate(timestamp = performance.now()) {
             }
 
             state.distance += Math.abs(moveZ) + Math.abs(moveX);
+            }
         } else {
             let isAccelerating = state.keys.up;
             let isBraking = state.keys.down;
@@ -2013,14 +2069,25 @@ function animate(timestamp = performance.now()) {
             speak('periodic');
         }
 
+        const roaming = GAME_SETTINGS.gameMode === 'free' && v2;
+        const focusZ = roaming ? v2.roam.focus.z : bikeGroup.position.z;
+        if (roaming) {
+            const first = groundChunks[0];
+            if (focusZ > first.position.z - 200) {
+                const chunk = makeChunk(first.position.z + 100);
+                scene.add(chunk);
+                groundChunks.unshift(chunk);
+                if (groundChunks.length > 7) dropChunk(groundChunks.pop());
+            }
+        }
         const lastChunk = groundChunks[groundChunks.length - 1];
-        if (bikeGroup.position.z < lastChunk.position.z + 200) {
+        if (focusZ < lastChunk.position.z + 200) {
             const newZ = lastChunk.position.z - 100;
             const chunk = makeChunk(newZ);
             scene.add(chunk);
             groundChunks.push(chunk);
             // V2 blocks are pooled: keep only what can still be seen behind.
-            if (groundChunks.length > (IS_V2 ? 6 : 12)) {
+            if (groundChunks.length > (IS_V2 ? (roaming ? 7 : 6) : 12)) {
                 const old = groundChunks.shift();
                 state.animatedObjects = state.animatedObjects.filter((object) => object.parent !== old);
                 dropChunk(old);
@@ -2088,6 +2155,8 @@ function updateCamera() {
 
     if (GAME_SETTINGS.gameMode === 'free') {
         const kmh = state.freeMode.speed * 50;
+        const roamMode = v2 ? v2.roam.mode : 'bike';
+        const target = v2 ? v2.roam.focus : bikeGroup.position;
         
         // FOV dynamique basé sur la vitesse
         let fovBoost = state.freeMode.speed * 10;
@@ -2135,14 +2204,21 @@ function updateCamera() {
             distanceOffset = distanceOffset - (returnFactor * 4);
         }
 
-        const targetX = bikeGroup.position.x;
-        const targetZ = bikeGroup.position.z + distanceOffset;
+        if (roamMode === 'walk') {
+            distanceOffset = 7;
+            heightOffset = 3.8;
+        } else if (roamMode === 'car') {
+            distanceOffset = 13 + state.freeMode.speed * 4;
+            heightOffset = 5.5;
+        }
+        const targetX = target.x;
+        const targetZ = target.z + distanceOffset;
         const targetY = heightOffset;
         
         camera.position.x += (targetX - camera.position.x) * 0.12;
         camera.position.z += (targetZ - camera.position.z) * 0.12;
         camera.position.y += (targetY - camera.position.y) * 0.12;
-        camera.lookAt(bikeGroup.position.x, 1, bikeGroup.position.z - 8);
+        camera.lookAt(target.x, roamMode === 'walk' ? 1.8 : 1, target.z - 8);
     } else {
         // Dynamic FOV based on speed (Visual Acceleration)
         // Base increase + extra kick when accelerating
@@ -2659,6 +2735,10 @@ function setupAnalogControls() {
         'analog-wheelie': 'space',
         'analog-trick': 'trick'
     };
+    document.getElementById('analog-action')?.addEventListener('pointerdown', (event) => {
+        event.preventDefault();
+        roamAction();
+    });
     Object.entries(buttons).forEach(([id, key]) => {
         const btn = document.getElementById(id);
         if (!btn) return;
@@ -2695,6 +2775,7 @@ document.addEventListener('keydown', (e) => {
     if (e.code === 'ArrowDown' || e.code === 'KeyS') state.keys.down = true;
 
     if (e.code === 'KeyF' || e.code === 'KeyE') state.keys.trick = true;
+    if (e.code === 'KeyG' && !e.repeat) roamAction();
 
     // Space ONLY for wheelie (no restart functionality)
     if (e.code === 'Space') {

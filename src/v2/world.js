@@ -13,7 +13,7 @@ import {
 } from './cityatlas.js';
 import { createVegetation } from './vegetation.js';
 import { createBuildingKit } from './buildings.js';
-import { createCarModels } from './cars.js';
+import { buildCarGeometries, createCarMesh, createCarModels } from './cars.js';
 import {
     FACADE_LINE, KERB, LAYBY_EDGE, ROAD_HALF, SHADOW_PER_METRE, createStreetKit
 } from './street.js';
@@ -26,6 +26,7 @@ import {
 const CHUNK_LENGTH = 100;
 const HALF = CHUNK_LENGTH / 2;
 const SLOT = 12.5;
+const UP_AXIS = new THREE.Vector3(0, 1, 0);
 const tmpColor = new THREE.Color();
 
 // Sun light matching the baked shadows (offset per metre of height).
@@ -590,12 +591,14 @@ export function createWorld({ scene, renderer, mobile }) {
         const theme = THEMES[index % THEMES.length];
         const sink = new Sink(KEYS);
         const crossingZ = theme.crossing ? Math.round(range(-22, 18)) : null;
+        street.parked.length = 0;
         for (const side of [1, -1]) buildSide(sink, side, theme, crossingZ, index);
+        const parked = street.parked.slice();
         const { hi, lo } = sink.build();
         const toSpecs = (geometries) => Object.entries(geometries)
             .filter(([, geometry]) => geometry)
             .map(([key, geometry]) => ({ key, geometry, material: materials[key], renderOrder: RENDER_ORDER[key] || 0 }));
-        return { hi: toSpecs(hi), lo: toSpecs(lo), free: [], theme: theme.name };
+        return { hi: toSpecs(hi), lo: toSpecs(lo), free: [], theme: theme.name, crossingZ, parked };
     }
 
     const variants = [];
@@ -616,6 +619,54 @@ export function createWorld({ scene, renderer, mobile }) {
         return mesh;
     }
 
+    // Parked cars are instances, one pair of meshes per model (painted body,
+    // the rest), so free roam can take one away and give it back.
+    const carGeometries = Object.fromEntries(Object.entries(cars).map(([name, model]) => [name, buildCarGeometries(model)]));
+    const placement = new THREE.Matrix4();
+    const turn = new THREE.Quaternion();
+    const hidden = new THREE.Matrix4().makeScale(0, 0, 0);
+    const paintColor = new THREE.Color();
+
+    function parkedMatrix(entry) {
+        turn.setFromAxisAngle(UP_AXIS, entry.yaw);
+        return placement.compose(new THREE.Vector3(entry.x, 0, entry.z), turn, new THREE.Vector3(1, 1, 1));
+    }
+
+    function instanceParkedCars(variant, group) {
+        const entries = [];
+        const byModel = {};
+        for (const car of variant.parked) (byModel[car.model] ||= []).push(car);
+        for (const [model, list] of Object.entries(byModel)) {
+            const body = new THREE.InstancedMesh(carGeometries[model].body, materials.car, list.length);
+            const rest = new THREE.InstancedMesh(carGeometries[model].rest, materials.car, list.length);
+            list.forEach((car, index) => {
+                const matrix = parkedMatrix(car);
+                body.setMatrixAt(index, matrix);
+                rest.setMatrixAt(index, matrix);
+                body.setColorAt(index, paintColor.set(car.paint));
+                entries.push({ ...car, body, rest, index, taken: false });
+            });
+            for (const mesh of [body, rest]) {
+                mesh.matrixAutoUpdate = false;
+                mesh.computeBoundingSphere();
+                group.add(mesh);
+            }
+        }
+        return entries;
+    }
+
+    function restoreParkedCars(chunk) {
+        for (const entry of chunk.userData.parked) {
+            if (!entry.taken) continue;
+            entry.taken = false;
+            const matrix = parkedMatrix(entry);
+            entry.body.setMatrixAt(entry.index, matrix);
+            entry.rest.setMatrixAt(entry.index, matrix);
+            entry.body.instanceMatrix.needsUpdate = true;
+            entry.rest.instanceMatrix.needsUpdate = true;
+        }
+    }
+
     function instantiate(variant) {
         const chunk = new THREE.Group();
         const roadMesh = staticMesh(roadGeometry, roadMaterial, 0);
@@ -626,6 +677,7 @@ export function createWorld({ scene, renderer, mobile }) {
         for (const spec of variant.hi) hi.add(staticMesh(spec.geometry, spec.material, spec.renderOrder));
         for (const spec of variant.lo) lo.add(staticMesh(spec.geometry, spec.material, spec.renderOrder));
         lo.visible = false;
+        chunk.userData.parked = instanceParkedCars(variant, hi);
         chunk.add(hi, lo);
         chunk.userData.variant = variant;
         chunk.userData.lod = { hi, lo };
@@ -638,7 +690,9 @@ export function createWorld({ scene, renderer, mobile }) {
         if (index === lastVariant) index = (index + 1) % variants.length;
         lastVariant = index;
         const variant = variants[index];
-        const chunk = variant.free.pop() || instantiate(variant);
+        const pooled = variant.free.pop();
+        const chunk = pooled || instantiate(variant);
+        if (pooled) restoreParkedCars(chunk);
         chunk.position.set(0, 0, z);
         active.add(chunk);
         return chunk;
@@ -647,6 +701,53 @@ export function createWorld({ scene, renderer, mobile }) {
     function releaseChunk(chunk) {
         active.delete(chunk);
         chunk.userData.variant.free.push(chunk);
+    }
+
+    // Free roam ------------------------------------------------------------------
+    // World z of the side streets currently on screen.
+    function crossings() {
+        const out = [];
+        for (const chunk of active) {
+            if (chunk.userData.variant.crossingZ !== null) out.push(chunk.position.z + chunk.userData.variant.crossingZ);
+        }
+        return out;
+    }
+
+    // Nearest parked car within `radius` of (x, z), still in place.
+    function parkedNear(x, z, radius) {
+        let best = null;
+        let bestDistance = radius;
+        for (const chunk of active) {
+            for (const entry of chunk.userData.parked) {
+                if (entry.taken) continue;
+                const distance = Math.hypot(entry.x - x, chunk.position.z + entry.z - z);
+                if (distance < bestDistance) {
+                    bestDistance = distance;
+                    best = { entry, chunk, x: entry.x, z: chunk.position.z + entry.z, yaw: entry.yaw, model: entry.model, paint: entry.paint };
+                }
+            }
+        }
+        return best;
+    }
+
+    function takeParked(found) {
+        const { entry } = found;
+        entry.taken = true;
+        entry.body.setMatrixAt(entry.index, hidden);
+        entry.rest.setMatrixAt(entry.index, hidden);
+        entry.body.instanceMatrix.needsUpdate = true;
+        entry.rest.instanceMatrix.needsUpdate = true;
+    }
+
+    // A car that moves: painted with its own colour, same look as parked ones.
+    function createCar(model, paint) {
+        const body = withAtmosphere(new THREE.MeshStandardMaterial({
+            color: paint, roughness: 0.3, metalness: 0.35, envMapIntensity: 1.25, vertexColors: true
+        }), { key: 'carbody' });
+        const car = createCarMesh(carGeometries[model], body, materials.car);
+        car.userData.model = model;
+        car.userData.length = cars[model].length;
+        return car;
     }
 
     // Deterministic block sequence for debugging (?seed=123).
@@ -852,6 +953,7 @@ export function createWorld({ scene, renderer, mobile }) {
 
     return {
         acquireChunk, releaseChunk, createObstacle, update, setDusk, setAmbience, setQuality, reseed, sharedMaterials, sun,
+        crossings, parkedNear, takeParked, createCar, carModels: Object.keys(cars),
         ambiences: Object.keys(AMBIENCES),
         stats: () => variants.map((variant) => ({
             theme: variant.theme,

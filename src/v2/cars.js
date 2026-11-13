@@ -3,7 +3,7 @@
 // mirrors and plates. Built once per model; each parked car copies the parts
 // into the block's car batch with its own paint colour.
 import * as THREE from 'three';
-import { PRIMS, transform } from './geometry.js';
+import { Batch, PRIMS, transform } from './geometry.js';
 
 export const CAR_PAINTS = [
     0xf2f2f0, 0x111214, 0xa8adb3, 0x6e747b, 0x1d3557, 0x8c1c13, 0x2f4f3f, 0xd8c9a8, 0x3a6ea5, 0xe0a526, 0x5b2a3a
@@ -60,8 +60,16 @@ const MODELS = {
     suv: { length: 4.6, width: 1.9, belt: 1.12, roof: 1.72, wheelbase: 2.75, radius: 0.37, nose: 1.0, tail: 1.12,
         cabin: [[-2.2, 1.12], [-2.05, 1.7], [0.55, 1.72], [1.25, 1.12]] },
     van: { length: 5.1, width: 1.98, belt: 1.15, roof: 2.0, wheelbase: 3.1, radius: 0.34, nose: 1.0, tail: 1.9,
-        cabin: [[1.0, 1.15], [1.05, 1.95], [1.3, 1.98], [2.05, 1.15]] }
+        cabin: [[1.0, 1.15], [1.05, 1.95], [1.3, 1.98], [2.05, 1.15]] },
+    // Low two-door sports car (unlocked last in free roam).
+    coupe: { length: 4.5, width: 1.92, belt: 0.86, roof: 1.22, wheelbase: 2.62, radius: 0.34, nose: 0.66, tail: 0.92,
+        cabin: [[-1.25, 0.86], [-0.55, 1.2], [0.2, 1.22], [1.15, 0.86]] }
 };
+
+// Free roam: which cars can be driven, from how many points earned in
+// competitive runs (the nicer the car, the more points).
+export const CAR_UNLOCKS = { hatch: 0, sedan: 250, van: 600, suv: 1200, coupe: 2500 };
+export const CAR_NAMES = { hatch: 'Citadine', sedan: 'Berline', van: 'Utilitaire', suv: 'SUV', coupe: 'Coupé sport' };
 
 function buildModel(name) {
     const m = MODELS[name];
@@ -135,12 +143,37 @@ export function createCarModels() {
     return models;
 }
 
+// Two geometries per model: the painted body (white, tinted per car) and
+// everything else (glass, tyres, lights) in its own colours.
+export function buildCarGeometries(model) {
+    const body = new Batch();
+    const rest = new Batch();
+    const identity = new THREE.Matrix4();
+    for (const { geometry, color, paint } of model.parts) {
+        (paint ? body : rest).add(geometry, identity, paint ? 0xffffff : color);
+    }
+    return { body: body.build(), rest: rest.build() };
+}
+
+// A drivable / moving car: a group with the two meshes.
+export function createCarMesh(geometries, bodyMaterial, restMaterial) {
+    const group = new THREE.Group();
+    const body = new THREE.Mesh(geometries.body, bodyMaterial);
+    const rest = new THREE.Mesh(geometries.rest, restMaterial);
+    body.castShadow = true;
+    rest.castShadow = true;
+    group.add(body, rest);
+    return group;
+}
+
 // Copies a parked car into the batches. hi: detailed, lo: a two-box stand-in.
-export function addCar(sink, model, x, z, yaw, paint) {
+export function addCar(sink, model, x, z, yaw, paint, detailed = true) {
     const place = new THREE.Matrix4().makeRotationY(yaw).setPosition(x, 0, z);
     const part = new THREE.Matrix4();
-    for (const { geometry, color, paint: painted } of model.parts) {
-        sink.hi.car.add(geometry, part.copy(place), painted ? paint : color);
+    if (detailed) {
+        for (const { geometry, color, paint: painted } of model.parts) {
+            sink.hi.car.add(geometry, part.copy(place), painted ? paint : color);
+        }
     }
     const lo = sink.lo.car;
     const h = model.height;
