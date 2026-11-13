@@ -358,8 +358,10 @@ export function createPolicePatrol({ scene, world, traffic, audio, talk, onFine,
             }
         } else if (stop.phase === 'chase') {
             // Faster and faster: whoever does not turn off is caught.
-            const base = player.mode === 'car' ? 52 : player.mode === 'bike' ? 21 : 9;
-            const speed = Math.min(190, base + 4 * stop.t);
+            // m/s: from 50 km/h, faster each second, up to ~210 km/h (above
+            // the bike's 140 and the boosts): time to turn off, not forever.
+            const base = player.mode === 'walk' ? 8 : 14;
+            const speed = Math.min(58, base + 2.5 * stop.t);
             const dx = player.x - group.position.x;
             const dz = player.z - group.position.z;
             const length = Math.hypot(dx, dz) || 1;

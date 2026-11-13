@@ -21,7 +21,7 @@ const SCALE = 1.7;
 // rider on foot at about 1.85 m (helmet included).
 export const ROAM_SCALE = 1.1;
 const WALK_SCALE = 0.95;
-const WALK_REFERENCE = 0.065;
+const WALK_REFERENCE = 0.05;
 
 const matrix = new THREE.Matrix4();
 const position = new THREE.Vector3();
@@ -249,6 +249,7 @@ export function createRider({ scene }) {
     const riderGroup = new THREE.Group();
     chassis.add(riderGroup);
     const pelvis = new THREE.Group();
+    pelvis.name = 'pelvis';
     pelvis.position.copy(PELVIS_REST);
     riderGroup.add(pelvis);
     const body = new Parts();
@@ -443,7 +444,7 @@ export function createRider({ scene }) {
         pose.stop = damp(pose.stop, kmh < 4 && linear && !airborne ? 1 : 0, kmh < 4 ? 5 : 12, dt);
         pose.skid = damp(pose.skid, skidding ? 1 : 0, 10, dt);
         pose.brake = damp(pose.brake, braking ? 1 : 0, 14, dt);
-        if (linear && !skidding) bikeGroup.rotation.z = pose.lean + pose.stop * 0.07;
+        if ((linear || frame.freeBike) && !skidding) bikeGroup.rotation.z = pose.lean + pose.stop * 0.07;
 
         // Bars: wide steering at walking pace, still visible at speed.
         const steerTarget = -steer * (0.34 - 0.2 * Math.min(1, kmh / 70)) + (skidding ? Math.sin(pose.time * 31) * 0.12 : 0);
@@ -491,6 +492,8 @@ export function createRider({ scene }) {
         if (frame.trick) pose.trickType = frame.trick;
         pose.trick = damp(pose.trick, frame.trick ? 1 : 0, frame.trick ? 11 : 8, dt);
         pose.tuckAir = damp(pose.tuckAir, frame.airborne ? 1 : 0, 6, dt);
+        // Free roam: crouched over the tank while the gas is held.
+        pose.gasTuck = damp(pose.gasTuck || 0, frame.gasTuck || 0, 5, dt);
         const stunt = pose.trick;
         const superman = pose.trickType === 'superman' ? stunt : 0;
         const nohander = pose.trickType === 'nohander' ? stunt : 0;
@@ -498,15 +501,17 @@ export function createRider({ scene }) {
         const reach = Math.min(1, kmh / 50);
         const hang = pose.lean * reach * (airborne ? 0.5 : 1);
         const tuck = Math.max(0, Math.min(1, (kmh - 120) / 90));
-        const torsoTarget = 0.42 + angle * 0.36 + tuck * 0.24 + (braking ? 0.12 : -0.07 * throttle) - pose.stop * 0.12
-            - pose.surge * 0.13 - pose.pump * 0.16 + superman * 0.62 - nohander * 0.2 + pose.tuckAir * 0.08;
+        // Gas held in free roam: crouched over the tank (beats the push back).
+        const crouch = pose.gasTuck;
+        const torsoTarget = 0.42 + angle * 0.36 + tuck * 0.24 + crouch * 0.36 + (braking ? 0.12 : -0.07 * throttle * (1 - crouch)) - pose.stop * 0.12
+            - pose.surge * 0.13 * (1 - 0.75 * crouch) - pose.pump * 0.16 + superman * 0.62 - nohander * 0.2 + pose.tuckAir * 0.08;
         pose.torso = damp(pose.torso, torsoTarget, 7, dt);
         pelvis.rotation.x = pose.torso;
         pelvis.rotation.z = hang * 0.45 - pose.stop * 0.05 + pose.skid * Math.sin(pose.time * 17) * 0.05;
         pelvis.rotation.y = pose.steer * 0.3 + cancan * 0.35;
         pelvis.position.set(
             -hang * 0.2,
-            PELVIS_REST.y + angleRatio * 0.04 - tuck * 0.02 - pose.bounce * 0.4 + superman * 0.16 + nohander * 0.04,
+            PELVIS_REST.y + angleRatio * 0.04 - tuck * 0.02 - crouch * 0.05 - pose.bounce * 0.4 + superman * 0.16 + nohander * 0.04,
             PELVIS_REST.z - angleRatio * 0.13 - pose.surge * 0.025 + Math.max(0, -pose.surge) * 0.02
         );
         // The head stays level and looks where the bike is going.

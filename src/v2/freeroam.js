@@ -23,9 +23,11 @@ const STREETS = [
 ];
 const SIDE_STREET_HALF = 4.4;
 // On foot at life size (the rider used to be 1.7x bigger and faster).
-const WALK_SPEED = 0.065;
-const RUN_SPEED = 0.16;
-const CAR_TOP_SPEED = 1.25;
+// Units are metres: about 11 km/h walking, 26 km/h sprinting.
+const WALK_SPEED = 0.05;
+const RUN_SPEED = 0.12;
+// Cars: 140 km/h at most (0.65 m per frame), 180 with the boost.
+const CAR_TOP_SPEED = 0.65;
 // Free roam boost: once every 15 s, for 2.5 s.
 const BOOST_COOLDOWN = 15;
 const BOOST_TIME = 2.5;
@@ -267,19 +269,35 @@ export function createFreeRoam({ scene, world, rider, audio, onTurn, playerVoice
             walker.x = position.x;
             walker.z = position.z;
         } else if (mode === 'car') {
+            // Speeds in metres per frame (1/60 s): accelerations in m/s² / 3600.
             const throttle = -nz;
-            drive.speed += throttle * (throttle * drive.speed < 0 ? 0.04 : 0.012);
-            drive.speed *= 0.992;
-            if (Math.abs(throttle) < 0.05) drive.speed *= 0.985;
             const boosting = now() < boost.until;
-            if (boosting) drive.speed += 0.03;
-            drive.speed = Math.max(-0.4, Math.min(CAR_TOP_SPEED * (boosting ? 1.6 : 1), drive.speed));
+            const top = CAR_TOP_SPEED * (boosting ? 1.3 : 1);
+            if (throttle * drive.speed < 0 && Math.abs(drive.speed) > 0.003) {
+                // Braking (pressing against the motion).
+                drive.speed -= Math.sign(drive.speed) * Math.min(Math.abs(drive.speed), 9.5 / 3600 * Math.abs(throttle));
+                drive.hold = 0;
+            } else if (throttle > 0.05) {
+                // Pulls harder the longer the pedal is held.
+                drive.hold = (drive.hold || 0) + 1 / 60;
+                const pull = (3 + Math.min(4, drive.hold * 2.5)) * throttle / 3600;
+                drive.speed += pull * Math.max(0, 1 - Math.pow(Math.max(0, drive.speed) / top, 3));
+            } else if (throttle < -0.05) {
+                drive.speed = Math.max(-0.07, drive.speed - 2.5 / 3600 * -throttle); // reverse, 15 km/h at most
+            } else {
+                drive.hold = 0;
+                const coast = (1.2 + 900 * drive.speed * drive.speed) / 3600;
+                drive.speed = Math.sign(drive.speed) * Math.max(0, Math.abs(drive.speed) - coast);
+            }
+            if (boosting && drive.speed < top) drive.speed += 6 / 3600;
+            if (drive.speed > top) drive.speed = Math.max(top, drive.speed - 5 / 3600);
             // Lights: red when braking or backing up, white reversing lights.
             drive.reversing = drive.speed < -0.01;
             drive.braking = throttle * drive.speed < 0 && Math.abs(drive.speed) > 0.01;
             drive.group.userData.lights?.set(drive.braking || drive.reversing || (throttle < -0.05 && Math.abs(drive.speed) < 0.02), drive.reversing);
-            const grip = Math.min(1, Math.abs(drive.speed) / 0.5);
-            drive.yaw -= nx * 0.032 * grip * Math.sign(drive.speed || 1);
+            const grip = Math.min(1, Math.abs(drive.speed) / 0.12);
+            const calm = 1 - 0.45 * Math.min(1, Math.abs(drive.speed) / CAR_TOP_SPEED);
+            drive.yaw -= nx * 0.032 * grip * calm * Math.sign(drive.speed || 1);
             const group = drive.group;
             const previous = group.position.clone();
             group.position.x += Math.sin(drive.yaw) * drive.speed;
@@ -291,7 +309,7 @@ export function createFreeRoam({ scene, world, rider, audio, onTurn, playerVoice
             if (hit) {
                 if (hit.police) patrol.bumped(hit);
                 else patrol.playerHit();
-                if (Math.abs(drive.speed) > 0.3) audio.play('collision', { volume: 0.4 });
+                if (Math.abs(drive.speed) > 0.12) audio.play('collision', { volume: 0.4 });
                 drive.speed *= -0.25;
                 constrain(group.position, 8.4, 1.2);
             }

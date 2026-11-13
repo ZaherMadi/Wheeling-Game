@@ -22,7 +22,8 @@ export function createTraffic({ scene, world, onHonk }) {
         // Most cars appear ahead; a few come from behind and overtake.
         const ahead = initial ? Math.random() < 0.75 : Math.random() < 0.85;
         const distance = initial ? range(25, 190) : range(150, 200);
-        car.group.position.set(car.lane.x, 0, focusZ + (ahead ? -distance : distance * 0.6));
+        // From behind: within 90 m, or it would be recycled at once.
+        car.group.position.set(car.lane.x, 0, focusZ + (ahead ? -distance : distance * 0.4));
         car.group.rotation.y = car.lane.dir < 0 ? Math.PI : 0;
     }
 

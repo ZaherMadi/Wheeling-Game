@@ -195,6 +195,9 @@ const matConstructionStripe = new THREE.MeshStandardMaterial({ color: 0xffcc00 }
 const matHole = new THREE.MeshBasicMaterial({ color: 0x000000 });
 // Bike z at the previous camera update (declared early: resetGame clears it).
 let lastCameraBikeZ = null;
+// Free roam chase camera: its heading and the last followed position.
+let freeCamYaw = null;
+let freeCamLast = null;
 
 const sharedMaterials = new Set([
     matAsphalt, matLine, matSidewalk, matBuilding, matBuilding2, matBuilding3,
@@ -947,6 +950,77 @@ function init() {
     }
 }
 
+// Free roam bike (V2): world units are metres. Gas pulls harder the longer
+// it is held, up to a realistic top speed; the bike steers like a bike.
+const FREE_BIKE = { top: 38.9, boostTop: 52, brake: 11, coast: 1.3, drag: 0.0007, reverse: 1.6 };
+const freeRide = { speed: 0, hold: 0, gas: 0, steer: 0 };
+
+function rideFreeBike(dt, roam) {
+    let gas = 0;
+    let brake = 0;
+    let steer = 0;
+    if (GAME_SETTINGS.controlMode === 'analog' && analogData.active) {
+        steer = Math.max(-1, Math.min(1, analogData.x * 1.2));
+        if (analogData.y < -0.12) gas = Math.min(1, -analogData.y * 1.3);
+        else if (analogData.y > 0.35) brake = Math.min(1, analogData.y);
+    }
+    if (state.keys.up) gas = 1;
+    if (state.keys.down) brake = 1;
+    if (state.keys.left) steer = -1;
+    if (state.keys.right) steer = 1;
+    if (roam.frozen) {
+        gas = 0;
+        brake = 1;
+        steer = 0;
+    }
+    const boosting = roam.boostFactor > 1;
+    const top = boosting ? FREE_BIKE.boostTop : FREE_BIKE.top;
+    let v = freeRide.speed;
+    // Gas while rolling back: stop that first.
+    if (gas > 0 && v < 0) v = Math.min(0, v + 6 * dt);
+    if (gas > 0 && v >= -0.05) {
+        freeRide.hold += dt;
+        const pull = (3 + Math.min(9, freeRide.hold * 4)) * gas;
+        v += pull * Math.max(0, 1 - Math.pow(Math.max(0, v) / top, 3)) * dt;
+    } else {
+        freeRide.hold = Math.max(0, freeRide.hold - dt * 3);
+    }
+    if (boosting && v < top) v += 6 * dt;
+    if (brake > 0) {
+        // Stopped, brake still held for a moment: the bike is walked back.
+        freeRide.stopped = v <= 0.2 ? (freeRide.stopped || 0) + dt : 0;
+        if (v > 0.2) v = Math.max(0, v - FREE_BIKE.brake * brake * dt);
+        else if (freeRide.stopped > 0.8) v = Math.max(-FREE_BIKE.reverse, v - 2 * dt);
+        else v = Math.min(v, 0);
+    } else if (gas === 0) {
+        const slow = (FREE_BIKE.coast + FREE_BIKE.drag * v * v) * dt;
+        v = v > 0 ? Math.max(0, v - slow) : Math.min(0, v + 3 * dt);
+    }
+    // After a boost: back down to the normal top speed.
+    if (v > top) v = Math.max(top, v - 5 * dt);
+    // Held by the police: brought to a stop at once (like the car).
+    if (roam.frozen) v *= 0.7;
+    // Bars: tight at walking pace, gentler at speed (reversed when backing up).
+    const pace = Math.min(1, Math.abs(v) / 25);
+    const rate = (Math.abs(v) < 0.3 ? 1.1 : 2.3 - 1.4 * pace) * steer;
+    bikeGroup.rotation.y -= rate * dt * (v < -0.05 ? -1 : 1);
+    const heading = bikeGroup.rotation.y;
+    bikeGroup.position.x += Math.sin(heading) * v * dt;
+    bikeGroup.position.z += Math.cos(heading) * v * dt;
+    // Side streets open the way; traffic stops the bike dead.
+    if (roam.clampBike(bikeGroup.position)) v *= 0.35;
+    freeRide.speed = v;
+    freeRide.gas = gas;
+    freeRide.steer = steer * Math.min(1, Math.abs(v) / 4);
+    return Math.abs(v) / 60;
+}
+
+// Speed shown and heard. Free roam (V2) is life size: metres per second.
+function speedKmh() {
+    if (GAME_SETTINGS.gameMode !== 'free') return state.speed * 50;
+    return IS_V2 ? state.freeMode.speed * 216 : state.freeMode.speed * 50;
+}
+
 // Speed / input picture of the current frame for the visuals and the audio.
 function visualSnapshot() {
     const free = GAME_SETTINGS.gameMode === 'free';
@@ -959,12 +1033,16 @@ function visualSnapshot() {
     const braking = state.isPlaying &&
         (state.keys.down || (analogData.active && analogData.y > 0.5 && !GAME_SETTINGS.autoRace));
     // Free mode moves slowly in world units; scale it so it still feels like riding.
-    const kmh = free ? state.freeMode.speed * 50 * 3.5 : state.speed * 50;
+    const kmh = free && !IS_V2 ? state.freeMode.speed * 50 * 3.5 : speedKmh();
+    const freeBike = free && IS_V2 && !!v2 && v2.roam.mode === 'bike';
     return {
         kmh,
         throttle,
         braking,
-        steer: free ? 0 : Math.max(-1, Math.min(1, state.bike.lateralVelocity / CONFIG.maxLateralSpeed)),
+        steer: freeBike ? freeRide.steer : free ? 0 : Math.max(-1, Math.min(1, state.bike.lateralVelocity / CONFIG.maxLateralSpeed)),
+        freeBike,
+        // Gas held on the free roam bike: the rider tucks in over the tank.
+        gasTuck: freeBike ? freeRide.gas * (0.55 + 0.45 * Math.min(1, freeRide.speed / FREE_BIKE.top)) : 0,
         angle: state.bike.angle,
         angleRatio: Math.max(0, Math.min(1, state.bike.angle / CONFIG.maxAngle)),
         skidding: state.skidding,
@@ -1016,6 +1094,10 @@ function resetGame() {
     state.gantries = [];
     state.phase = 1;
     lastCameraBikeZ = null;
+    freeCamYaw = null;
+    freeCamLast = null;
+    freeRide.speed = 0;
+    freeRide.hold = 0;
     state.keys.trick = false;
     state.keys.boost = false;
     state.boost = { charges: 0, frames: 0, gain: 0, wasHeld: false };
@@ -1935,10 +2017,16 @@ function animate(timestamp = performance.now()) {
                 roam.move(dt, moveX / unit, moveZ / unit, { run: state.keys.run, jump: state.keys.space });
                 state.freeMode.speed = roam.speed;
                 state.distance += roam.speed;
+                freeRide.speed = 0;
+                freeRide.hold = 0;
                 moveX = 0;
                 moveZ = 0;
             } else {
             const previous = bikeGroup.position.clone();
+            if (roam) {
+                // V2: ridden like a bike (gas, brake, bars), see rideFreeBike().
+                state.freeMode.speed = rideFreeBike(dt, roam);
+            } else {
             bikeGroup.position.x += moveX;
             bikeGroup.position.z += moveZ;
             if (Math.abs(moveX) > 0.01 || Math.abs(moveZ) > 0.01) {
@@ -1949,13 +2037,10 @@ function animate(timestamp = performance.now()) {
             state.freeMode.speed = speed;
             if (bikeGroup.userData.frontWheel) bikeGroup.userData.frontWheel.rotation.x -= speed * 2;
             if (bikeGroup.userData.backWheel) bikeGroup.userData.backWheel.rotation.x -= speed * 2;
-            if (roam) {
-                // Side streets open the way; traffic blocks it.
-                roam.clampBike(bikeGroup.position, previous);
-            } else {
-                if (bikeGroup.position.x > 9) bikeGroup.position.x = 9;
-                if (bikeGroup.position.x < -9) bikeGroup.position.x = -9;
+            if (bikeGroup.position.x > 9) bikeGroup.position.x = 9;
+            if (bikeGroup.position.x < -9) bikeGroup.position.x = -9;
             }
+            void previous;
 
             // Wheelie mechanics in free mode
             let lift = 0;
@@ -1980,9 +2065,10 @@ function animate(timestamp = performance.now()) {
             }
             bikePivot.rotation.x = -state.bike.angle;
 
-            // Inverted lateral lean in free mode (opposite of linear mode)
+            // Inverted lateral lean in free mode (opposite of linear mode).
+            // V2 leans into its turns in rider.update().
             const lateralLean = -moveX * 0.5; // Negative to inverse the lean direction
-            bikeGroup.rotation.z = lateralLean;
+            if (!roam) bikeGroup.rotation.z = lateralLean;
 
             // Special wheelie effects in free mode
             const wheelieProgress = state.bike.angle / CONFIG.maxAngle; // 0 to 1
@@ -2022,7 +2108,7 @@ function animate(timestamp = performance.now()) {
                 }
             } else {
                 state.bike.maxWheelieTimer = 0; // Reset timer
-                bikeGroup.rotation.z = lateralLean; // Restore normal lean
+                if (!roam) bikeGroup.rotation.z = lateralLean; // Restore normal lean
             }
 
             state.distance += Math.abs(moveZ) + Math.abs(moveX);
@@ -2427,12 +2513,12 @@ function updateCamera() {
     const targetBaseFOV = isPortrait ? 75 : 60;  // Wider FOV for portrait
 
     if (GAME_SETTINGS.gameMode === 'free') {
-        const kmh = state.freeMode.speed * 50;
+        const kmh = speedKmh();
         const roamMode = v2 ? v2.roam.mode : 'bike';
         const target = v2 ? v2.roam.focus : bikeGroup.position;
         
         // FOV dynamique basé sur la vitesse
-        let fovBoost = IS_V2 ? Math.min(state.freeMode.speed, 4) * 5 : state.freeMode.speed * 10;
+        let fovBoost = IS_V2 ? Math.min(1, kmh / 140) * 12 : state.freeMode.speed * 10;
         if (state.keys.up || (GAME_SETTINGS.controlMode === 'analog' && analogData.y < -0.3)) {
             fovBoost += IS_V2 ? 3 : 8; // Boost supplémentaire lors de l'accélération
         }
@@ -2488,14 +2574,41 @@ function updateCamera() {
             distanceOffset = 13 + state.freeMode.speed * 4;
             heightOffset = 5.5;
         }
-        const targetX = target.x;
-        const targetZ = target.z + distanceOffset;
+        let targetX = target.x;
+        let targetZ = target.z + distanceOffset;
         const targetY = heightOffset;
-        
+        let lookX = target.x;
+        let lookZ = target.z - 8;
+        if (v2 && roamMode !== 'walk') {
+            // Riding or driving: behind the vehicle, turning with it.
+            const heading = roamMode === 'car' ? v2.roam.carYaw : bikeGroup.rotation.y;
+            if (freeCamYaw === null) freeCamYaw = heading;
+            let turn = heading - freeCamYaw;
+            turn = Math.atan2(Math.sin(turn), Math.cos(turn));
+            freeCamYaw += turn * 0.08;
+            targetX = target.x - Math.sin(freeCamYaw) * distanceOffset;
+            targetZ = target.z - Math.cos(freeCamYaw) * distanceOffset;
+            lookX = target.x + Math.sin(freeCamYaw) * 8;
+            lookZ = target.z + Math.cos(freeCamYaw) * 8;
+            // Ride along: at 140 km/h the camera must not trail far behind.
+            if (freeCamLast) {
+                const dx = target.x - freeCamLast.x;
+                const dz = target.z - freeCamLast.z;
+                if (Math.hypot(dx, dz) < 10) {
+                    camera.position.x += dx * 0.9;
+                    camera.position.z += dz * 0.9;
+                }
+            }
+        } else {
+            freeCamYaw = null;
+        }
+        if (!freeCamLast) freeCamLast = new THREE.Vector3();
+        freeCamLast.set(target.x, 0, target.z);
+
         camera.position.x += (targetX - camera.position.x) * 0.12;
         camera.position.z += (targetZ - camera.position.z) * 0.12;
         camera.position.y += (targetY - camera.position.y) * 0.12;
-        camera.lookAt(target.x, roamMode === 'walk' ? 1.25 : 1, target.z - 8);
+        camera.lookAt(lookX, roamMode === 'walk' ? 1.25 : 1, lookZ);
     } else {
         // Dynamic FOV based on speed (Visual Acceleration)
         // Base increase + extra kick when accelerating
@@ -2638,8 +2751,7 @@ function updateUI() {
     const speedText = document.getElementById('speed-text');
     const speedNeedle = document.getElementById('gauge-needle');
     if (speedText && speedNeedle) {
-        const currentSpeed = GAME_SETTINGS.gameMode === 'free' ? state.freeMode.speed : state.speed;
-        const kmh = Math.max(0, Math.floor(currentSpeed * 50));
+        const kmh = Math.max(0, Math.floor(speedKmh()));
         speedText.innerText = `${kmh}`;
         const maxKmh = 200;
         const pct = Math.min(1, kmh / maxKmh);

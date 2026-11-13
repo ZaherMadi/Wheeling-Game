@@ -352,7 +352,7 @@ function installToasts() {
 // time the player changes vehicle; H shows them again.
 const KEY_SETS = {
     race: [['↑', 'Gaz'], ['Espace', 'Wheeling'], ['↓', 'Frein'], ['← →', 'Diriger'], ['F', 'Figure'], ['B', 'Boost'], ['Échap', 'Pause']],
-    bike: [['↑ ↓ ← →', 'Rouler'], ['B', 'Boost'], ['G', 'Descendre'], ['Échap', 'Pause']],
+    bike: [['↑', 'Gaz'], ['↓', 'Frein'], ['← →', 'Tourner'], ['Espace', 'Wheeling'], ['B', 'Boost'], ['G', 'Descendre'], ['Échap', 'Pause']],
     walk: [['↑ ↓ ← →', 'Marcher'], ['Maj', 'Courir'], ['Espace', 'Sauter'], ['G', 'Monter / conduire'], ['Échap', 'Pause']],
     car: [['↑', 'Avancer'], ['↓', 'Freiner / reculer'], ['← →', 'Tourner'], ['B', 'Boost'], ['G', 'Sortir'], ['Échap', 'Pause']]
 };
