@@ -383,6 +383,15 @@ export function createAudioEngine({ effects, getManifest }) {
         engineBus.gain.setTargetAtTime(active ? 0.55 : 1, context.currentTime, 0.12);
     }
 
+    // Game paused: freeze every sound, pick up where it was on resume.
+    let paused = false;
+    function setPaused(value) {
+        if (!context || paused === value) return;
+        paused = value;
+        if (value) context.suspend().catch(() => {});
+        else context.resume().catch(() => {});
+    }
+
     // Rider's voice: one line at a time, the engine dips underneath.
     function speak(id, { volume = 1 } = {}) {
         const audioContext = getContext();
@@ -442,7 +451,7 @@ export function createAudioEngine({ effects, getManifest }) {
     }
 
     return {
-        prepare, warmUp, unlock, play, speak, stopVoice, startRun, stopRun, update, setEnabled, duck, status,
+        prepare, warmUp, unlock, play, speak, stopVoice, startRun, stopRun, update, setEnabled, duck, status, setPaused,
         get running() { return running; },
         get speaking() { return Boolean(voice); },
         get gear() { return sim.gear + 1; },

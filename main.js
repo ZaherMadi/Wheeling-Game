@@ -73,6 +73,7 @@ const skyColor = new THREE.Color();
 let state = {
     isPlaying: false,
     isPaused: false,
+    userPaused: false,
     score: 0,
     highScore: parseInt(localStorage.getItem('wheelie_high_score')) || 0,
     speed: 0,
@@ -973,6 +974,7 @@ function resetGame() {
     state.bike.angularVelocity = 0;
     state.bike.lateralVelocity = 0;
     state.isPaused = false;
+    state.userPaused = false;
     state.skidding = false;
     state.skidTimer = 0;
     state.runToken = null;
@@ -1045,18 +1047,38 @@ function resetGame() {
 let startInProgress = false;
 let completedRankedRun = null;
 
+let connectingNotice = null;
+function showConnecting(visible) {
+    if (!connectingNotice) {
+        if (!visible) return;
+        connectingNotice = document.createElement('div');
+        connectingNotice.textContent = 'Connexion au classement…';
+        connectingNotice.style.cssText = 'position:fixed;left:50%;top:50%;transform:translate(-50%,-50%);z-index:60;' +
+            'padding:14px 22px;border-radius:8px;background:rgba(10,11,14,.85);color:#f6c416;font:600 15px Roboto,Arial,sans-serif;' +
+            'border:1px solid rgba(246,196,22,.4);pointer-events:none';
+        document.body.append(connectingNotice);
+    }
+    connectingNotice.style.display = visible ? 'block' : 'none';
+}
+
 async function startGame() {
     if (startInProgress) return;
     startInProgress = true;
+    flushPendingSubmission();
     crashSequence++;
     audio.prepare();
     stopVoice();
     let runToken = null;
     if (GAME_SETTINGS.gameMode === 'linear') {
+        // Say so if the ranking server is slow to answer.
+        const notice = setTimeout(() => showConnecting(true), 350);
         try {
             runToken = await takeWheelieRun();
         } catch (error) {
             console.error('Classement indisponible:', error);
+        } finally {
+            clearTimeout(notice);
+            showConnecting(false);
         }
     }
 
@@ -1124,16 +1146,52 @@ async function startGame() {
     }
 }
 
+// Pause keeps the run: the simulation stops, nothing is lost or submitted.
 function togglePause() {
     if (!state.isPlaying) return;
-    state.isPlaying = false;
-    state.isPaused = false;
+    if (state.userPaused) resumeGame();
+    else pauseGame();
+}
+
+function pauseGame() {
+    if (!state.isPlaying || state.userPaused) return;
+    state.userPaused = true;
+    Object.keys(state.keys).forEach((key) => { state.keys[key] = false; });
     stopVoice();
-    audio.stopRun();
-    const startScreen = document.getElementById('start-screen');
-    if (startScreen) startScreen.classList.add('active');
+    audio.setPaused(true);
+    document.getElementById('pause-screen')?.classList.add('active');
     const mobileControls = document.getElementById('mobile-controls');
-    if (mobileControls) mobileControls.style.display = 'none';
+    if (mobileControls) mobileControls.style.visibility = 'hidden';
+}
+
+function resumeGame() {
+    if (!state.userPaused) return;
+    state.userPaused = false;
+    audio.setPaused(false);
+    document.getElementById('pause-screen')?.classList.remove('active');
+    const mobileControls = document.getElementById('mobile-controls');
+    if (mobileControls) mobileControls.style.visibility = '';
+    lastFrameTime = performance.now();
+}
+
+// Leaves a run without a score (from the pause or the game-over screen).
+function quitToMenu() {
+    state.userPaused = false;
+    state.isPlaying = false;
+    crashSequence++;
+    stopVoice();
+    audio.setPaused(false);
+    audio.stopRun();
+    completedRankedRun = null;
+    document.querySelectorAll('.screen').forEach((screen) => screen.classList.remove('active'));
+    const popup = document.getElementById('nickname-popup');
+    if (popup) popup.style.display = 'none';
+    document.getElementById('start-screen')?.classList.add('active');
+    const mobileControls = document.getElementById('mobile-controls');
+    if (mobileControls) {
+        mobileControls.style.display = 'none';
+        mobileControls.style.visibility = '';
+    }
 }
 
 function checkCollisions() {
@@ -1506,8 +1564,8 @@ async function gameOver() {
     // Récupérer le high score depuis l'API si on a un nickname, sinon depuis localStorage
     let highScore = state.highScore;
     if (nickname) {
-        const stats = await getPlayerStats(nickname);
-        if (stats && stats.best_score) {
+        const stats = await Promise.race([getPlayerStats(nickname), screenDelay.then(() => null)]);
+        if (stats && stats.best_score > highScore) {
             highScore = stats.best_score;
             state.highScore = highScore;
             localStorage.setItem('wheelie_high_score', highScore);
@@ -1613,7 +1671,7 @@ function animate(timestamp = performance.now()) {
 
     while (simulationAccumulator >= FIXED_STEP) {
         const dt = FIXED_STEP;
-        if (state.isPlaying && !state.isPaused && bikeGroup) {
+        if (state.isPlaying && !state.isPaused && !state.userPaused && bikeGroup) {
         state.gameTime += dt;
         if (!IS_V2) {
             const dayProgress = (state.gameTime % CONFIG.dayNightCycleDuration) / CONFIG.dayNightCycleDuration;
@@ -2817,7 +2875,7 @@ window.addEventListener('blur', () => {
 });
 
 document.addEventListener('visibilitychange', () => {
-    if (document.hidden && state.isPlaying) togglePause();
+    if (document.hidden && state.isPlaying) pauseGame();
 });
 
 // Settings Menu Navigation
@@ -3043,6 +3101,14 @@ document.getElementById('fullscreen-btn')?.addEventListener('click', async () =>
 
 document.getElementById('restart-btn').addEventListener('click', startGame);
 document.getElementById('pause-btn').addEventListener('click', togglePause);
+document.getElementById('resume-btn')?.addEventListener('click', resumeGame);
+document.getElementById('pause-restart-btn')?.addEventListener('click', () => {
+    quitToMenu();
+    document.getElementById('start-screen')?.classList.remove('active');
+    startGame();
+});
+document.getElementById('pause-menu-btn')?.addEventListener('click', quitToMenu);
+document.getElementById('gameover-menu-btn')?.addEventListener('click', quitToMenu);
 
 // API Configuration
 const API_BASE_URL = 'https://51-games-api.vercel.app/api/ranking';
@@ -3055,8 +3121,23 @@ function setRankingStatus(message) {
     status.style.display = message ? 'block' : 'none';
 }
 
+// Every API call has a deadline: a slow or silent server must never leave
+// the game waiting on a menu.
+async function apiFetch(url, options = {}, timeout = 7000) {
+    const controller = typeof AbortController === 'function' ? new AbortController() : null;
+    const timer = controller ? setTimeout(() => controller.abort(), timeout) : null;
+    try {
+        return await fetch(url, controller ? { ...options, signal: controller.signal } : options);
+    } catch (error) {
+        if (error.name === 'AbortError') throw new Error('le serveur ne répond pas');
+        throw error;
+    } finally {
+        clearTimeout(timer);
+    }
+}
+
 async function createWheelieRun() {
-    const response = await fetch(`${API_BASE_URL}/wheelie-sessions`, {
+    const response = await apiFetch(`${API_BASE_URL}/wheelie-sessions`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ difficulty: GAME_SETTINGS.difficulty })
@@ -3086,7 +3167,9 @@ function prefetchWheelieRun() {
 function takeWheelieRun() {
     const pending = pendingRun && Date.now() - pendingRun.at < 20 * 60 * 1000 ? pendingRun : null;
     pendingRun = null;
-    return pending ? pending.promise.catch(() => createWheelieRun()) : createWheelieRun();
+    const run = pending ? pending.promise.catch(() => createWheelieRun()) : createWheelieRun();
+    // Never hold the start for more than a few seconds: ride unranked instead.
+    return Promise.race([run, new Promise((_, reject) => setTimeout(() => reject(new Error('le serveur ne répond pas')), 4500))]);
 }
 
 function encodeInputLog(inputLog) {
@@ -3105,38 +3188,90 @@ async function submitCompletedRun(nickname) {
         return false;
     }
 
+    const run = completedRankedRun;
+    const body = JSON.stringify({ run_token: run.runToken, nickname, input_log: encodeInputLog(run.inputLog) });
+    setRankingStatus('Envoi du score…');
+    for (let attempt = 1; attempt <= 3; attempt++) {
+        try {
+            const response = await apiFetch(`${API_BASE_URL}/wheelie-sessions/submit`, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body
+            }, 10000);
+            if (response.status === 409) {
+                // Already received on an earlier attempt.
+                setRankingStatus('Score classé.');
+                completedRankedRun = null;
+                return true;
+            }
+            if (!response.ok) {
+                const error = await response.json().catch(() => ({}));
+                const message = error.detail || `Échec de l’envoi du score (${response.status})`;
+                // The server refused the run itself: retrying will not help.
+                if (response.status < 500) {
+                    setRankingStatus(`Score non classé : ${message}`);
+                    completedRankedRun = null;
+                    return false;
+                }
+                throw new Error(message);
+            }
+            const data = await response.json();
+            updateLeaderboard(nickname, data.score);
+            setRankingStatus(`Score classé : ${data.score} points.`);
+            completedRankedRun = null;
+            return true;
+        } catch (error) {
+            console.warn(`Score submission attempt ${attempt} failed:`, error);
+            if (attempt === 3) {
+                // Keep it: sent again at the next start (the session lasts 30 min).
+                savePendingSubmission({ token: run.runToken, nickname, log: encodeInputLog(run.inputLog), at: Date.now() });
+                setRankingStatus('Score en attente : il sera envoyé dès que le serveur répond (' + error.message + ').');
+                return false;
+            }
+            await new Promise((resolve) => setTimeout(resolve, attempt * 1500));
+        }
+    }
+    return false;
+}
+
+const PENDING_KEY = 'wheelie_pending_submission';
+function savePendingSubmission(entry) {
     try {
-        const response = await fetch(`${API_BASE_URL}/wheelie-sessions/submit`, {
+        localStorage.setItem(PENDING_KEY, JSON.stringify(entry));
+    } catch {
+        // Storage unavailable: the score is lost.
+    }
+}
+
+// A score that could not be sent last time (network), while its session lasts.
+async function flushPendingSubmission() {
+    let entry = null;
+    try {
+        entry = JSON.parse(localStorage.getItem(PENDING_KEY) || 'null');
+    } catch {
+        entry = null;
+    }
+    if (!entry) return;
+    if (Date.now() - entry.at > 28 * 60 * 1000) {
+        localStorage.removeItem(PENDING_KEY);
+        return;
+    }
+    try {
+        const response = await apiFetch(`${API_BASE_URL}/wheelie-sessions/submit`, {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({
-                run_token: completedRankedRun.runToken,
-                nickname,
-                input_log: encodeInputLog(completedRankedRun.inputLog)
-            })
-        });
-        
-        if (!response.ok) {
-            const error = await response.json().catch(() => ({}));
-            throw new Error(error.detail || `Échec de l’envoi du score (${response.status})`);
-        }
-        
-        const data = await response.json();
-        updateLeaderboard(nickname, data.score);
-        setRankingStatus(`Score classé : ${data.score} points.`);
-        completedRankedRun = null;
-        return true;
-    } catch (error) {
-        console.error('Erreur API:', error);
-        setRankingStatus('Score non classé : vérification ou envoi impossible. ' + error.message);
-        return false;
+            body: JSON.stringify({ run_token: entry.token, nickname: entry.nickname, input_log: entry.log })
+        }, 10000);
+        if (response.ok || (response.status >= 400 && response.status < 500)) localStorage.removeItem(PENDING_KEY);
+    } catch {
+        // Still offline: try again next time.
     }
 }
 
 // Fonction pour récupérer le classement depuis l'API
 async function fetchLeaderboardFromAPI() {
     try {
-        const response = await fetch(`${API_BASE_URL}/leaderboard/${GAME_NAME}`);
+        const response = await apiFetch(`${API_BASE_URL}/leaderboard/${GAME_NAME}`);
         
         if (!response.ok) {
             throw new Error('Erreur lors de la récupération du classement');
@@ -3153,7 +3288,7 @@ async function fetchLeaderboardFromAPI() {
 // Fonction pour récupérer les statistiques d'un joueur depuis l'API
 async function getPlayerStats(nickname) {
     try {
-        const response = await fetch(`${API_BASE_URL}/player/${encodeURIComponent(nickname)}`);
+        const response = await apiFetch(`${API_BASE_URL}/player/${encodeURIComponent(nickname)}`, {}, 4000);
         
         if (!response.ok) {
             if (response.status === 404) {
@@ -3189,8 +3324,8 @@ async function submitNickname() {
     const nickname = nicknameInput.value.trim();
     
     if (nickname.length > 0) {
-        const submitted = await submitCompletedRun(nickname);
-        if (!submitted) return;
+        // The nickname is kept whatever happens to this run's submission.
+        await submitCompletedRun(nickname);
 
         localStorage.setItem('wheelie_nickname', nickname);
         

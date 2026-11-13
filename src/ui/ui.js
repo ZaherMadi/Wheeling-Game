@@ -150,6 +150,15 @@ function decorateGameOver() {
     status.style.removeProperty('max-width');
     status.classList.add('ui-status');
     button($('restart-btn'), { icon: 'replay', label: 'REJOUER', variant: 'primary' });
+    button($('gameover-menu-btn'), { icon: 'back', label: 'MENU', variant: 'ghost' });
+    const pause = $('pause-screen');
+    if (pause) {
+        pause.classList.add('ui-panel-screen', 'ui-pause');
+        pause.querySelector('h1').classList.add('ui-title');
+        button($('resume-btn'), { icon: 'play', label: 'REPRENDRE', variant: 'primary' });
+        button($('pause-restart-btn'), { icon: 'replay', label: 'RECOMMENCER' });
+        button($('pause-menu-btn'), { icon: 'back', label: 'MENU', variant: 'ghost' });
+    }
 }
 
 function decorateNickname() {

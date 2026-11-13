@@ -1566,3 +1566,13 @@ body.v2:has(.screen.active) #ui-prompt {
     display: none;
   }
 }
+
+/* Pause */
+body.v2 .ui-pause {
+  gap: 14px;
+  background: radial-gradient(circle at 50% 45%, rgba(6, 8, 14, 0.45), rgba(6, 8, 14, 0.85));
+}
+
+body.v2 #gameover-menu-btn {
+  margin-top: 4px;
+}
