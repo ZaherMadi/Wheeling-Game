@@ -6,6 +6,8 @@
 // (localStorage) and hand their addresses to the audio engine; the browser
 // cache keeps the files themselves.
 const RECORD_KEY = 'wheelie_player_voice';
+// Server format: the rider lines exist per voice (start_will...).
+const FORMAT = '2';
 const ANNOUNCED_KEY = 'wheelie_player_voice_announced';
 
 function read(key) {
@@ -26,6 +28,7 @@ function write(key, value) {
 
 export function createPlayerVoice({ apiBase, audio, apiFetch }) {
     let record = read(RECORD_KEY);
+    if (record && record.version !== FORMAT) record = null;
     let pending = null;
 
     const currentNickname = () => {
@@ -66,7 +69,7 @@ export function createPlayerVoice({ apiBase, audio, apiFetch }) {
                 }
                 if (!response.ok) return false;
                 const data = await response.json();
-                if (!data || !data.clips || data.nickname !== nickname) return false;
+                if (!data || !data.clips || data.nickname !== nickname || String(data.version) !== FORMAT) return false;
                 record = { nickname, version: String(data.version), clips: data.clips };
                 write(RECORD_KEY, record);
                 register();
@@ -89,16 +92,17 @@ export function createPlayerVoice({ apiBase, audio, apiFetch }) {
         has,
         clipId,
         text: (clip) => (has(clip) ? record.clips[clip] : ''),
-        // "C'est parti, X !": at the first run once the voice is there, then
-        // now and then (about one run in four).
-        startLine() {
-            if (!has('start')) return null;
+        // "C'est parti, X !" in the rider's voice: at the first run once the
+        // voice is there, then now and then (about one run in four).
+        startLine(voice) {
+            const clip = `start_${voice}`;
+            if (!has(clip)) return null;
             const stamp = `${record.nickname}|${record.version}`;
             if (read(ANNOUNCED_KEY) !== stamp) {
                 write(ANNOUNCED_KEY, stamp);
-                return clipId('start');
+                return clipId(clip);
             }
-            return Math.random() < 0.25 ? clipId('start') : null;
+            return Math.random() < 0.25 ? clipId(clip) : null;
         },
         get nickname() { return record ? record.nickname : null; }
     };

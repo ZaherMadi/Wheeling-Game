@@ -3,7 +3,21 @@
 // bump into them (not every time), and the police talk when they fine you.
 // At most three exchanges in any ten seconds, never two at once.
 import data from '../street-lines.json';
+import riderVoices from '../rider-voices.json';
 import { streetClips } from '../street-lines.js';
+
+// The main character speaks with the voice picked in the settings.
+const RIDER_STREET_VOICES = Object.entries(riderVoices.voices).map(([key, voice]) => (voice.prefix ? `rider_${key}` : 'rider'));
+function riderStreetVoice() {
+    let key = riderVoices.default;
+    try {
+        const saved = localStorage.getItem('wheelie_rider_voice');
+        if (riderVoices.voices[saved]) key = saved;
+    } catch {
+        // Default voice.
+    }
+    return riderVoices.voices[key].prefix ? `rider_${key}` : 'rider';
+}
 
 const WINDOW = 10;
 const MAX_IN_WINDOW = 3;
@@ -14,7 +28,7 @@ const pick = (list) => list[Math.floor(Math.random() * list.length)];
 const wait = (seconds) => new Promise((resolve) => setTimeout(resolve, seconds * 1000));
 
 export function createStreetTalk({ audio, people, playerVoice = null }) {
-    const clips = streetClips(data);
+    const clips = streetClips(data, RIDER_STREET_VOICES);
     const byKey = new Map();
     for (const clip of clips) {
         const key = `${clip.voice}:${clip.category}`;
@@ -90,7 +104,7 @@ export function createStreetTalk({ audio, people, playerVoice = null }) {
             people.talk(walker, player.x, player.z, 9);
             run([
                 () => line(voice, 'ask5hc', 'Passant', { pan }),
-                () => line('rider', 'reply5hc', 'Toi', { volume: 1 }),
+                () => line(riderStreetVoice(), 'reply5hc', 'Toi', { volume: 1 }),
                 () => line(voice, 'confirm5hc', 'Passant', { pan }),
                 () => people.talk(walker, player.x, player.z, 0.8)
             ]);
@@ -99,7 +113,7 @@ export function createStreetTalk({ audio, people, playerVoice = null }) {
         stats.greet++;
         people.talk(walker, player.x, player.z, 3.2);
         const steps = [() => line(voice, 'compliment', 'Passant', { pan })];
-        if (Math.random() < 0.4) steps.push(() => line('rider', 'thanks', 'Toi', { volume: 1 }));
+        if (Math.random() < 0.4) steps.push(() => line(riderStreetVoice(), 'thanks', 'Toi', { volume: 1 }));
         run(steps);
     }
 
@@ -117,7 +131,8 @@ export function createStreetTalk({ audio, people, playerVoice = null }) {
         if (mode !== 'walk') return;
         if (!warmed) {
             warmed = true;
-            audio.warmUp(clips.filter((clip) => clip.group !== 'police').map((clip) => clip.id));
+            const rider = riderStreetVoice();
+            audio.warmUp(clips.filter((clip) => clip.group === 'pedestrian' || clip.voice === rider).map((clip) => clip.id));
         }
         // Bumping into someone: they step aside; sometimes they say so.
         for (const walker of people.near(player.x, player.z, BUMP_RADIUS)) {
@@ -156,6 +171,13 @@ export function createStreetTalk({ audio, people, playerVoice = null }) {
         return run([() => line(voice, category, 'Police', { volume: 1, named: useName ? namedClip : null })]);
     }
 
+    // Another speaker (the rider standing still) takes a slot in the limit.
+    function claim() {
+        if (!allowed()) return false;
+        recent.push(clock);
+        return true;
+    }
+
     function warmPolice() {
         audio.warmUp(clips.filter((clip) => clip.group === 'police').map((clip) => clip.id));
     }
@@ -167,7 +189,7 @@ export function createStreetTalk({ audio, people, playerVoice = null }) {
     }
 
     return {
-        update, police, warmPolice, reset,
+        update, police, warmPolice, reset, claim,
         get stats() { return { ...stats, interactions, recent: recent.length }; },
         get busy() { return busy; }
     };

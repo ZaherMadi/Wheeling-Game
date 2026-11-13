@@ -1,0 +1,38 @@
+{
+  "default": "jamal",
+  "voices": {
+    "jamal": {
+      "label": "Young Jamal",
+      "description": "Voix d'origine, posée",
+      "gender": "m",
+      "voiceId": "env",
+      "prefix": "",
+      "settings": { "stability": 0.5, "similarity_boost": 0.75, "style": 0, "use_speaker_boost": true }
+    },
+    "will": {
+      "label": "Will",
+      "description": "Jeune, détendu",
+      "gender": "m",
+      "voiceId": "bIHbv24MWmeRgasZH58o",
+      "prefix": "will_",
+      "settings": { "stability": 0.42, "similarity_boost": 0.82, "style": 0.28, "use_speaker_boost": true, "speed": 1.04 }
+    },
+    "victoire": {
+      "label": "Victoire",
+      "description": "Française, énergique",
+      "gender": "f",
+      "voiceId": "O31r762Gb3WFygrEOGh0",
+      "prefix": "vic_",
+      "settings": { "stability": 0.38, "similarity_boost": 0.8, "style": 0.42, "use_speaker_boost": true, "speed": 1.06 },
+      "overrides": {
+        "frs_combo_4": "J'suis trop chaude, wesh !",
+        "frs_crash_2": "Putain, j'suis tombée !",
+        "frs_idle_4": "Allez, je vais pas rester plantée là toute la journée."
+      }
+    }
+  },
+  "preview": {
+    "fr": "Salut ! C'est moi qui vais commenter tes rides. Allez, on y va ?",
+    "en": "Yo! I'm the one calling your rides. Ready? Let's go!"
+  }
+}

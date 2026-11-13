@@ -185,6 +185,28 @@
         "id": "fr_periodic_4",
         "text": "Ça roule, ma gueule !"
       }
+    ],
+    "idle": [
+      {
+        "id": "fr_idle_1",
+        "text": "Kéfa ?"
+      },
+      {
+        "id": "fr_idle_2",
+        "text": "Mec, tu veux pas bouger un peu ?"
+      },
+      {
+        "id": "fr_idle_3",
+        "text": "Ah ouais, on est posé là."
+      },
+      {
+        "id": "fr_idle_4",
+        "text": "Tu comptes rester planté là longtemps ?"
+      },
+      {
+        "id": "fr_idle_5",
+        "text": "Bon… il se passe quoi, là ?"
+      }
     ]
   },
   "fr_self": {
@@ -369,6 +391,28 @@
         "id": "frs_periodic_4",
         "text": "Ça roule !"
       }
+    ],
+    "idle": [
+      {
+        "id": "frs_idle_1",
+        "text": "Kéfa ?"
+      },
+      {
+        "id": "frs_idle_2",
+        "text": "Bon, je bouge ou quoi ?"
+      },
+      {
+        "id": "frs_idle_3",
+        "text": "Ah ouais, on est posé là."
+      },
+      {
+        "id": "frs_idle_4",
+        "text": "Allez, je vais pas rester planté là toute la journée."
+      },
+      {
+        "id": "frs_idle_5",
+        "text": "Il se passe rien ici, wesh."
+      }
     ]
   },
   "en": {
@@ -549,6 +593,24 @@
         "id": "en_periodic_4",
         "text": "Feeling good right now!"
       }
+    ],
+    "idle": [
+      {
+        "id": "en_idle_1",
+        "text": "Yo, what are we doing?"
+      },
+      {
+        "id": "en_idle_2",
+        "text": "Bro, you gonna move or what?"
+      },
+      {
+        "id": "en_idle_3",
+        "text": "Oh yeah, we just chilling here."
+      },
+      {
+        "id": "en_idle_4",
+        "text": "You planning to stand there all day?"
+      }
     ]
   },
   "en_self": {
@@ -724,6 +786,24 @@
       {
         "id": "ens_periodic_4",
         "text": "Feeling good right now!"
+      }
+    ],
+    "idle": [
+      {
+        "id": "ens_idle_1",
+        "text": "What am I even doing?"
+      },
+      {
+        "id": "ens_idle_2",
+        "text": "Alright, I should get moving."
+      },
+      {
+        "id": "ens_idle_3",
+        "text": "Yeah, just chilling here."
+      },
+      {
+        "id": "ens_idle_4",
+        "text": "Nothing happening here, man."
       }
     ]
   },

@@ -5,6 +5,7 @@ import soundEffects from './src/sound-effects.json';
 import { createAudioEngine } from './src/audio-engine.js';
 import { BIKE_RECOVERY_POINTS, addPoints, releaseBike, syncPoints } from './src/v2/freeroam.js';
 import { createPlayerVoice } from './src/player-voice.js';
+import riderVoices from './src/rider-voices.json';
 
 // Two versions share the same simulation, scoring and ranked replay:
 // 'v2' (realistic city, new rider) and 'classic' (the original V1 look).
@@ -16,6 +17,8 @@ if (requestedVersion === 'classic' || requestedVersion === 'v2') {
 }
 const GAME_VERSION = localStorage.getItem(VERSION_KEY) === 'classic' ? 'classic' : 'v2';
 const IS_V2 = GAME_VERSION === 'v2';
+// Each version has its own leaderboard (and best score), same nickname.
+const HIGH_SCORE_KEY = IS_V2 ? 'wheelie_high_score_v2' : 'wheelie_high_score';
 // Only the selected version's visuals are downloaded.
 const createRealisticVersion = IS_V2
     ? (await import('./src/v2/index.js')).createRealisticVersion
@@ -81,7 +84,7 @@ let state = {
     isPaused: false,
     userPaused: false,
     score: 0,
-    highScore: parseInt(localStorage.getItem('wheelie_high_score')) || 0,
+    highScore: parseInt(localStorage.getItem(HIGH_SCORE_KEY)) || 0,
     speed: 0,
     distance: 0,
     gameTime: 0,
@@ -911,7 +914,7 @@ function init() {
         createCheckpoint();
     }
     loadGraffiti();
-    state.highScore = parseInt(localStorage.getItem('wheelie_high_score')) || 0;
+    state.highScore = parseInt(localStorage.getItem(HIGH_SCORE_KEY)) || 0;
     const highScoreEl = document.getElementById('high-score-display');
     if (highScoreEl) {
         highScoreEl.innerText = `MEILLEUR: ${state.highScore}`;
@@ -924,6 +927,7 @@ function init() {
     setVoiceEnabled(GAME_SETTINGS.voiceEnabled);
     setSfxEnabled(GAME_SETTINGS.sfxEnabled);
     updateLanguageButtons();
+    if (IS_V2) mountRiderVoicePicker();
     applyGraphicsQuality();
     getAudioManifest().then(() => {
         // After the first frame: decoding competes with building the city.
@@ -1133,7 +1137,8 @@ async function startGame() {
 
         setupMobileControls();
         // "C'est parti, <pseudo> !" at the first run once the voice exists, then now and then.
-        const namedStart = IS_V2 && GAME_SETTINGS.voiceEnabled ? playerVoice.startLine() : null;
+        const namedStart = IS_V2 && GAME_SETTINGS.voiceEnabled ? playerVoice.startLine(riderVoiceKey()) : null;
+        resetIdleVoice();
         if (namedStart) {
             lastVoiceAt = performance.now();
             audio.speak(namedStart, { volume: 0.95 });
@@ -1727,10 +1732,12 @@ async function gameOver() {
     let highScore = state.highScore;
     if (nickname) {
         const stats = await Promise.race([getPlayerStats(nickname), screenDelay.then(() => null)]);
-        if (stats && stats.best_score > highScore) {
-            highScore = stats.best_score;
+        // The best score of this version's leaderboard only.
+        const versionBest = stats?.games?.find((game) => game.game_name === GAME_NAME)?.best_score || 0;
+        if (versionBest > highScore) {
+            highScore = versionBest;
             state.highScore = highScore;
-            localStorage.setItem('wheelie_high_score', highScore);
+            localStorage.setItem(HIGH_SCORE_KEY, highScore);
         }
     }
     
@@ -1738,7 +1745,7 @@ async function gameOver() {
     if (currentScore > highScore) {
         highScore = currentScore;
         state.highScore = highScore;
-        localStorage.setItem('wheelie_high_score', highScore);
+        localStorage.setItem(HIGH_SCORE_KEY, highScore);
     }
 
     await screenDelay;
@@ -1749,9 +1756,10 @@ async function gameOver() {
         setTimeout(() => {
             if (sequence !== crashSequence) return;
             // "Nouveau record, <pseudo> !" one time in two once the voice exists.
-            if (IS_V2 && GAME_SETTINGS.voiceEnabled && playerVoice.has('record') && Math.random() < 0.5) {
+            const recordClip = `record_${riderVoiceKey()}`;
+            if (IS_V2 && GAME_SETTINGS.voiceEnabled && playerVoice.has(recordClip) && Math.random() < 0.5) {
                 lastVoiceAt = performance.now();
-                audio.speak(playerVoice.clipId('record'), { volume: 0.95 });
+                audio.speak(playerVoice.clipId(recordClip), { volume: 0.95 });
             } else {
                 speak('record', { force: true, allowWhenStopped: true });
             }
@@ -2401,6 +2409,7 @@ function animate(timestamp = performance.now()) {
     if (!state.isPlaying) return;
     const snapshot = visualSnapshot();
     audio.update(elapsed, snapshot);
+    if (GAME_SETTINGS.gameMode === 'free' && v2) updateIdleVoice(elapsed);
     uiAccumulator += elapsed;
     if (uiAccumulator >= 0.1) {
         updateUI();
@@ -2785,7 +2794,68 @@ function getAudioManifest() {
     return audioManifestPromise;
 }
 
+// The rider's voice (V2): Young Jamal, Will or Victoire. Each voice has its
+// own copy of every line (prefix), loaded only once it is chosen.
+const RIDER_VOICE_KEY = 'wheelie_rider_voice';
+function riderVoiceKey() {
+    const key = localStorage.getItem(RIDER_VOICE_KEY);
+    return riderVoices.voices[key] ? key : riderVoices.default;
+}
+function voicePrefix() {
+    return IS_V2 ? riderVoices.voices[riderVoiceKey()].prefix : '';
+}
+
+function setRiderVoice(key) {
+    if (!riderVoices.voices[key]) return;
+    localStorage.setItem(RIDER_VOICE_KEY, key);
+    updateRiderVoiceButtons();
+    warmUpVoices();
+    previewRiderVoice(key);
+}
+
+function previewRiderVoice(key) {
+    audio.unlock();
+    audio.speak(`voice_preview_${key}_${GAME_SETTINGS.language}`, { volume: 0.95 });
+}
+
+function mountRiderVoicePicker() {
+    const box = document.getElementById('rider-voice-options');
+    if (!box || box.childElementCount) return;
+    for (const [key, voice] of Object.entries(riderVoices.voices)) {
+        const row = document.createElement('div');
+        row.className = 'rider-voice';
+        const pick = document.createElement('button');
+        pick.type = 'button';
+        pick.className = 'rider-voice__pick';
+        pick.dataset.voice = key;
+        pick.innerHTML = `<strong></strong><span></span>`;
+        pick.querySelector('strong').textContent = voice.label;
+        pick.querySelector('span').textContent = voice.description;
+        pick.addEventListener('click', () => setRiderVoice(key));
+        const listen = document.createElement('button');
+        listen.type = 'button';
+        listen.className = 'rider-voice__listen';
+        listen.setAttribute('aria-label', `Écouter ${voice.label}`);
+        listen.textContent = '▶ Écouter';
+        listen.addEventListener('click', () => previewRiderVoice(key));
+        row.append(pick, listen);
+        box.append(row);
+    }
+    updateRiderVoiceButtons();
+}
+
+function updateRiderVoiceButtons() {
+    const current = riderVoiceKey();
+    document.querySelectorAll('.rider-voice__pick').forEach((button) => {
+        button.classList.toggle('active', button.dataset.voice === current);
+    });
+}
+
+// Free roam has its own lines: no race commentary there.
+const FREE_ROAM_EVENTS = new Set(['start', 'idle', 'wheelie', 'speed']);
+
 function speak(eventName, { force = false, allowWhenStopped = false } = {}) {
+    if (GAME_SETTINGS.gameMode === 'free' && !FREE_ROAM_EVENTS.has(eventName)) return;
     const group = voiceLineGroups[voiceGroup()];
     // Events newer than a group (the classic voice) fall back to the closest one.
     const lines = group?.[eventName] || (eventName === 'earlyCrash' ? group?.crash : null);
@@ -2795,11 +2865,12 @@ function speak(eventName, { force = false, allowWhenStopped = false } = {}) {
     lastVoiceAt = performance.now();
     getAudioManifest().then(({ available, hashes }) => {
         if (!GAME_SETTINGS.voiceEnabled || (!state.isPlaying && !allowWhenStopped)) return;
-        const choices = lines.filter((line) => available.has(line.id));
+        const prefix = voicePrefix();
+        const choices = lines.filter((line) => available.has(prefix + line.id));
         if (choices.length === 0 || (!force && audio.speaking)) return;
         void hashes;
         const line = choices[Math.floor(Math.random() * choices.length)];
-        audio.speak(line.id, { volume: 0.9 });
+        audio.speak(prefix + line.id, { volume: 0.9 });
     });
 }
 
@@ -2807,9 +2878,31 @@ function stopVoice() {
     audio.stopVoice();
 }
 
+// Standing still in free roam: "Kéfa ?", "Mec, tu veux pas bouger un peu ?"…
+// now and then, every 30 s to 4 min, within the street dialogue's limit.
+let idleTime = 0;
+let nextIdleAt = 30 + Math.random() * 210;
+function resetIdleVoice() {
+    idleTime = 0;
+    nextIdleAt = 30 + Math.random() * 210;
+}
+function updateIdleVoice(dt) {
+    const roam = v2.roam;
+    if (state.isPaused || state.userPaused || roam.frozen || state.freeMode.speed > 0.01) {
+        idleTime = 0;
+        return;
+    }
+    idleTime += dt;
+    if (idleTime < nextIdleAt) return;
+    resetIdleVoice();
+    if (!GAME_SETTINGS.voiceEnabled || !roam.talk.claim()) return;
+    speak('idle', { force: true });
+}
+
 // Decode the voice lines of the current group ahead of the first ride.
 function warmUpVoices() {
-    const ids = Object.values(voiceLineGroups[voiceGroup()] || {}).flat().map((line) => line.id);
+    const prefix = voicePrefix();
+    const ids = Object.values(voiceLineGroups[voiceGroup()] || {}).flat().map((line) => prefix + line.id);
     audio.warmUp(GAME_SETTINGS.voiceEnabled ? ids : []);
 }
 
@@ -3192,6 +3285,8 @@ function updateVersionUI() {
     document.getElementById('version-classic')?.classList.toggle('active', !IS_V2);
     const label = document.getElementById('version-label');
     if (label) label.innerText = IS_V2 ? '51 Games - V2.0 Réaliste' : '51 Games - V1.0 Classique';
+    const board = document.getElementById('leaderboard-version');
+    if (board) board.innerText = IS_V2 ? 'VERSION 2 · RÉALISTE' : 'VERSION 1 · CLASSIQUE';
     // The rider's language only applies to the V2 voice.
     document.querySelectorAll('.v2-only').forEach((element) => {
         element.style.display = IS_V2 ? '' : 'none';
@@ -3402,7 +3497,8 @@ const API_BASE_URL = 'https://51-games-api.vercel.app/api/ranking';
 // Created here, after the API address: it registers the stored clips at once.
 const playerVoice = createPlayerVoice({ apiBase: () => API_BASE_URL, audio, apiFetch });
 setTimeout(() => { if (IS_V2) playerVoice.ensure(undefined, { generate: true }); }, 3000);
-const GAME_NAME = 'WheelieKing';
+// V1 (classic) and V2 (realistic) are ranked apart.
+const GAME_NAME = IS_V2 ? 'WheelieKingV2' : 'WheelieKing';
 
 function setRankingStatus(message) {
     const status = document.getElementById('ranking-status');
@@ -3430,7 +3526,7 @@ async function createWheelieRun() {
     const response = await apiFetch(`${API_BASE_URL}/wheelie-sessions`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ difficulty: GAME_SETTINGS.difficulty })
+        body: JSON.stringify({ difficulty: GAME_SETTINGS.difficulty, version: IS_V2 ? 'v2' : 'v1' })
     });
 
     if (!response.ok) {
@@ -3776,5 +3872,5 @@ function releaseSplash() {
 
 // Development only: lets tests and the console inspect a running game.
 if (import.meta.env.DEV) {
-    window.__wheelie = { state, renderer, scene, camera, audio, CONFIG, playerVoice, gameOver, get v2() { return v2; } };
+    window.__wheelie = { state, renderer, scene, camera, audio, CONFIG, playerVoice, gameOver, setIdleIn(seconds) { idleTime = 0; nextIdleAt = seconds; }, get v2() { return v2; } };
 }
