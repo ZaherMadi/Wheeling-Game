@@ -62,9 +62,13 @@ class Parts {
 
 const damp = (current, target, rate, dt) => current + (target - current) * (1 - Math.exp(-rate * dt));
 
+// The hood on the back (shared with the podium figures): high and short, so
+// it stops above the name printed across the shoulders.
+export const HOOD_TRANSFORM = () => transform(0, 0.585, -0.1, 0.16, 0.11, 0.1, -1.95);
+
 // Gloss black helmet with the 5HC mark on both sides and a stripe at the
 // back (sphere UVs: u 0 = left side, 0.25 = front, 0.5 = right, 0.75 = back).
-function createHelmetTexture(base = '#0a0a0c', accent = '#f2c014', number = '51') {
+export function createHelmetTexture(base = '#0a0a0c', accent = '#f2c014', number = '51') {
     const canvas = document.createElement('canvas');
     canvas.width = 512;
     canvas.height = 256;
@@ -329,8 +333,9 @@ export function createRider({ scene }) {
     const printGeometry = new THREE.LatheGeometry(printProfile, 12, Math.PI - 0.95, 1.9);
     body.add(jerseyPrint, printGeometry, transform(0, 0.02, 0, 1.22, 1, 0.9));
     // Hoodie: hood resting on the back, ribbed hem, front pocket, drawstrings.
+    // Folded high against the neck: the name across the shoulders shows.
     const hood = new THREE.SphereGeometry(1, 14, 10, 0, Math.PI * 2, 0, Math.PI * 0.55);
-    body.add(jersey, hood, transform(0, 0.55, -0.1, 0.17, 0.13, 0.12, -1.9));
+    body.add(jersey, hood, HOOD_TRANSFORM());
     body.add(jerseyDark, new THREE.TorusGeometry(0.13, 0.035, 6, 16), transform(0, 0.6, -0.02, 1.05, 1, 0.9, Math.PI / 2 - 0.25));
     body.add(jerseyDark, new THREE.CylinderGeometry(0.165, 0.152, 0.07, 24), transform(0, 0.045, 0, 1.23, 1, 0.92));
     body.add(jerseyDark, box, transform(0, 0.17, 0.17, 0.26, 0.13, 0.03, 0.12));

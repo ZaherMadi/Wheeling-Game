@@ -549,15 +549,16 @@ export function createJerseyTexture(number = '51', color = '#f6c416', ink = '#11
     }
     ctx.textAlign = 'center';
     ctx.textBaseline = 'middle';
-    // Name across the shoulders, number below (football shirt style).
-    const numberY = name ? size / 2 + 26 : size / 2 + 8;
+    // Name across the shoulders, number below (football shirt style). The
+    // name sits a little low: the hood rests just above it.
+    const numberY = name ? size / 2 + 28 : size / 2 + 8;
     if (name) {
         ctx.font = '900 34px "Arial Black", Arial, sans-serif';
         ctx.lineWidth = 6;
         ctx.strokeStyle = '#111';
-        ctx.strokeText(name, size / 2, 46, size * 0.86);
+        ctx.strokeText(name, size / 2, 60, size * 0.86);
         ctx.fillStyle = ink;
-        ctx.fillText(name, size / 2, 46, size * 0.86);
+        ctx.fillText(name, size / 2, 60, size * 0.86);
     }
     ctx.font = `italic 900 ${name ? 128 : 150}px "Arial Black", Arial, sans-serif`;
     ctx.lineWidth = 10;

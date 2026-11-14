@@ -67,6 +67,19 @@ export function finePoints(points) {
     return applied;
 }
 
+// Points spent (podium poses): taken like a fine, only if they are there.
+export function spendPoints(points) {
+    const amount = Math.max(0, Math.floor(points));
+    if (totalPoints() < amount) return false;
+    try {
+        localStorage.setItem(PENALTY_KEY, String(stored(PENALTY_KEY) + amount));
+    } catch {
+        return false;
+    }
+    document.dispatchEvent(new CustomEvent('wheelie:points'));
+    return true;
+}
+
 function save(key, value) {
     try {
         if (value === null) localStorage.removeItem(key);

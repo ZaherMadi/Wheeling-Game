@@ -1541,6 +1541,16 @@
     </div>
     <button id="trophies-btn" type="button" style="margin-top: 10px; font-size: 16px; padding: 12px 25px;">🏅 SALLE DES TROPHÉES</button>
     <button id="back-from-leaderboard" style="margin-top: 15px; background: #444; font-size: 16px; padding: 12px 25px;">← RETOUR</button>
+    <!-- V2: the podium (3D, behind this transparent area), the player's pose,
+         and tabs when the screen is too short for both side by side. -->
+    <div id="pose-picker" class="pose-picker v2-only"></div>
+    <div id="podium-stage" class="podium-stage v2-only">
+      <p id="podium-caption" class="podium-caption" role="status" aria-live="polite"></p>
+    </div>
+    <div class="podium-tabs v2-only" role="tablist" aria-label="Podium ou classement">
+      <button type="button" id="podium-tab" role="tab" aria-selected="true">PODIUM</button>
+      <button type="button" id="list-tab" role="tab" aria-selected="false">CLASSEMENT</button>
+    </div>
   </div>
 
   <!-- TROPHY ROOM: medals, "first for..." trophies, what points unlock -->

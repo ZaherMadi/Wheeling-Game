@@ -10,6 +10,8 @@ import { loadLivery, mountLiveryPanel } from './livery.js';
 import { createFreeRoam, totalPoints } from './freeroam.js';
 import { PLATE_POINTS } from '../unlocks.js';
 import { createOfficer, decoratePoliceCar } from './police.js';
+import { createPodium } from './podium.js';
+import { chosenPose } from './poses.js';
 import { installRacingUI } from '../ui/ui.js';
 
 const DAY_CYCLE_SECONDS = 600;
@@ -403,6 +405,51 @@ export function createRealisticVersion({ scene, renderer, camera, mobile, audio,
         }
     }
 
+    // Leaderboard podium: the top three in the street ahead, framed in the
+    // part of the screen the list leaves free (#podium-stage).
+    const podium = createPodium({ scene });
+    let podiumFrame = null;
+    function stageArea() {
+        const width = window.innerWidth;
+        const height = window.innerHeight;
+        const stage = document.getElementById('podium-stage')?.getBoundingClientRect();
+        if (!stage || stage.width < 40 || stage.height < 40) return { width, height, x0: 0, x1: width, y0: 0, y1: height };
+        return { width, height, x0: stage.left, x1: stage.right, y0: stage.top, y1: stage.bottom };
+    }
+    function podiumView(on) {
+        if (on && podiumFrame === null) {
+            savedPosition.copy(camera.position);
+            savedQuaternion.copy(camera.quaternion);
+            podium.place(rider.bikeGroup.position);
+            podium.group.visible = true;
+            rider.bikeGroup.visible = false;
+            let last = performance.now();
+            const tick = (now) => {
+                const dt = Math.min(0.05, Math.max(0, (now - last) / 1000));
+                last = now;
+                podium.update(dt);
+                podium.frame(camera, stageArea());
+                renderer.render(scene, camera);
+                podiumFrame = requestAnimationFrame(tick);
+            };
+            podiumFrame = requestAnimationFrame(tick);
+        } else if (!on && podiumFrame !== null) {
+            cancelAnimationFrame(podiumFrame);
+            podiumFrame = null;
+            podium.group.visible = false;
+            rider.bikeGroup.visible = true;
+            camera.clearViewOffset();
+            camera.position.copy(savedPosition);
+            camera.quaternion.copy(savedQuaternion);
+            renderer.render(scene, camera);
+        }
+    }
+    // The player's look as sent with ranked runs (the podium shows it).
+    const podiumLook = () => {
+        const livery = loadLivery();
+        return { number: String(livery.number || '51'), hoodie: livery.hoodie, helmet: livery.helmet, bike: livery.bike, pose: chosenPose() };
+    };
+
     function setQuality(high) {
         highQuality = high;
         world.setQuality(high);
@@ -412,6 +459,7 @@ export function createRealisticVersion({ scene, renderer, camera, mobile, audio,
 
     return {
         world, rider, fx, roam, frame, reset, setQuality, showroom, startAd, adScreen, policeStop,
+        podium, podiumView, podiumLook, riderName,
         get resolutionScale() { return resolution.scale; },
         smoke: () => fx.smoke(rider.bikeGroup.position, bikeVelocity),
         spark: () => fx.spark(point.copy(rider.bikeGroup.position).setY(0.08), bikeVelocity, 2)

@@ -9,6 +9,7 @@ import { BIKE_RECOVERY_POINTS, addPoints, finePoints, releaseBike, syncPoints, t
 import { createPlayerVoice } from './src/player-voice.js';
 import { renderTrophyRoom } from './src/trophy-room.js';
 import { HumanCheckRequired, forgetPass, runHumanCheck, storedPass } from './src/human-check.js';
+import { POSES, buyPose, choosePose, chosenPose, ownedPoses } from './src/v2/poses.js';
 import { rewards } from './src/unlocks.js';
 import { createSpeedLines } from './src/v2/speedlines.js';
 import riderVoices from './src/rider-voices.json';
@@ -4895,7 +4896,9 @@ async function submitCompletedRun(nickname) {
 async function sendCompletedRun(nickname) {
     const run = completedRankedRun;
     const body = JSON.stringify({
-        run_token: run.runToken, nickname, input_log: encodeInputLog(run.inputLog), flip_mode: run.flipMode, plate: run.plate
+        run_token: run.runToken, nickname, input_log: encodeInputLog(run.inputLog), flip_mode: run.flipMode, plate: run.plate,
+        // How the podium shows this player (V2).
+        look: v2 ? v2.podiumLook() : undefined
     });
     setRankingStatus('Envoi du score…');
     for (let attempt = 1; attempt <= 3; attempt++) {
@@ -4985,7 +4988,8 @@ async function sendCheckpoint({ keepalive = false } = {}) {
             body: JSON.stringify({
                 run_token: token, nickname: localStorage.getItem('wheelie_nickname') || undefined,
                 offset: from, chunk: encodeInputLog(state.inputLog.slice(from * 2, frames * 2)),
-                flip_mode: state.flipMode, plate: state.plate.on || state.plate.off
+                flip_mode: state.flipMode, plate: state.plate.on || state.plate.off,
+                look: v2 && from === 0 ? v2.podiumLook() : undefined
             })
         }, 8000);
         if (checkpoint.token !== token) return;
@@ -5352,6 +5356,7 @@ async function showLeaderboard() {
 
     if (startScreen) startScreen.classList.remove('active');
     if (leaderboardScreen) leaderboardScreen.classList.add('active');
+    openPodium();
 
     // Afficher un message de chargement
     leaderboardList.innerHTML = '<p style="color: #888;">Chargement...</p>';
@@ -5363,6 +5368,191 @@ async function showLeaderboard() {
         return;
     }
     appendLeaderboardRows(rows, 20);
+    updatePodium(rows);
+}
+
+// Podium (V2): the top three on a podium beside / above the list, played
+// from what this player saw last time (who climbed, who came in, a new
+// first with confetti), refreshed every 15 s while the screen is open.
+const PODIUM_SEEN_KEY = 'wheelie_podium_seen';
+let podiumTimer = null;
+let podiumCaptionTimer = null;
+function podiumEntries(rows) {
+    const mine = (localStorage.getItem('wheelie_nickname') || '').toLowerCase();
+    return rows.slice(0, 3).map((row) => {
+        const key = String(row.nickname).toLowerCase();
+        // The player's own look from this phone, even before a ranked run sends it.
+        return { key, name: String(row.nickname), score: row.best_score, look: key === mine ? v2.podiumLook() : row.look || null };
+    });
+}
+
+function updatePodium(rows) {
+    if (!v2 || !rows.length) return;
+    let previous = null;
+    try {
+        previous = JSON.parse(localStorage.getItem(PODIUM_SEEN_KEY) || 'null');
+    } catch {
+        previous = null;
+    }
+    const entries = podiumEntries(rows);
+    const events = v2.podium.setStandings(entries, Array.isArray(previous) ? previous : null);
+    try {
+        localStorage.setItem(PODIUM_SEEN_KEY, JSON.stringify(entries));
+    } catch {
+        // Not kept: the next visit plays it all again.
+    }
+    showPodiumCaption(events);
+}
+
+function showPodiumCaption(events) {
+    const caption = document.getElementById('podium-caption');
+    if (!caption || !events.length) return;
+    const place = ['1re', '2e', '3e'];
+    const lines = events.map(({ type, name, rank }) =>
+        rank === 0 ? `${name} prend la 1re place !`
+            : type === 'enter' ? `${name} monte sur le podium (${place[rank]})`
+                : `${name} passe ${place[rank]}`);
+    let index = 0;
+    clearTimeout(podiumCaptionTimer);
+    const next = () => {
+        if (index >= lines.length) {
+            caption.classList.remove('is-shown');
+            return;
+        }
+        caption.textContent = lines[index++];
+        caption.classList.add('is-shown');
+        podiumCaptionTimer = setTimeout(next, 4200);
+    };
+    next();
+    audio.play('new_record', { volume: 0.35 });
+}
+
+async function refreshPodium() {
+    if (!document.getElementById('leaderboard-screen')?.classList.contains('active')) return closePodium();
+    const rows = await fetchLeaderboardFromAPI(0, 3);
+    let previous = [];
+    try {
+        previous = JSON.parse(localStorage.getItem(PODIUM_SEEN_KEY) || '[]');
+    } catch {
+        previous = [];
+    }
+    const changed = rows.slice(0, 3).map((row) => `${String(row.nickname).toLowerCase()}:${row.best_score}`).join('|')
+        !== (previous || []).map((entry) => `${entry.key}:${entry.score}`).join('|');
+    if (!changed) return;
+    updatePodium(rows);
+    // The list too, from the top (someone moved).
+    const fresh = await fetchLeaderboardFromAPI(0, 20);
+    if (!fresh.length) return;
+    const list = document.getElementById('leaderboard-list');
+    list.innerHTML = '';
+    leaderboardPage = { shown: 0, loading: false, done: false, sequence: (leaderboardPage.sequence || 0) + 1 };
+    appendLeaderboardRows(fresh, 20);
+}
+
+function openPodium() {
+    const screen = document.getElementById('leaderboard-screen');
+    if (!v2 || !screen) return;
+    screen.classList.add('has-podium');
+    if (!screen.classList.contains('tab-list')) screen.classList.add('tab-podium');
+    renderPosePicker();
+    v2.podiumView(true);
+    clearInterval(podiumTimer);
+    podiumTimer = setInterval(refreshPodium, 15000);
+}
+
+function closePodium() {
+    clearInterval(podiumTimer);
+    podiumTimer = null;
+    clearTimeout(podiumCaptionTimer);
+    document.getElementById('podium-caption')?.classList.remove('is-shown');
+    if (v2) v2.podiumView(false);
+}
+
+function selectPodiumTab(tab) {
+    const screen = document.getElementById('leaderboard-screen');
+    if (!screen) return;
+    screen.classList.toggle('tab-podium', tab === 'podium');
+    screen.classList.toggle('tab-list', tab === 'list');
+    document.getElementById('podium-tab')?.setAttribute('aria-selected', String(tab === 'podium'));
+    document.getElementById('list-tab')?.setAttribute('aria-selected', String(tab === 'list'));
+}
+document.getElementById('podium-tab')?.addEventListener('click', () => selectPodiumTab('podium'));
+document.getElementById('list-tab')?.addEventListener('click', () => selectPodiumTab('list'));
+// Swipe between the two on short screens.
+{
+    let startX = null;
+    const screen = document.getElementById('leaderboard-screen');
+    screen?.addEventListener('touchstart', (event) => {
+        startX = event.touches.length === 1 ? event.touches[0].clientX : null;
+    }, { passive: true });
+    screen?.addEventListener('touchend', (event) => {
+        if (startX === null || !screen.classList.contains('has-podium')) return;
+        const dx = event.changedTouches[0].clientX - startX;
+        startX = null;
+        if (Math.abs(dx) < 60 || getComputedStyle(document.querySelector('.podium-tabs')).display === 'none') return;
+        selectPodiumTab(dx < 0 ? 'list' : 'podium');
+    }, { passive: true });
+}
+
+// The player's pose on the podium: try it (their figure in front of the
+// podium), buy it with cumulative points (a second tap confirms), choose it.
+let poseToConfirm = null;
+function renderPosePicker(note = '') {
+    const picker = document.getElementById('pose-picker');
+    if (!picker || !v2) return;
+    const owned = ownedPoses();
+    const chosen = chosenPose();
+    picker.replaceChildren();
+    const title = document.createElement('div');
+    title.className = 'pose-picker__title';
+    title.innerHTML = '<span>TA POSE SUR LE PODIUM</span>';
+    const points = document.createElement('span');
+    points.innerHTML = `points : <b>${totalPoints()}</b>`;
+    title.append(points);
+    const list = document.createElement('div');
+    list.className = 'pose-picker__list';
+    for (const pose of POSES) {
+        const chip = document.createElement('button');
+        chip.type = 'button';
+        chip.className = 'pose-chip';
+        chip.classList.toggle('is-chosen', pose.id === chosen);
+        chip.classList.toggle('is-confirm', pose.id === poseToConfirm);
+        chip.textContent = pose.id === poseToConfirm ? `ACHETER « ${pose.name} » ?` : pose.name;
+        if (pose.id !== poseToConfirm) {
+            const tag = document.createElement('em');
+            tag.textContent = owned.has(pose.id) ? (pose.id === chosen ? '✓' : '') : `${pose.price} pts`;
+            if (tag.textContent) chip.append(tag);
+        }
+        chip.addEventListener('click', () => pickPose(pose));
+        list.append(chip);
+    }
+    const message = document.createElement('p');
+    message.className = 'pose-picker__note';
+    message.textContent = note;
+    picker.append(title, list, message);
+}
+
+function pickPose(pose) {
+    v2.podium.preview({ ...v2.podiumLook(), pose: pose.id }, v2.riderName());
+    if (ownedPoses().has(pose.id)) {
+        poseToConfirm = null;
+        choosePose(pose.id);
+        renderPosePicker('Pose choisie. Les autres la verront dès ta prochaine partie classée.');
+        return;
+    }
+    if (poseToConfirm !== pose.id) {
+        poseToConfirm = pose.id;
+        renderPosePicker(`Aperçu devant le podium. Touche encore pour l’acheter : ${pose.price} points cumulés.`);
+        return;
+    }
+    poseToConfirm = null;
+    const result = buyPose(pose.id);
+    if (result === 'short') {
+        renderPosePicker(`Il te manque ${pose.price - totalPoints()} points cumulés pour cette pose.`);
+        return;
+    }
+    audio.play('new_record', { volume: 0.4 });
+    renderPosePicker('Pose achetée ! Les autres la verront dès ta prochaine partie classée.');
 }
 
 // Rows are built as elements: nicknames are typed by players, never HTML.
@@ -5436,14 +5626,19 @@ document.getElementById('leaderboard-btn')?.addEventListener('click', showLeader
     speedometer.addEventListener('pointerdown', () => secretInput('tap'));
 })();
 // Trophy room: from the leaderboard and back.
-document.getElementById('trophies-btn')?.addEventListener('click', showTrophyRoom);
+document.getElementById('trophies-btn')?.addEventListener('click', () => {
+    closePodium();
+    showTrophyRoom();
+});
 document.getElementById('back-from-trophies')?.addEventListener('click', () => {
     document.getElementById('trophy-screen')?.classList.remove('active');
     document.getElementById('leaderboard-screen')?.classList.add('active');
+    openPodium();
 });
 document.getElementById('back-from-leaderboard')?.addEventListener('click', () => {
     const leaderboardScreen = document.getElementById('leaderboard-screen');
     const startScreen = document.getElementById('start-screen');
+    closePodium();
     if (leaderboardScreen) leaderboardScreen.classList.remove('active');
     if (startScreen) startScreen.classList.add('active');
 });
