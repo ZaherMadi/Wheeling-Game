@@ -936,7 +936,7 @@ export function createRider({ scene }) {
         updateWalk(0, x, z, yaw, 0);
     }
 
-    function updateWalk(dt, x, z, yaw, speed, y = 0, running = false) {
+    function updateWalk(dt, x, z, yaw, speed, y = 0, running = false, cuffed = false) {
         // stride 0..1 walking, up to ~1.8 running (longer steps, faster).
         const stride = Math.min(running ? 1.8 : 1, speed / WALK_REFERENCE);
         const step = Math.min(1, stride);
@@ -965,7 +965,10 @@ export function createRider({ scene }) {
             target.set(side * 0.27, running ? 1.0 : 0.8, -Math.cos(phase) * (running ? 0.3 : 0.22) * stride + 0.04);
             if (running) target.y += Math.max(0, -Math.cos(phase)) * 0.15;
             if (air) target.set(side * 0.42, 1.55, 0.1);
+            // Hands together behind the back.
+            if (cuffed) target.set(side * 0.06, 0.96, -0.2);
             elbowHint.set(side * 0.3, running ? -0.3 : 0, -1);
+            if (cuffed) elbowHint.set(side * 0.6, 0, -0.4);
             solveLimb(arms[i], elbowHint);
             hands[i].position.copy(target);
             hands[i].rotation.set(0, 0, 0);

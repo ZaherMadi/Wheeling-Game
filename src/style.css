@@ -50,50 +50,37 @@ button:focus-visible {
   outline-offset: 3px;
 }
 
-/* Too slow: the police are coming (both versions). */
+/* Menus cover the whole screen, like the game behind them: on iPhones the
+   strip under the home bar was left uncovered. */
+.screen {
+  position: fixed;
+  inset: 0;
+  width: auto;
+  height: auto;
+}
+
+/* Too slow: "TROP LENT !" in red for 2 s, nothing else (both versions). */
 #police-warning {
   position: fixed;
   left: 50%;
-  top: calc(84px + env(safe-area-inset-top, 0px));
+  top: calc(96px + env(safe-area-inset-top, 0px));
   z-index: 45;
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  gap: 2px;
-  max-width: 92vw;
-  padding: 8px 18px 9px;
-  border-radius: 6px;
-  background: rgba(8, 9, 12, 0.82);
-  border: 2px solid #ff3d3d;
-  color: #fff;
   font-family: 'Russo One', system-ui, sans-serif;
-  text-align: center;
+  font-size: clamp(28px, 7vw, 46px);
+  font-style: italic;
+  letter-spacing: 0.04em;
+  color: #ff2a2a;
+  text-shadow: 0 3px 0 rgba(0, 0, 0, 0.75), 0 0 18px rgba(255, 30, 30, 0.6);
+  white-space: nowrap;
   pointer-events: none;
   opacity: 0;
-  transform: translate(-50%, -8px);
-  transition: opacity 0.15s ease, transform 0.15s ease;
+  transform: translate(-50%, -8px) scale(0.92);
+  transition: opacity 0.18s ease, transform 0.18s ease;
 }
 
 #police-warning.is-shown {
   opacity: 1;
-  transform: translate(-50%, 0);
-  animation: police-flash 0.5s steps(1) infinite;
-}
-
-#police-warning strong {
-  font-size: 22px;
-  letter-spacing: 0.06em;
-  color: #ff4a4a;
-}
-
-#police-warning span {
-  font-size: 13px;
-  opacity: 0.92;
-}
-
-@keyframes police-flash {
-  0% { border-color: #ff3d3d; box-shadow: 0 0 18px rgba(255, 61, 61, 0.7); }
-  50% { border-color: #2f6bff; box-shadow: 0 0 18px rgba(47, 107, 255, 0.7); }
+  transform: translate(-50%, 0) scale(1);
 }
 
 /* Why the run ended (game-over screen). */

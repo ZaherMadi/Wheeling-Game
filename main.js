@@ -98,6 +98,19 @@ const AIR_LEVEL_RATE = 0.03;
 // Too slow: under 50 km/h for more than 4 s, the police stop the run.
 // Counted once 50 km/h has been reached (or from 10 s in); skids reset it.
 const SLOW = { kmh: 50, frames: 240, armFrame: 600, warnFrames: 30 };
+// The police chase (competitive). Under 50 km/h a siren is heard from far,
+// then the patrol shows up (sooner if it was seen less than 20 s ago).
+// From then on there are about 10 s to lose it: over 35 km/h it falls back,
+// over 45 it is out of sight (the siren still on), at 50 it is gone; moving
+// two metres further away sideways also gains time. It hits obstacles on its
+// way, and gives up after three (until the next time under 50 km/h). The
+// server only checks the floor of an arrest: minFrames under 45 km/h since
+// the bike was last at 50 (wheelie_replay.py POLICE_FRAMES).
+const POLICE = {
+    recedeKmh: 35, hideKmh: 45, escapeSeconds: 10, longGap: 20,
+    sirenLong: 7, appearLong: 12, sirenQuick: 3, appearQuick: 6,
+    lateralEscape: 2, lane: 4.4, maxHits: 3, minFrames: 600
+};
 // Bavette (mirrored by wheelie_replay.py): a wheelie going over the top no
 // longer ends the run at once. The tail scrapes the road, held at the top,
 // for up to bavetteFrames() frames: fewer when the wheelie came up abruptly
@@ -221,7 +234,10 @@ let state = {
     phase: 1,
     vulnerableUntil: -1,
     badLanding: 0,
-    slow: { armed: false, frames: 0 },
+    slow: { armed: false, frames: 0, policeFrames: 0 },
+    police: { phase: 'idle', lastSeen: -1e9, gaveUp: false },
+    // Secret code: tricks only (no police, unranked, a tenth of the score).
+    tricksOnly: false,
     // Bavette (frames left while held, and in all) and this run's plate.
     bavette: { left: 0, total: 0 },
     plate: { on: false, off: false },
@@ -312,6 +328,8 @@ let lastCameraBikeZ = null;
 // "Too slow" banner (see showPoliceWarning).
 let policeWarning = null;
 let policeWarningShown = -1;
+// Secret code progress (see secretInput).
+const secretCode = { step: 0, prev: { up: false, down: false, space: false } };
 // Obstacles thrown by the bike (see knockObstacle).
 const knockedObstacles = [];
 const knockSize = new THREE.Vector3();
@@ -1308,8 +1326,8 @@ function visualSnapshot() {
         fallen: free && roamFall.active,
         plateOn: !free && state.plate.on,
         // Too slow: how close the police car is (0 far behind, 1 alongside).
-        police: !free && state.isPlaying && state.slow.frames >= SLOW.warnFrames
-            ? Math.min(1, state.slow.frames / SLOW.frames) : null
+        police: !free && state.isPlaying && state.police.phase === 'visible' && !state.police.hidden
+            ? { x: state.police.x, z: policeZ(state.police.p) } : null
     };
 }
 
@@ -1350,7 +1368,10 @@ function resetGame() {
     state.phase = 1;
     state.vulnerableUntil = -1;
     state.badLanding = 0;
-    state.slow = { armed: false, frames: 0 };
+    state.slow = { armed: false, frames: 0, policeFrames: 0 };
+    state.police = { phase: 'idle', lastSeen: -1e9, gaveUp: false };
+    state.tricksOnly = false;
+    secretCode.step = 0;
     state.bavette = { left: 0, total: 0 };
     // The plate rides only on the V2 bike, once unlocked and switched on.
     state.plate = { on: IS_V2 && GAME_SETTINGS.gameMode === 'linear' && plateEquipped(), off: false };
@@ -2081,7 +2102,58 @@ function updatePhases(frame) {
 
 // Obstacles are dropped during phase 2 (tricks only), from its sign.
 function obstaclesAllowed() {
+    if (state.tricksOnly) return false;
     return state.frame < JUMP.rampsFrom - 240 || state.frame >= JUMP.groundTricksFrom - 240;
+}
+
+// Tricks-only mode (secret code): ramps and ground tricks from the start.
+function rampsFrom() {
+    return state.tricksOnly ? 0 : JUMP.rampsFrom;
+}
+
+function groundTricksFrom() {
+    return state.tricksOnly ? 0 : JUMP.groundTricksFrom;
+}
+
+// Secret code: gas, brake, wheelie, then three taps on the speedometer. In
+// the first 10 s of a competitive run: tricks only (no obstacles, no police,
+// unranked, a tenth of the score added to the cumulative points). In free
+// roam, on the bike: a hang glider.
+const SECRET_SEQUENCE = ['gas', 'brake', 'wheelie', 'tap', 'tap', 'tap'];
+function secretInput(kind) {
+    if (!state.isPlaying || state.userPaused) return;
+    const competitive = GAME_SETTINGS.gameMode === 'linear';
+    if (competitive && (state.gameTime > 10 || state.tricksOnly)) return;
+    if (!competitive && !(v2 && v2.roam.mode === 'bike' && !roamFall.active)) return;
+    if (kind === SECRET_SEQUENCE[secretCode.step]) secretCode.step += 1;
+    else secretCode.step = kind === SECRET_SEQUENCE[0] ? 1 : 0;
+    if (secretCode.step < SECRET_SEQUENCE.length) return;
+    secretCode.step = 0;
+    if (competitive) startTricksOnly();
+    else v2.roam.startGlide(bikeGroup);
+}
+
+// Presses of gas, brake and wheelie (keyboard or pads), once a frame.
+function watchSecretKeys() {
+    const now = { up: !!state.keys.up, down: !!state.keys.down, space: !!state.keys.space };
+    const before = secretCode.prev;
+    if (now.up && !before.up) secretInput('gas');
+    if (now.down && !before.down) secretInput('brake');
+    if (now.space && !before.space) secretInput('wheelie');
+    secretCode.prev = now;
+}
+
+function startTricksOnly() {
+    state.tricksOnly = true;
+    state.police.phase = 'idle';
+    hidePoliceWarning();
+    state.obstacles.forEach((obs) => {
+        obs.active = false;
+        obs.mesh.visible = false;
+    });
+    audio.play('new_record', { volume: 0.5 });
+    toast('CODE SECRET', 'Mode figures : pas d’obstacles ni de police · non classé', { float: true });
+    logEvent('Code secret : mode figures');
 }
 
 function announceTricks(frame) {
@@ -2212,7 +2284,7 @@ function updateSpeedLines(dt) {
 
 // Why the run ended, shown on the game-over screen.
 const DEFEAT_REASONS = {
-    slow: ['TROP LENT', 'Moins de 50 km/h pendant plus de 4 s : arrêté par la police.'],
+    slow: ['TROP LENT', 'La police t’a rattrapé.'],
     loop: ['WHEELING TROP HAUT', 'La moto est passée par-dessus.'],
     hit: ['COLLISION', 'Un deuxième obstacle pendant le dérapage.'],
     trickHit: ['OBSTACLE EN FIGURE', 'Un obstacle touché pendant une figure.'],
@@ -2246,22 +2318,110 @@ function showDefeatReason(reason) {
 
 // Police warning while the bike is too slow (both versions; its state is
 // declared at the top: resetGame clears it).
-function showPoliceWarning(secondsLeft) {
+// "TROP LENT !" in red for 2 s when the siren is first heard; the game
+// says the rest (the siren, the patrol in the mirror).
+function flashTooSlow() {
     if (!policeWarning) {
         policeWarning = document.createElement('div');
         policeWarning.id = 'police-warning';
         policeWarning.setAttribute('role', 'alert');
+        policeWarning.textContent = 'TROP LENT !';
         document.body.append(policeWarning);
     }
-    if (policeWarningShown === secondsLeft) return;
-    policeWarningShown = secondsLeft;
-    policeWarning.innerHTML = `<strong>TROP LENT !</strong><span>Police dans ${secondsLeft} s · accélère au-dessus de ${SLOW.kmh} km/h</span>`;
     policeWarning.classList.add('is-shown');
+    clearTimeout(policeWarningShown);
+    policeWarningShown = setTimeout(() => policeWarning.classList.remove('is-shown'), 2000);
 }
 
 function hidePoliceWarning() {
-    policeWarningShown = -1;
+    clearTimeout(policeWarningShown);
     policeWarning?.classList.remove('is-shown');
+}
+
+// Where the patrol is: from just beside the camera (p 0, already in sight)
+// to alongside the bike (p 1).
+function policeZ(p) {
+    return bikeGroup.position.z + 9 - p * 12;
+}
+
+function updatePoliceChase(kmh, dt) {
+    const police = state.police;
+    const slow = state.slow;
+    if (!slow.armed || !state.isPlaying) return;
+    if (kmh >= SLOW.kmh) {
+        // Lost: the siren stops; it will come back under 50 km/h.
+        if (police.phase !== 'idle' && police.seen) police.lastSeen = state.gameTime;
+        police.phase = 'idle';
+        police.gaveUp = false;
+        return;
+    }
+    if (police.gaveUp) return;
+    const bikeX = bikeGroup.position.x;
+    if (police.phase === 'idle') {
+        const long = state.gameTime - police.lastSeen >= POLICE.longGap;
+        Object.assign(police, {
+            phase: 'coming', t: 0, sirenAt: long ? POLICE.sirenLong : POLICE.sirenQuick,
+            appearAt: long ? POLICE.appearLong : POLICE.appearQuick, siren: false, nextSiren: 0,
+            seen: false, p: 0, seenTime: 0, hits: 0, hidden: false
+        });
+    }
+    police.t += dt;
+    if (police.t >= police.sirenAt) {
+        if (!police.siren) {
+            police.siren = true;
+            flashTooSlow();
+        }
+        if (police.t >= police.nextSiren) {
+            police.nextSiren = police.t + 3.4;
+            const near = police.phase === 'visible' ? 0.3 + police.p * 0.45 : 0.14;
+            audio.play('police_siren', { volume: near, pan: (police.side || 0) * 0.4 });
+        }
+    }
+    if (police.phase === 'coming' && police.t >= police.appearAt) {
+        // From the side with the least room: the player can get away from it.
+        police.side = bikeX > 0 ? 1 : -1;
+        police.x = Math.max(-11, Math.min(11, bikeX + police.side * POLICE.lane));
+        police.baseGap = Math.abs(bikeX - police.x);
+        police.phase = 'visible';
+        police.seen = true;
+    }
+    if (police.phase !== 'visible') return;
+    police.lastSeen = state.gameTime;
+    const awaySideways = Math.abs(bikeX - police.x) - police.baseGap >= POLICE.lateralEscape;
+    police.hidden = kmh >= POLICE.hideKmh;
+    if (police.hidden) {
+        police.p = Math.max(0, police.p - dt / 2);
+    } else {
+        police.seenTime += dt;
+        if (kmh >= POLICE.recedeKmh || awaySideways) police.p = Math.max(0, police.p - dt / 3);
+        else police.p = Math.min(1, police.p + dt / POLICE.escapeSeconds);
+    }
+    // Left behind sideways, it changes lane back towards the bike, slowly.
+    const lane = Math.max(-11, Math.min(11, bikeX + police.side * POLICE.lane));
+    police.x += Math.sign(lane - police.x) * Math.min(Math.abs(lane - police.x), 1.2 * dt);
+    // What lies in its way is knocked over; three and it gives up.
+    if (v2 && !police.hidden) {
+        const z = policeZ(police.p);
+        for (const obs of state.obstacles) {
+            if (!obs.active || obs.knocked) continue;
+            const o = obs.mesh.position;
+            if (Math.abs(o.x - police.x) < 1.5 && Math.abs(o.z - z) < 2.8) {
+                obs.active = false;
+                knockObstacle(obs);
+                audio.play('collision', { volume: 0.3, rate: 1.2 });
+                police.hits += 1;
+                police.p = Math.max(0, police.p - 0.15);
+                if (police.hits >= POLICE.maxHits) {
+                    police.gaveUp = true;
+                    police.phase = 'idle';
+                    toast('LA POLICE ABANDONNE', 'Trois obstacles dans le pare-chocs', { discreet: true, float: true });
+                    return;
+                }
+            }
+        }
+    }
+    // Alongside after 10 s in sight: stopped (never before the server's floor).
+    if (police.p >= 1 && police.seenTime >= POLICE.escapeSeconds && slow.policeFrames >= POLICE.minFrames) gameOver('slow');
 }
 
 async function gameOver(reason = 'crash') {
@@ -2270,7 +2430,10 @@ async function gameOver(reason = 'crash') {
     hidePoliceWarning();
     showDefeatReason(reason);
     unrankedReason = null;
-    if (state.runToken && !state.runReplayOverflow && state.inputLog.length >= 120) {
+    const tricksOnly = state.tricksOnly && GAME_SETTINGS.gameMode === 'linear';
+    if (tricksOnly) {
+        completedRankedRun = null;
+    } else if (state.runToken && !state.runReplayOverflow && state.inputLog.length >= 120) {
         state.inputLog[state.inputLog.length - 2] |= 0x10;
         completedRankedRun = {
             runToken: state.runToken,
@@ -2316,14 +2479,18 @@ async function gameOver(reason = 'crash') {
     state.isPlaying = false;
     state.skidding = false;
     const sequence = ++crashSequence;
-    if (v2 && reason === 'slow') playPoliceStop(sequence);
+    // Arrests vary; the handcuffs only after more than 500 points.
+    const arrests = ['one', 'two', 'ticket', 'gun', ...(state.score > 500 ? ['cuffs', 'cuffs'] : [])];
+    if (v2 && reason === 'slow') playPoliceStop(sequence, arrests[Math.floor(Math.random() * arrests.length)]);
     else if (v2) playCrashSequence(crashKind, crashSpeed, sequence, crashInfo);
-    const screenDelay = new Promise((resolve) => setTimeout(resolve, v2 ? 1150 : 0));
+    const screenDelay = new Promise((resolve) => setTimeout(resolve, v2 ? (reason === 'slow' ? 3800 : 1150) : 0));
     const currentScore = Math.floor(state.score);
     const previousBest = state.highScore;
+    // Tricks only: a tenth of the score, for free roam.
+    const tricksPoints = Math.floor(currentScore / 10);
     if (GAME_SETTINGS.gameMode === 'linear') {
         const before = totalPoints();
-        addPoints(currentScore);
+        addPoints(tricksOnly ? tricksPoints : currentScore);
         // Something new unlocked by this run? Said once the screen is up.
         announceUnlocks(before, totalPoints());
         document.dispatchEvent(new CustomEvent('wheelie:points'));
@@ -2352,7 +2519,7 @@ async function gameOver(reason = 'crash') {
     }
 
     // Mettre à jour le high score si le score actuel est meilleur
-    if (currentScore > highScore) {
+    if (currentScore > highScore && !tricksOnly) {
         highScore = currentScore;
         state.highScore = highScore;
         localStorage.setItem(HIGH_SCORE_KEY, highScore);
@@ -2384,7 +2551,9 @@ async function gameOver(reason = 'crash') {
     if (gameOverScreen) gameOverScreen.classList.add('active');
     // "Rejouer" is the likely next tap: open the next ranked session now.
     if (GAME_SETTINGS.gameMode === 'linear') prefetchWheelieRun();
-    if (completedRankedRun) {
+    if (tricksOnly) {
+        setRankingStatus(`Mode figures (code secret), non classé : ${currentScore} ÷ 10 = ${tricksPoints} points ajoutés à tes points cumulés, pour le monde libre.`);
+    } else if (completedRankedRun) {
         setRankingStatus('');
     } else if (GAME_SETTINGS.gameMode === 'free') {
         setRankingStatus('Mode libre : le score n’est pas classé.');
@@ -2396,7 +2565,9 @@ async function gameOver(reason = 'crash') {
     if (mobileControls) mobileControls.style.display = 'none';
 
     // Afficher la popup de pseudo tant qu'on n'a pas de pseudo
-    if (!nickname) {
+    if (tricksOnly) {
+        // Nothing to submit.
+    } else if (!nickname) {
         // Afficher la popup de pseudo après un court délai
         setTimeout(() => {
             showNicknamePopup(currentScore);
@@ -2435,8 +2606,8 @@ function playCrashSequence(kind, unitsPerSecond, sequence, info) {
 }
 
 // V2, too slow: the patrol car cuts in ahead and the bike rolls to a stop.
-function playPoliceStop(sequence) {
-    v2.policeStop();
+function playPoliceStop(sequence, variant) {
+    v2.policeStop(variant);
     let rolling = state.speed * 60;
     state.speed = 0;
     updateUI();
@@ -2449,7 +2620,7 @@ function playPoliceStop(sequence) {
         rolling = Math.max(0, rolling - 70 * dt);
         bikeGroup.position.z -= rolling * dt;
         renderScene(dt);
-        if (now - start < 2500) requestAnimationFrame(tick);
+        if (now - start < 6000) requestAnimationFrame(tick);
     };
     requestAnimationFrame(tick);
 }
@@ -2487,6 +2658,7 @@ function animate(timestamp = performance.now()) {
         if (state.isPlaying && !state.isPaused && !state.userPaused && bikeGroup) {
         // Development only: tests drive the inputs frame by frame.
         if (import.meta.env.DEV && window.__wheelieStep) window.__wheelieStep(state);
+        watchSecretKeys();
         state.gameTime += dt;
         if (!IS_V2) {
             const dayProgress = (state.gameTime % CONFIG.dayNightCycleDuration) / CONFIG.dayNightCycleDuration;
@@ -2530,8 +2702,6 @@ function animate(timestamp = performance.now()) {
             state.frame++;
             // A skid does not count as riding too slowly (server: the same).
             state.slow.frames = 0;
-            state.slow.sirenPlayed = false;
-            hidePoliceWarning();
             // Every recorded skid frame slows the bike, including the last
             // one: the server replay (wheelie_replay.py) does the same.
             state.speed *= 0.98;
@@ -2706,7 +2876,7 @@ function animate(timestamp = performance.now()) {
             const startKmh = state.speed * 50;
             const jump = state.jump;
             const takeoff = jump.pending && !jump.airborne && startKmh > JUMP.minKmh &&
-                frame >= JUMP.rampsFrom && frame - jump.lastLanding >= JUMP.spacing;
+                frame >= rampsFrom() && frame - jump.lastLanding >= JUMP.spacing;
             jump.pending = false;
             if (takeoff) {
                 jump.airborne = true;
@@ -2715,8 +2885,8 @@ function animate(timestamp = performance.now()) {
                 jump.trickFrames = 0;
                 audio.play('rev_blip', { volume: 0.45, rate: 1.15 });
             }
-            const trickAir = state.keys.trick && jump.airborne && frame >= JUMP.rampsFrom;
-            const trickGround = state.keys.trick && !jump.airborne && frame >= JUMP.groundTricksFrom &&
+            const trickAir = state.keys.trick && jump.airborne && frame >= rampsFrom();
+            const trickGround = state.keys.trick && !jump.airborne && frame >= groundTricksFrom() &&
                 state.bike.angle < JUMP.groundTrickMaxAngle;
             setTrick(trickAir || trickGround);
             const grounded = !jump.airborne;
@@ -3011,25 +3181,17 @@ function animate(timestamp = performance.now()) {
             // Too slow for too long: the police stop the run (server: the same,
             // on the speed at the end of the frame).
             const slow = state.slow;
-            if (state.speed * 50 >= SLOW.kmh) {
+            const endKmh = state.speed * 50;
+            if (endKmh >= SLOW.kmh) {
                 slow.armed = true;
                 slow.frames = 0;
+                slow.policeFrames = 0;
             } else if (slow.armed || frame >= SLOW.armFrame) {
                 slow.armed = true;
                 slow.frames += 1;
+                if (endKmh < POLICE.hideKmh) slow.policeFrames += 1;
             }
-            if (slow.frames > SLOW.frames) {
-                gameOver('slow');
-            } else if (slow.frames >= SLOW.warnFrames && state.isPlaying) {
-                if (!slow.sirenPlayed) {
-                    slow.sirenPlayed = true;
-                    audio.play('police_siren', { volume: 0.45 });
-                }
-                showPoliceWarning(Math.ceil((SLOW.frames + 1 - slow.frames) / 60));
-            } else {
-                if (slow.frames === 0) slow.sirenPlayed = false;
-                hidePoliceWarning();
-            }
+            if (!state.tricksOnly) updatePoliceChase(endKmh, dt);
             if (!IS_V2) {
                 state.trick.spin = state.trick.active ? state.trick.spin + dt * 7.5 : 0;
                 bikeGroup.rotation.z += state.trick.spin;
@@ -3110,9 +3272,9 @@ function animate(timestamp = performance.now()) {
                 // From about 20 s on, one block in two gets a ramp. In phase 3
                 // fewer ramps: each one clears ~300 m of obstacles, which left
                 // "figures + obstacles" almost without obstacles.
-                const rampChance = state.frame >= JUMP.groundTricksFrom - 240 ? 0.25 : 0.5;
+                const rampChance = state.tricksOnly ? 0.7 : state.frame >= JUMP.groundTricksFrom - 240 ? 0.25 : 0.5;
                 const rampZ = newZ + 20 + Math.random() * 60;
-                if (state.frame >= JUMP.rampsFrom && Math.random() < rampChance && !inQuietZone(rampZ)) spawnRamp(rampZ);
+                if (state.frame >= rampsFrom() && Math.random() < rampChance && !inQuietZone(rampZ)) spawnRamp(rampZ);
                 state.rampFreeZones = state.rampFreeZones.filter((zone) => zone.to < bikeGroup.position.z);
                 for (let i = 0; i < 4; i++) {
                     // Difficulty-based spawning
@@ -3244,6 +3406,10 @@ function updateCamera() {
         } else if (roamMode === 'car') {
             distanceOffset = 13 + state.freeMode.speed * 4;
             heightOffset = 5.5;
+        } else if (roamMode === 'glide') {
+            // Behind and a little above the hang glider, all the way down.
+            distanceOffset = 10;
+            heightOffset = target.y + 3.4;
         }
         let targetX = target.x;
         let targetZ = target.z + distanceOffset;
@@ -3252,7 +3418,7 @@ function updateCamera() {
         let lookZ = target.z - 8;
         if (v2 && roamMode !== 'walk') {
             // Riding or driving: behind the vehicle, turning with it.
-            const heading = roamMode === 'car' ? v2.roam.carYaw : bikeGroup.rotation.y;
+            const heading = roamMode === 'car' ? v2.roam.carYaw : roamMode === 'glide' ? v2.roam.glideYaw : bikeGroup.rotation.y;
             if (freeCamYaw === null) freeCamYaw = heading;
             let turn = heading - freeCamYaw;
             turn = Math.atan2(Math.sin(turn), Math.cos(turn));
@@ -3285,7 +3451,7 @@ function updateCamera() {
             camera.position.x += (Math.random() - 0.5) * 0.05 * buzz;
             camera.position.y += (Math.random() - 0.5) * 0.04 * buzz;
         }
-        camera.lookAt(lookX, roamMode === 'walk' ? 1.25 : 1, lookZ);
+        camera.lookAt(lookX, roamMode === 'glide' ? target.y + 0.5 : roamMode === 'walk' ? 1.25 : 1, lookZ);
     } else {
         // Dynamic FOV based on speed (Visual Acceleration)
         // Base increase + extra kick when accelerating
@@ -4885,6 +5051,13 @@ document.getElementById('nickname-input')?.addEventListener('focus', function(e)
 });
 
 document.getElementById('leaderboard-btn')?.addEventListener('click', showLeaderboard);
+// Secret code: taps on the speedometer.
+(() => {
+    const speedometer = document.getElementById('speedometer');
+    if (!speedometer) return;
+    speedometer.style.pointerEvents = 'auto';
+    speedometer.addEventListener('pointerdown', () => secretInput('tap'));
+})();
 // Trophy room: from the leaderboard and back.
 document.getElementById('trophies-btn')?.addEventListener('click', showTrophyRoom);
 document.getElementById('back-from-trophies')?.addEventListener('click', () => {

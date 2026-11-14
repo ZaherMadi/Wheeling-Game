@@ -42,6 +42,8 @@ export function createPlayerVoice({ apiBase, audio, apiFetch }) {
     const clipId = (clip) => `pv_${clip}`;
     const url = (clip) => `${apiBase()}/player-voice/${encodeURIComponent(record.nickname)}/${clip}.mp3?v=${record.version}`;
 
+    let unavailable = false;
+
     function register() {
         if (!record) return;
         for (const clip of Object.keys(record.clips || {})) audio.registerClip(clipId(clip), url(clip));
@@ -52,6 +54,9 @@ export function createPlayerVoice({ apiBase, audio, apiFetch }) {
     // nickname. Quietly gives up when the server cannot.
     function ensure(nickname = currentNickname(), { generate = false } = {}) {
         if (!nickname) return Promise.resolve(false);
+        // The server said it cannot make voices (not set up): not asked
+        // again during this visit.
+        if (generate && unavailable) generate = false;
         if (record && record.nickname === nickname) {
             register();
             return Promise.resolve(true);
@@ -67,6 +72,7 @@ export function createPlayerVoice({ apiBase, audio, apiFetch }) {
                         headers: { 'Content-Type': 'application/json' },
                         body: JSON.stringify({ nickname })
                     }, 30000);
+                    if (response.status === 503) unavailable = true;
                 }
                 if (!response.ok) return false;
                 const data = await response.json();

@@ -121,19 +121,48 @@ export function createOfficer(scene) {
     const legs = [-1, 1].map((side) => limb(0.077, 0.74, navy, side * 0.1, 0.94));
     legs.forEach(({ pivot }) => add(new THREE.BoxGeometry(0.12 * S, 0.075 * S, 0.24 * S), black, 0, -0.885, 0.045, pivot));
     const arms = [-1, 1].map((side) => limb(0.055, 0.56, shirt, side * 0.245, 1.43));
+    // What the right hand can hold: a fine (paper) or a service weapon.
+    const props = {
+        paper: add(new THREE.BoxGeometry(0.16 * S, 0.21 * S, 0.008 * S), white, 0, -0.7, 0.05, arms[1].pivot),
+        gun: (() => {
+            const gun = new THREE.Group();
+            gun.position.set(0, -0.69 * S, 0.06 * S);
+            arms[1].pivot.add(gun);
+            add(new THREE.BoxGeometry(0.035 * S, 0.05 * S, 0.17 * S), black, 0, 0, 0.06, gun);
+            add(new THREE.BoxGeometry(0.03 * S, 0.1 * S, 0.04 * S), black, 0, -0.05, 0, gun);
+            gun.rotation.x = Math.PI / 2;
+            return gun;
+        })()
+    };
+    props.paper.rotation.x = 0.4;
+    Object.values(props).forEach((prop) => { prop.visible = false; });
     group.visible = false;
     scene.add(group);
     let phase = 0;
     return {
         group,
-        // moving: walking pace in units/s (0 standing). talking: hand gestures.
-        animate(dt, moving, talking, time) {
+        hold(name) {
+            Object.entries(props).forEach(([key, prop]) => { prop.visible = key === name; });
+        },
+        // moving: walking pace in units/s (0 standing). talking: hand
+        // gestures. pose: 'ticket' (holding out the fine), 'gun' (aiming),
+        // 'cuff' (both hands forward, on the wrists).
+        animate(dt, moving, talking, time, pose = null) {
             phase += dt * moving * 3.4;
             const stride = moving > 0.1 ? Math.sin(phase) * 0.45 : 0;
             legs.forEach(({ pivot }, i) => { pivot.rotation.x = stride * (i ? 1 : -1); });
             arms.forEach(({ pivot }, i) => {
                 pivot.rotation.x = talking && i === 1 ? -1.0 + Math.sin(time * 6) * 0.25 : -stride * (i ? 1 : -1) * 0.8;
                 pivot.rotation.z = (i ? 1 : -1) * 0.08;
+                if (pose === 'ticket' && i === 1) pivot.rotation.x = -1.15;
+                if (pose === 'gun') {
+                    pivot.rotation.x = -1.5;
+                    pivot.rotation.z = (i ? 1 : -1) * -0.18;
+                }
+                if (pose === 'cuff') {
+                    pivot.rotation.x = -0.75;
+                    pivot.rotation.z = (i ? 1 : -1) * -0.25;
+                }
             });
         }
     };

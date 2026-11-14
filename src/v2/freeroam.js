@@ -6,6 +6,8 @@ import { createTraffic } from './traffic.js';
 import { createPeople } from './people.js';
 import { createPolicePatrol } from './police.js';
 import { createStreetTalk } from './street-talk.js';
+import { createHangGlider } from './glider.js';
+import { createOfficer, decoratePoliceCar } from './police.js';
 import { CAR_NAMES, CAR_UNLOCKS } from './cars.js';
 
 const POINTS_KEY = 'wheelie_total_points';
@@ -235,6 +237,10 @@ export function createFreeRoam({ scene, world, rider, audio, onTurn, playerVoice
     // nx, nz: stick direction (-1..1), nz < 0 is forward.
     // keys: { run, jump } on foot.
     function move(dt, nx, nz, keys = {}) {
+        if (mode === 'glide') {
+            moveGlide(dt, nx);
+            return;
+        }
         // Stopped by the police: no control until they are done.
         if (frozen) {
             nx = 0;
@@ -317,7 +323,199 @@ export function createFreeRoam({ scene, world, rider, audio, onTurn, playerVoice
         }
     }
 
+    // --- Secret: the hang glider ------------------------------------------
+    // From high above the street, gliding down (left / right to steer);
+    // touches down running, leaves the glider behind; the police come, the
+    // rider says sorry; one time in two they only take the glider, else
+    // also 50 points. The bike then waits next to him.
+    const glide = { group: null, x: 0, z: 0, y: 0, yaw: Math.PI, speed: 12, phase: '', t: 0, roll: 0, scene: null };
+    function startGlide() {
+        if (mode !== 'bike' || frozen || turning || !bike) return false;
+        if (!glide.group) {
+            glide.group = createHangGlider();
+            scene.add(glide.group);
+        }
+        glide.group.visible = true;
+        glide.yaw = bike.rotation.y;
+        // Starts a little behind the bike, high up.
+        glide.x = bike.position.x;
+        glide.z = bike.position.z - Math.cos(glide.yaw) * 25;
+        glide.y = 42;
+        glide.speed = 12;
+        glide.phase = 'fly';
+        glide.t = 0;
+        glide.roll = 0;
+        bike.visible = false;
+        rider.dismount(glide.x, glide.z, glide.yaw);
+        setMode('glide');
+        audio.play('whoosh', { volume: 0.6, rate: 0.7 });
+        toast('CODE SECRET', 'Deltaplane ! Gauche / droite pour te diriger');
+        return true;
+    }
+
+    function placeGlider() {
+        const g = glide.group;
+        g.position.set(glide.x, glide.y + 1.85 * 0.95, glide.z);
+        g.rotation.set(0, glide.yaw, glide.roll);
+    }
+
+    function moveGlide(dt, nx) {
+        glide.t += dt;
+        if (glide.phase === 'fly') {
+            glide.yaw -= nx * 0.8 * dt;
+            glide.roll += (-nx * 0.35 - glide.roll) * Math.min(1, dt * 3);
+            glide.x += Math.sin(glide.yaw) * glide.speed * dt;
+            glide.z += Math.cos(glide.yaw) * glide.speed * dt;
+            // Over the street and its pavements.
+            if (Math.abs(glide.x) > 13) {
+                glide.x = Math.sign(glide.x) * 13;
+                glide.yaw += (Math.PI - glide.yaw) * 0.02;
+            }
+            glide.y = Math.max(0, glide.y - 1.6 * dt);
+            placeGlider();
+            rider.updateWalk(dt, glide.x, glide.z, glide.yaw, 0, Math.max(0.05, glide.y));
+            if (glide.y <= 0) {
+                // Touchdown: a few running steps, the glider stays behind.
+                glide.phase = 'run';
+                glide.t = 0;
+                // Let go: it settles on one wingtip, off to the side.
+                const aside = glide.x > 0 ? -1 : 1;
+                glide.group.position.set(glide.x + Math.cos(glide.yaw) * aside * 2.2, 1.1, glide.z - Math.sin(glide.yaw) * aside * 2.2);
+                glide.group.rotation.set(-0.2, glide.yaw, aside * 0.32);
+                audio.play('landing', { volume: 0.5 });
+            }
+        } else if (glide.phase === 'run') {
+            // A few running steps, well clear of the glider.
+            const pace = Math.max(0, 5.5 * (1 - glide.t / 2.4));
+            glide.x += Math.sin(glide.yaw) * pace * dt;
+            glide.z += Math.cos(glide.yaw) * pace * dt;
+            rider.updateWalk(dt, glide.x, glide.z, glide.yaw, pace / 60, 0, pace > 2);
+            if (glide.t > 2.4) {
+                walker.x = glide.x;
+                walker.z = glide.z;
+                walker.yaw = glide.yaw;
+                walker.speed = 0;
+                walker.y = 0;
+                walker.vy = 0;
+                setMode('walk');
+                startGliderPolice();
+            }
+        }
+    }
+
+    function startGliderPolice() {
+        frozen = true;
+        const car = world.createCar('sedan', 0xf4f4f2);
+        decoratePoliceCar(car);
+        scene.add(car);
+        const side = walker.x > 0 ? -1 : 1;
+        const back = -Math.cos(glide.yaw);
+        car.position.set(walker.x + side * 3.4, 0, walker.z + back * 45);
+        car.rotation.y = glide.yaw;
+        const officer = createOfficer(scene);
+        glide.scene = { car, officer, side, step: 'arrive', t: 0, time: 0 };
+        audio.play('police_siren', { volume: 0.6 });
+    }
+
+    async function gliderTalk(stage) {
+        await talk.police('glider', 0);
+        if (glide.scene !== stage) return;
+        await talk.rider('sorry');
+        if (glide.scene !== stage) return;
+        const lenient = Math.random() < 0.5;
+        await talk.police(lenient ? 'glider_ok' : 'glider_fine', 0);
+        if (glide.scene !== stage) return;
+        if (!lenient) {
+            const lost = finePoints(50);
+            toast(lost ? `-${lost} PTS` : 'AMENDE', 'Trouble à l’ordre public');
+            document.dispatchEvent(new CustomEvent('wheelie:points'));
+        }
+        stage.step = 'take';
+        stage.t = 0;
+    }
+
+    function updateGliderPolice(dt) {
+        const stage = glide.scene;
+        if (!stage) return;
+        stage.t += dt;
+        stage.time += dt;
+        const { car, officer } = stage;
+        car.userData.flash(stage.time);
+        const forward = new THREE.Vector3(Math.sin(glide.yaw), 0, Math.cos(glide.yaw));
+        if (stage.step === 'arrive') {
+            const stopZ = walker.z - forward.z * 2;
+            const remaining = (stopZ - car.position.z) * forward.z;
+            car.position.addScaledVector(forward, Math.min(Math.max(remaining, 0), Math.max(2, remaining * 1.6) * dt));
+            if (remaining < 0.3) {
+                stage.step = 'out';
+                stage.t = 0;
+                audio.play('car_door', { volume: 0.5 });
+                officer.group.visible = true;
+                officer.group.position.set(car.position.x - stage.side * 1.3, 0, car.position.z);
+            }
+        } else if (stage.step === 'out' || stage.step === 'talk') {
+            // Stops between the car and the rider, about 1.5 m from him.
+            const target = new THREE.Vector3(walker.x + (car.position.x - walker.x) * 0.45, 0, walker.z);
+            const g = officer.group;
+            const dx = target.x - g.position.x;
+            const dz = target.z - g.position.z;
+            const distance = Math.hypot(dx, dz);
+            if (distance > 0.1) {
+                const step = Math.min(distance, 2.4 * dt);
+                g.position.x += (dx / distance) * step;
+                g.position.z += (dz / distance) * step;
+                g.rotation.y = Math.atan2(dx, dz);
+                officer.animate(dt, 2.4, false, stage.time);
+            } else {
+                g.rotation.y = Math.atan2(walker.x - g.position.x, walker.z - g.position.z);
+                officer.animate(dt, 0, true, stage.time);
+                if (stage.step === 'out') {
+                    stage.step = 'talk';
+                    walker.yaw = Math.atan2(g.position.x - walker.x, g.position.z - walker.z);
+                    gliderTalk(stage);
+                }
+            }
+        } else if (stage.step === 'take') {
+            // The glider goes on the roof, the officer back in, off they go.
+            glide.group.position.set(car.position.x, car.userData.height + 0.15, car.position.z);
+            glide.group.rotation.set(0, glide.yaw, 0);
+            glide.group.scale.setScalar(0.45);
+            officer.group.visible = false;
+            if (stage.t > 0.6) {
+                stage.step = 'leave';
+                stage.t = 0;
+                audio.play('car_door', { volume: 0.45 });
+                // The bike, waiting beside him.
+                bike.position.set(walker.x + stage.side * -1.4, 0, walker.z + forward.z * 1.5);
+                bike.rotation.set(0, glide.yaw, 0);
+                bike.visible = true;
+                frozen = false;
+            }
+        } else if (stage.step === 'leave') {
+            car.position.addScaledVector(forward, Math.min(14, 2 + stage.t * 6) * dt);
+            glide.group.position.set(car.position.x, car.userData.height + 0.15, car.position.z);
+            if (stage.t > 8) endGlide();
+        }
+    }
+
+    function endGlide() {
+        const stage = glide.scene;
+        if (stage) {
+            scene.remove(stage.car);
+            scene.remove(stage.officer.group);
+        }
+        glide.scene = null;
+        glide.phase = '';
+        if (glide.group) {
+            glide.group.visible = false;
+            glide.group.scale.setScalar(1);
+        }
+        frozen = false;
+        if (bike) bike.visible = true;
+    }
+
     function getFocus() {
+        if (mode === 'glide') return focus.set(glide.x, glide.y, glide.z);
         if (mode === 'walk') return focus.set(walker.x, 0, walker.z);
         if (mode === 'car' && drive.group) return focus.copy(drive.group.position);
         return focus.copy(bike ? bike.position : focus);
@@ -455,6 +653,7 @@ export function createFreeRoam({ scene, world, rider, audio, onTurn, playerVoice
         talk.update(dt, mode, here);
         patrol.update(dt, here, { x: here.x, z: here.z, mode, radius: mode === 'car' ? 1.6 : mode === 'bike' ? 0.9 : 0.4 }, bike);
         if (mode === 'walk') rider.updateWalk(dt, walker.x, walker.z, walker.yaw, walker.speed, walker.y, walker.running);
+        if (glide.scene) updateGliderPolice(dt);
         // Cars left behind on another block go away.
         for (let i = dropped.length - 1; i >= 0; i--) {
             if (Math.abs(dropped[i].group.position.z - here.z) > 300) {
@@ -467,6 +666,7 @@ export function createFreeRoam({ scene, world, rider, audio, onTurn, playerVoice
 
     // The world has been rebuilt as a new street along -z.
     function afterTurn(bikeGroup) {
+        endGlide();
         const here = getFocus();
         const z = here.z;
         if (mode === 'bike') {
@@ -498,6 +698,7 @@ export function createFreeRoam({ scene, world, rider, audio, onTurn, playerVoice
     }
 
     function reset() {
+        endGlide();
         if (mode !== 'bike') rider.mount();
         setMode('bike');
         frozen = false;
@@ -519,6 +720,9 @@ export function createFreeRoam({ scene, world, rider, audio, onTurn, playerVoice
 
     return {
         move, update, action, clampBike, afterTurn, reset, tryBoost, boostState,
+        startGlide,
+        get glideYaw() { return glide.yaw; },
+        get gliding() { return mode === 'glide' || !!glide.scene; },
         // A fall on the bike: the nearest passer-by (20 m) says something.
         concern: (x, z) => talk.concern({ x, z }),
         get boostFactor() { return now() < boost.until ? 2 : 1; },
@@ -531,7 +735,7 @@ export function createFreeRoam({ scene, world, rider, audio, onTurn, playerVoice
         get footSpeed() { return mode === 'walk' ? walker.speed / WALK_SPEED : 0; },
         get frozen() { return frozen; },
         // The bike is shown in free roam only when it is ours (or being taken away).
-        get bikeVisible() { return !bikeConfiscated() || patrol.towing; },
+        get bikeVisible() { return (!bikeConfiscated() || patrol.towing) && mode !== 'glide' && !(glide.scene && glide.scene.step !== 'leave'); },
         fine,
         get carModel() { return mode === 'car' ? drive.model : null; },
         get reversing() { return mode === 'car' && drive.reversing; },

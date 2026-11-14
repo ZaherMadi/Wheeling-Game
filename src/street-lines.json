@@ -96,6 +96,9 @@
       "Merci !",
       "Merci, frérot !",
       "Merci, bonne journée !"
+    ],
+    "sorry": [
+      "Pardon…"
     ]
   },
   "police": {
@@ -140,6 +143,15 @@
     ],
     "lost_sedan_van": [
       "Et vous ne pouvez plus conduire ni la berline ni l'utilitaire à partir de maintenant. Au revoir."
+    ],
+    "glider": [
+      "Mais vous n'avez pas le droit de faire ça, monsieur !"
+    ],
+    "glider_ok": [
+      "Bon, ça ira pour cette fois. On vous le débarrasse, on vous le confisque, mais pas d'amende. Ne le refaites plus !"
+    ],
+    "glider_fine": [
+      "Bon, on vous le débarrasse, on vous le confisque. Et pour trouble à l'ordre public, ce sera moins cinquante points, monsieur."
     ]
   }
 }

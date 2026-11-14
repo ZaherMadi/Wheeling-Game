@@ -9,7 +9,7 @@ import { createFx } from './fx.js';
 import { loadLivery, mountLiveryPanel } from './livery.js';
 import { createFreeRoam, totalPoints } from './freeroam.js';
 import { PLATE_POINTS } from '../unlocks.js';
-import { decoratePoliceCar } from './police.js';
+import { createOfficer, decoratePoliceCar } from './police.js';
 import { installRacingUI } from '../ui/ui.js';
 
 const DAY_CYCLE_SECONDS = 600;
@@ -128,58 +128,117 @@ export function createRealisticVersion({ scene, renderer, camera, mobile, audio,
         return patrol;
     }
 
-    function updatePatrol(dt, progress) {
+    // where: { x, z } of the patrol during a chase, null when out of sight.
+    function updatePatrol(dt, where) {
         if (patrol && patrol.stopping) {
-            const p = patrol;
-            p.time += dt;
-            p.t = Math.min(1, p.t + dt / 0.9);
-            const ease = 1 - Math.pow(1 - p.t, 3);
-            const b = rider.bikeGroup.position;
-            p.group.position.set(
-                p.from.x + (b.x + p.side * 1.6 - p.from.x) * ease, 0,
-                p.from.z + (b.z - 7.5 - p.from.z) * ease);
-            p.group.rotation.y = p.fromYaw + p.side * 0.65 * ease;
-            p.group.userData.flash(p.time);
+            updateArrest(dt);
             return;
         }
-        if (progress === null || progress === undefined) {
+        if (!where) {
             if (patrol) patrol.group.visible = false;
             return;
         }
         const p = patrolCar();
-        const b = rider.bikeGroup.position;
-        // On the roomier side of the road.
-        if (!p.group.visible) p.side = b.x > 0 ? -1 : 1;
         p.time += dt;
+        p.side = Math.sign(where.x - rider.bikeGroup.position.x) || 1;
         p.group.visible = true;
-        // Out of sight behind the camera at first, alongside at the end.
-        p.group.position.set(b.x + p.side * 4.4, 0, b.z + 20 - progress * 23);
+        p.group.position.set(where.x, 0, where.z);
         p.group.rotation.y = Math.PI;
         p.group.userData.flash(p.time);
     }
 
-    function policeStop() {
+    // The arrest: the patrol cuts in ahead, then the officers. variant:
+    // 'one' (one officer), 'two', 'ticket' (one with a fine), 'gun', 'cuffs'
+    // (the rider off the bike, hands behind his back).
+    const officers = [];
+    const aim = new THREE.Vector3();
+    function policeStop(variant = 'one') {
         const p = patrolCar();
+        const b = rider.bikeGroup.position;
         if (!p.group.visible) {
-            // Not seen coming (should not happen): start from just behind.
-            const b = rider.bikeGroup.position;
-            p.side = b.x > 0 ? -1 : 1;
+            p.side = b.x > 0 ? 1 : -1;
             p.group.position.set(b.x + p.side * 4.4, 0, b.z + 6);
             p.group.rotation.y = Math.PI;
             p.group.visible = true;
         }
         p.stopping = true;
         p.t = 0;
+        p.scene = 0;
+        p.variant = variant;
         p.from.copy(p.group.position);
         p.fromYaw = p.group.rotation.y;
+        while (officers.length < 2) officers.push(createOfficer(scene));
+        officers.forEach((officer) => {
+            officer.group.visible = false;
+            officer.hold(null);
+        });
+    }
+
+    function updateArrest(dt) {
+        const p = patrol;
+        const b = rider.bikeGroup.position;
+        p.time += dt;
+        p.scene += dt;
+        p.t = Math.min(1, p.t + dt / 0.9);
+        const ease = 1 - Math.pow(1 - p.t, 3);
+        p.group.position.set(
+            p.from.x + (b.x + p.side * 1.6 - p.from.x) * ease, 0,
+            p.from.z + (b.z - 7.5 - p.from.z) * ease);
+        p.group.rotation.y = p.fromYaw + p.side * 0.65 * ease;
+        p.group.userData.flash(p.time);
+        const count = p.variant === 'two' || p.variant === 'cuffs' ? 2 : 1;
+        if (p.scene > 1.0 && !p.out) {
+            p.out = true;
+            audio?.play('car_door', { volume: 0.5 });
+            for (let i = 0; i < count; i++) {
+                const officer = officers[i];
+                officer.group.visible = true;
+                officer.group.scale.setScalar(1.25);
+                officer.group.position.set(p.group.position.x + (i ? -1 : 1) * 1.2, 0, p.group.position.z + 0.6);
+                officer.hold(i === 0 && p.variant === 'ticket' ? 'paper' : i === 0 && p.variant === 'gun' ? 'gun' : null);
+            }
+            if (p.variant === 'cuffs') {
+                // Off the bike, standing beside it.
+                rider.dismount(b.x - p.side * 1.0, b.z, Math.PI);
+                rider.bikeGroup.visible = true;
+            }
+        }
+        if (!p.out) return;
+        const standX = p.variant === 'cuffs' ? b.x - p.side * 1.0 : b.x;
+        for (let i = 0; i < count; i++) {
+            const officer = officers[i];
+            const g = officer.group;
+            // Up to the rider: in front (or behind him for the cuffs).
+            const tx = standX + (p.variant === 'cuffs' && i === 0 ? 0 : (i ? -1 : 1) * 1.3);
+            const tz = b.z + (p.variant === 'cuffs' && i === 0 ? 1.1 : -1.6);
+            const dx = tx - g.position.x;
+            const dz = tz - g.position.z;
+            const distance = Math.hypot(dx, dz);
+            const step = Math.min(distance, 2.4 * dt);
+            if (distance > 0.05) {
+                g.position.x += (dx / distance) * step;
+                g.position.z += (dz / distance) * step;
+                g.rotation.y = Math.atan2(dx, dz);
+                officer.animate(dt, 2.4, false, p.time);
+            } else {
+                aim.set(standX - g.position.x, 0, b.z - g.position.z);
+                g.rotation.y = Math.atan2(aim.x, aim.z);
+                const pose = p.variant === 'gun' && i === 0 ? 'gun' : p.variant === 'ticket' && i === 0 ? 'ticket'
+                    : p.variant === 'cuffs' && i === 0 ? 'cuff' : null;
+                officer.animate(dt, 0, !pose, p.time, pose);
+            }
+        }
+        if (p.variant === 'cuffs') rider.updateWalk(dt, standX, b.z, Math.PI, 0, 0, false, true);
     }
 
     function reset() {
         if (seed !== null) world.reseed(seed);
         if (patrol) {
             patrol.stopping = false;
+            patrol.out = false;
             patrol.group.visible = false;
         }
+        officers.forEach((officer) => { officer.group.visible = false; });
         roam.reset();
         rider.reset();
         fx.clear();

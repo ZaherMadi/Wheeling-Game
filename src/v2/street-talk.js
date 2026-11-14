@@ -212,6 +212,8 @@ export function createStreetTalk({ audio, people, playerVoice = null }) {
 
     return {
         update, police, warmPolice, reset, claim, concern,
+        // The main character says one line of `category` (his own voice).
+        rider: (category) => run([() => line(riderStreetVoice(), category, 'Toi', { volume: 1 })]),
         get stats() { return { ...stats, interactions, recent: recent.length }; },
         get busy() { return busy; }
     };

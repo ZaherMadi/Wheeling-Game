@@ -1321,17 +1321,38 @@ body.v2 #btn-wheelie { --ring: #ff9a1f; --glow: rgba(255, 154, 31, 0.5); --tint:
   }
 }
 
-/* Phones in portrait: everything stacked. */
+/* Phones in portrait: everything stacked, every button the same width and
+   centred (index.html caps buttons at 85 % on phones, which pushed the
+   lower ones to the left). */
 @media (orientation: portrait) and (max-width: 600px) {
+  body.v2 .ui-actions {
+    align-items: center;
+  }
+
+  body.v2 #start-screen .ui-btn {
+    max-width: none;
+  }
+
   body.v2 .ui-actions__row {
     flex-direction: column;
     align-items: stretch;
     width: min(300px, 80vw);
   }
 
+  body.v2 .ui-btn--primary,
+  body.v2 .ui-actions > .ui-btn--wide {
+    width: min(300px, 80vw);
+    min-width: 0;
+    box-sizing: border-box;
+  }
+
   body.v2 .ui-btn--primary {
     font-size: 26px;
-    width: min(300px, 80vw);
+  }
+
+  body.v2 .ui-actions__row .ui-btn {
+    width: 100%;
+    box-sizing: border-box;
   }
 }
 
