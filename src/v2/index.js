@@ -98,7 +98,7 @@ export function createRealisticVersion({ scene, renderer, camera, mobile, audio,
         // A confiscated bike is gone from free roam (never from races).
         if (dt > 0) adaptResolution();
         const bike = rider.bikeGroup;
-        bike.visible = snapshot.linear || roam.bikeVisible;
+        bike.visible = (snapshot.linear || roam.bikeVisible) && !snapshot.blink;
         if (dt > 0) {
             bikeVelocity.subVectors(bike.position, lastPosition).divideScalar(dt);
             bikeVelocity.y = 0;

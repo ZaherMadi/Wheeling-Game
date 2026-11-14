@@ -423,6 +423,7 @@ export function createFreeRoam({ scene, world, rider, audio, onTurn, playerVoice
     }
 
     let confiscationShown = false;
+    let lastHere = null;
     function update(dt, bikeGroup) {
         bike = bikeGroup;
         // No bike while it is confiscated: on foot from the start.
@@ -435,6 +436,20 @@ export function createFreeRoam({ scene, world, rider, audio, onTurn, playerVoice
         const blockers = [{ x: here.x, z: here.z }, ...patrol.blockers()];
         if (mode !== 'bike') blockers.push({ x: bike.position.x, z: bike.position.z });
         traffic.update(dt, here, blockers);
+        // Riding past a car fast: a whoosh on that side.
+        if (lastHere && dt > 0 && mode !== 'walk') {
+            const playerSpeed = Math.hypot(here.x - lastHere.x, here.z - lastHere.z) / dt;
+            for (const car of traffic.cars) {
+                const dz = car.group.position.z - here.z;
+                const side = car.passSide ?? Math.sign(dz);
+                car.passSide = Math.sign(dz);
+                const dx = car.group.position.x - here.x;
+                if (side !== car.passSide && Math.abs(dx) < 4.5 && playerSpeed > 14) {
+                    audio.play('whoosh', { volume: Math.min(0.7, 0.25 + playerSpeed / 80), rate: 0.85 + Math.random() * 0.3, pan: Math.max(-1, Math.min(1, dx / 3)) });
+                }
+            }
+        }
+        lastHere = (lastHere || new THREE.Vector3()).copy(here);
         people.update(dt, here);
         talk.update(dt, mode, here);
         patrol.update(dt, here, { x: here.x, z: here.z, mode, radius: mode === 'car' ? 1.6 : mode === 'bike' ? 0.9 : 0.4 }, bike);

@@ -5,6 +5,7 @@ import soundEffects from './src/sound-effects.json';
 import { createAudioEngine } from './src/audio-engine.js';
 import { BIKE_RECOVERY_POINTS, addPoints, releaseBike, syncPoints } from './src/v2/freeroam.js';
 import { createPlayerVoice } from './src/player-voice.js';
+import { createSpeedLines } from './src/v2/speedlines.js';
 import riderVoices from './src/rider-voices.json';
 
 // Two versions share the same simulation, scoring and ranked replay:
@@ -58,8 +59,11 @@ const JUMP = {
     rampHeight: 1.2,
     gravity: 30 / 3600,
     minKmh: 30,
-    rampsFrom: 1200,
-    groundTricksFrom: 2100,
+    // Phase 1 to 23 s, 2 s of calm, phase 2 (ramps) from 25 s to 43 s, 2 s
+    // of calm, phase 3 from 45 s. The server allows them earlier (1200 /
+    // 2100): it only checks nothing happens before.
+    rampsFrom: 1500,
+    groundTricksFrom: 2700,
     spacing: 30, // frames between a landing and the next takeoff (server: TAKEOFF_SPACING_FRAMES)
     groundTrickMaxAngle: 0.2,
     airRate: 8,
@@ -73,6 +77,44 @@ const TRICK_FLAG = 0x40;
 // the server replay as well.
 const BOOST = { frames: 150, accel: 0.02, maxSpeed: 4.0, drain: 0.004, maxCharges: 3, rate: 6 };
 const BOOST_FLAG = 0x80;
+// Backflips (mirrored by wheelie_replay.py): in a wheelie at the takeoff,
+// holding the wheelie button in the air keeps the bike rotating backwards.
+// Held through the flight: one turn from 130 km/h, two from 150, half a
+// turn 10 km/h under (bad landing), less below (crash).
+const FLIP = {
+    minAngle: 0.35, kmh: 130, doubleKmh: 150, minTurn: 0.25, clean: 0.08, overBad: 0.25,
+    bonus: [0, 100, 200], trickBonus: [0, 150, 300], badFrames: 600
+};
+
+function flightFrames(vy) {
+    let y = JUMP.rampHeight;
+    let frames = 0;
+    while (true) {
+        y += vy;
+        vy -= JUMP.gravity;
+        frames += 1;
+        if (y <= 0) return frames;
+    }
+}
+
+function flipTurnsFor(kmh) {
+    if (kmh < FLIP.kmh) return Math.max(0.3, 1 - (FLIP.kmh - kmh) / 20);
+    if (kmh < FLIP.doubleKmh) return 1;
+    return 2;
+}
+
+function flipLanding(flipAngle, flipKmh) {
+    const turns = flipAngle / (2 * Math.PI);
+    const whole = Math.floor(turns + 0.5);
+    const rest = turns - whole;
+    if (whole === 0) return turns < FLIP.minTurn ? ['none', 0] : ['crash', 0];
+    if (Math.abs(rest) <= FLIP.clean) {
+        if (whole >= 2 && flipKmh < FLIP.doubleKmh) return ['bad', 0];
+        return ['clean', Math.min(whole, 2)];
+    }
+    if (rest < 0 || rest <= FLIP.overBad) return ['bad', 0];
+    return ['crash', 0];
+}
 const RAMP = { width: 4.4, length: 5.5 };
 const TRICK_TYPES = ['superman', 'nohander', 'cancan'];
 const daytimeSky = new THREE.Color(0x87CEEB);
@@ -113,12 +155,15 @@ let state = {
     boost: { charges: 0, frames: 0, gain: 0, wasHeld: false },
     // Simulation frame of the run (the server counts the same frames).
     frame: 0,
-    jump: { airborne: false, y: 0, vy: 0, trickFrames: 0, lastLanding: -1e9, pending: false, visualY: 0 },
+    jump: { airborne: false, y: 0, vy: 0, trickFrames: 0, lastLanding: -1e9, pending: false, visualY: 0, flipActive: false, flipAngle: 0, flipRate: 0, flipKmh: 0 },
     trick: { active: false, type: 'superman', was: false, spin: 0 },
     ramps: [],
     rampFreeZones: [],
     gantries: [],
+    quietZones: [],
     phase: 1,
+    vulnerableUntil: -1,
+    badLanding: 0,
     obstacles: [],
     animatedObjects: [],
     graffitiList: [],
@@ -195,6 +240,7 @@ const matConstructionStripe = new THREE.MeshStandardMaterial({ color: 0xffcc00 }
 const matHole = new THREE.MeshBasicMaterial({ color: 0x000000 });
 // Bike z at the previous camera update (declared early: resetGame clears it).
 let lastCameraBikeZ = null;
+let speedLines = null;
 // Free roam chase camera: its heading and the last followed position.
 let freeCamYaw = null;
 let freeCamLast = null;
@@ -999,7 +1045,7 @@ function rideFreeBike(dt, roam) {
     // After a boost: back down to the normal top speed.
     if (v > top) v = Math.max(top, v - 5 * dt);
     // Held by the police: brought to a stop at once (like the car).
-    if (roam.frozen) v *= 0.7;
+    if (roam.frozen) v = 0;
     // Bars: tight at walking pace, gentler at speed (reversed when backing up).
     const pace = Math.min(1, Math.abs(v) / 25);
     const rate = (Math.abs(v) < 0.3 ? 1.1 : 2.3 - 1.4 * pace) * steer;
@@ -1013,6 +1059,10 @@ function rideFreeBike(dt, roam) {
     freeRide.gas = gas;
     freeRide.steer = steer * Math.min(1, Math.abs(v) / 4);
     return Math.abs(v) / 60;
+}
+
+function badLandingWobble() {
+    return state.badLanding > 0 ? Math.sin(state.gameTime * 19) * 0.32 * Math.min(1, state.badLanding / 0.6) : 0;
 }
 
 // Speed shown and heard. Free roam (V2) is life size: metres per second.
@@ -1053,6 +1103,10 @@ function visualSnapshot() {
         boosting: free ? !!(v2 && v2.roam.boostState().active) : state.boost.frames > 0,
         vehicle: free && v2 ? (v2.roam.mode === 'walk' ? 'foot' : v2.roam.mode) : 'bike',
         footSpeed: free && v2 ? v2.roam.footSpeed : 0,
+        wobble: free ? 0 : badLandingWobble(),
+        // Fragile after a bad landing: the bike blinks (faster at first).
+        blink: !free && state.frame < state.vulnerableUntil &&
+            Math.floor(state.frame / (state.vulnerableUntil - state.frame > 360 ? 4 : 8)) % 2 === 0,
         carModel: free && v2 ? v2.roam.carModel : null,
         reversing: free && v2 ? v2.roam.reversing : false,
         airborne: !free && state.jump.airborne,
@@ -1085,14 +1139,17 @@ function resetGame() {
     state.wheeliePercentage = 0;
     state.wheelieTime = 0;
     state.frame = 0;
-    state.jump = { airborne: false, y: 0, vy: 0, trickFrames: 0, lastLanding: -1e9, pending: false, visualY: 0 };
+    state.jump = { airborne: false, y: 0, vy: 0, trickFrames: 0, lastLanding: -1e9, pending: false, visualY: 0, flipActive: false, flipAngle: 0, flipRate: 0, flipKmh: 0 };
     state.trick = { active: false, type: 'superman', was: false, spin: 0 };
     state.ramps.forEach((ramp) => scene.remove(ramp.mesh));
     state.ramps = [];
     state.rampFreeZones = [];
     state.gantries.forEach((gantry) => scene.remove(gantry));
     state.gantries = [];
+    state.quietZones = [];
     state.phase = 1;
+    state.vulnerableUntil = -1;
+    state.badLanding = 0;
     lastCameraBikeZ = null;
     freeCamYaw = null;
     freeCamLast = null;
@@ -1328,8 +1385,9 @@ function checkCollisions() {
             // A second obstacle touched in the step that started the skid is
             // ignored: no skid frame is recorded yet, so ending the run here
             // would produce a replay the server refuses.
-            if (state.trick.active && !state.skidding) {
-                // Hit during a stunt: no saving it.
+            const fragile = state.frame - 1 < state.vulnerableUntil;
+            if ((state.trick.active || fragile) && !state.skidding) {
+                // Hit during a stunt, or still shaken by a bad landing: no saving it.
                 obs.active = false;
                 gameOver();
                 return;
@@ -1471,6 +1529,35 @@ function setTrick(active) {
     trick.active = active;
 }
 
+// What the takeoff speed allows, said as the bike leaves the ramp.
+function announceFlip(kmh) {
+    if (kmh >= FLIP.doubleKmh) toast('DOUBLE BACKFLIP POSSIBLE', 'Reste appuyé : double · lâche après un tour : simple', { discreet: true });
+    else if (kmh >= FLIP.kmh) toast('BACKFLIP', 'Reste appuyé jusqu’à l’atterrissage', { discreet: true });
+    else if (kmh >= FLIP.kmh - 10) toast('UN PEU JUSTE…', `Backflip à ${FLIP.kmh} km/h`, { discreet: true });
+    else toast('TROP LENT !', `Backflip à ${FLIP.kmh} km/h`, { discreet: true });
+}
+
+function landFlip(frame) {
+    const jump = state.jump;
+    const [outcome, turns] = flipLanding(jump.flipAngle, jump.flipKmh);
+    if (outcome === 'clean') {
+        const bonus = (jump.trickFrames > 0 ? FLIP.trickBonus : FLIP.bonus)[turns];
+        state.score += bonus;
+        const name = turns >= 2 ? 'DOUBLE BACKFLIP' : 'BACKFLIP';
+        toast(`+${bonus}`, jump.trickFrames > 0 ? `${name} + FIGURE !` : `${name} !`);
+        audio.play('new_record', { volume: 0.45 });
+        audio.play('landing', { volume: 0.5 });
+    } else if (outcome === 'bad') {
+        state.vulnerableUntil = frame + FLIP.badFrames;
+        state.badLanding = 1.6;
+        audio.play('skid', { volume: 0.45 });
+        toast('MAUVAISE CHUTE', 'Fragile 10 s : un obstacle = chute', { discreet: true });
+    } else if (outcome === 'crash') {
+        // Landed on its back.
+        gameOver();
+    }
+}
+
 function land(trickFrames, difficulty) {
     audio.play('landing', { volume: 0.55 });
     if (trickFrames > 0) {
@@ -1526,8 +1613,8 @@ function fireBoostEffects() {
     audio.play('backfire', { volume: 0.55, delay: 0.12 });
 }
 
-function toast(title, text) {
-    document.dispatchEvent(new CustomEvent('wheelie:toast', { detail: { title, text } }));
+function toast(title, text, { discreet = false } = {}) {
+    document.dispatchEvent(new CustomEvent('wheelie:toast', { detail: { title, text, discreet } }));
 }
 
 // Phases of a competitive run, each opened by an overhead motorway sign:
@@ -1606,11 +1693,39 @@ function spawnGantry(phase, z) {
 }
 
 // Placed where the bike will be when the phase starts.
+// Calm stretch after a sign: nothing in it, time to read the message.
+function quietAfter(z, frames) {
+    const to = z - Math.max(60, state.speed * frames + 30);
+    state.quietZones.push({ from: z + 5, to });
+    state.obstacles = state.obstacles.filter((obs) => {
+        const oz = obs.mesh.position.z;
+        if (oz <= z + 5 && oz >= to) {
+            scene.remove(obs.mesh);
+            disposeObjectTree(obs.mesh);
+            return false;
+        }
+        return true;
+    });
+    state.ramps = state.ramps.filter((ramp) => {
+        if (ramp.z <= z + 5 && ramp.z >= to) {
+            scene.remove(ramp.mesh);
+            return false;
+        }
+        return true;
+    });
+}
+const inQuietZone = (z) => state.quietZones.some((zone) => z <= zone.from && z >= zone.to);
+
 function updatePhases(frame) {
     const lead = 120;
+    const calm = 120;
     const ahead = (frames) => bikeGroup.position.z - state.speed * frames - 20;
-    if (frame === 1 && state.gantries.length === 0) spawnGantry(1, -45);
-    if (frame === JUMP.rampsFrom - lead) {
+    if (frame === 1 && state.gantries.length === 0) {
+        spawnGantry(1, -45);
+        quietAfter(-45, 150);
+    }
+    // Sign 2 crossed 2 s before the ramps start (phase 2 sign at 23 s).
+    if (frame === JUMP.rampsFrom - calm - lead) {
         const z = ahead(lead);
         spawnGantry(2, z);
         // Phase 2 is for tricks: clear the obstacles past its sign.
@@ -1622,14 +1737,20 @@ function updatePhases(frame) {
             }
             return true;
         });
+        quietAfter(z, calm);
     }
-    if (frame === JUMP.groundTricksFrom - lead) spawnGantry(3, ahead(lead));
+    if (frame === JUMP.groundTricksFrom - calm - lead) {
+        const z = ahead(lead);
+        spawnGantry(3, z);
+        quietAfter(z, calm);
+    }
+    state.quietZones = state.quietZones.filter((zone) => zone.to < bikeGroup.position.z + 40);
     for (const gantry of state.gantries) {
         if (!gantry.userData.announced && bikeGroup.position.z < gantry.position.z) {
             gantry.userData.announced = true;
             const { title, subtitle } = PHASES[gantry.userData.phase];
             state.phase = gantry.userData.phase;
-            toast(`${title} · ${subtitle}`, gantry.userData.phase === 2 ? 'Tremplins : maintiens FIGURE (F) en l’air'
+            toast(`${title} · ${subtitle}`, gantry.userData.phase === 2 ? 'Tremplins : FIGURE (F) en l’air · en wheeling, garde ESPACE : backflip'
                 : gantry.userData.phase === 3 ? 'Un obstacle pendant une figure = chute' : 'Évite les obstacles');
         }
     }
@@ -1643,9 +1764,9 @@ function updatePhases(frame) {
     });
 }
 
-// Obstacles are dropped during phase 2 (tricks only).
+// Obstacles are dropped during phase 2 (tricks only), from its sign.
 function obstaclesAllowed() {
-    return state.frame < JUMP.rampsFrom - 120 || state.frame >= JUMP.groundTricksFrom - 120;
+    return state.frame < JUMP.rampsFrom - 240 || state.frame >= JUMP.groundTricksFrom - 240;
 }
 
 function announceTricks(frame) {
@@ -1774,6 +1895,7 @@ function updateSpeedLines(dt) {
 
 async function gameOver() {
     if (!state.isPlaying) return;
+    speedLines?.hide();
     if (state.runToken && !state.runReplayOverflow && state.inputLog.length >= 120) {
         state.inputLog[state.inputLog.length - 2] |= 0x10;
         completedRankedRun = {
@@ -1931,6 +2053,8 @@ function animate(timestamp = performance.now()) {
     while (simulationAccumulator >= FIXED_STEP) {
         const dt = FIXED_STEP;
         if (state.isPlaying && !state.isPaused && !state.userPaused && bikeGroup) {
+        // Development only: tests drive the inputs frame by frame.
+        if (import.meta.env.DEV && window.__wheelieStep) window.__wheelieStep(state);
         state.gameTime += dt;
         if (!IS_V2) {
             const dayProgress = (state.gameTime % CONFIG.dayNightCycleDuration) / CONFIG.dayNightCycleDuration;
@@ -2170,9 +2294,20 @@ function animate(timestamp = performance.now()) {
                 fireBoostEffects();
             }
             // No traction in the air; no throttle or wheelie during a stunt.
+            // The wheelie button is recorded in the air too: it drives the
+            // backflip (it gives no lift there, as on the server).
             isAccelerating = isAccelerating && grounded && !trickGround;
             isBraking = isBraking && grounded;
-            const wheelieInput = state.keys.space && grounded && !trickGround;
+            const wheelieInput = state.keys.space && !trickGround;
+            if (takeoff) {
+                jump.flipActive = wheelieInput && state.bike.angle >= FLIP.minAngle;
+                if (jump.flipActive) {
+                    jump.flipKmh = startKmh;
+                    jump.flipAngle = state.bike.angle;
+                    jump.flipRate = (2 * Math.PI * flipTurnsFor(startKmh) - state.bike.angle) / flightFrames(jump.vy);
+                    announceFlip(startKmh);
+                }
+            }
             const inputFlags =
                 (isAccelerating ? 0x01 : 0) |
                 (isBraking ? 0x02 : 0) |
@@ -2250,7 +2385,18 @@ function animate(timestamp = performance.now()) {
             }
             // In the air the nose follows the flight: up off the lip, down to land.
             const airPitch = jump.airborne ? Math.max(-0.45, Math.min(0.5, jump.vy * 3.2)) : 0;
-            bikePivot.rotation.x = -state.bike.angle - airPitch;
+            if (jump.flipActive && jump.airborne) {
+                if (v2) v2.rider.setFlip(jump.flipAngle);
+                else bikePivot.rotation.x = -jump.flipAngle;
+            } else {
+                if (v2) v2.rider.setFlip(0);
+                bikePivot.rotation.x = -state.bike.angle - airPitch;
+            }
+            // Bad landing: the bike slides left and right for a moment.
+            if (state.badLanding > 0) {
+                state.badLanding = Math.max(0, state.badLanding - dt);
+                bikeGroup.rotation.z += badLandingWobble();
+            }
             if (isAccelerating) {
                 let accel = CONFIG.baseAcceleration;
                 if (kmh > 130) accel *= 0.15;
@@ -2358,6 +2504,7 @@ function animate(timestamp = performance.now()) {
                 state.score += JUMP.groundRate * FIXED_STEP * trickDifficulty;
             }
             if (jump.airborne) {
+                if (jump.flipActive && wheelieInput) jump.flipAngle += jump.flipRate;
                 jump.y += jump.vy;
                 jump.vy -= JUMP.gravity;
                 if (jump.y <= 0) {
@@ -2369,7 +2516,9 @@ function animate(timestamp = performance.now()) {
                         gameOver();
                     } else {
                         land(jump.trickFrames, trickDifficulty);
+                        if (jump.flipActive) landFlip(frame);
                     }
+                    jump.flipActive = false;
                 }
             }
             if (!IS_V2) {
@@ -2452,8 +2601,9 @@ function animate(timestamp = performance.now()) {
                 // From about 20 s on, one block in two gets a ramp. In phase 3
                 // fewer ramps: each one clears ~300 m of obstacles, which left
                 // "figures + obstacles" almost without obstacles.
-                const rampChance = state.frame >= JUMP.groundTricksFrom - 120 ? 0.25 : 0.5;
-                if (state.frame >= JUMP.rampsFrom && Math.random() < rampChance) spawnRamp(newZ + 20 + Math.random() * 60);
+                const rampChance = state.frame >= JUMP.groundTricksFrom - 240 ? 0.25 : 0.5;
+                const rampZ = newZ + 20 + Math.random() * 60;
+                if (state.frame >= JUMP.rampsFrom && Math.random() < rampChance && !inQuietZone(rampZ)) spawnRamp(rampZ);
                 state.rampFreeZones = state.rampFreeZones.filter((zone) => zone.to < bikeGroup.position.z);
                 for (let i = 0; i < 4; i++) {
                     // Difficulty-based spawning
@@ -2463,7 +2613,7 @@ function animate(timestamp = performance.now()) {
 
                     if (Math.random() < spawnChance) {
                         const z = newZ + Math.random() * 100;
-                        if (obstaclesAllowed() && !state.rampFreeZones.some((zone) => z <= zone.from && z >= zone.to)) spawnObstacle(z);
+                        if (obstaclesAllowed() && !inQuietZone(z) && !state.rampFreeZones.some((zone) => z <= zone.from && z >= zone.to)) spawnObstacle(z);
                     }
                 }
             }
@@ -2496,6 +2646,14 @@ function animate(timestamp = performance.now()) {
     const snapshot = visualSnapshot();
     audio.update(elapsed, snapshot);
     if (GAME_SETTINGS.gameMode === 'free' && v2) updateIdleVoice(elapsed);
+    if (v2) {
+        if (!speedLines) speedLines = createSpeedLines();
+        const free = GAME_SETTINGS.gameMode === 'free';
+        const boosting = free ? v2.roam.boostState().active : state.boost.frames > 0;
+        const kmhNow = speedKmh();
+        const intensity = free && v2.roam.mode !== 'walk' ? Math.max(0, Math.min(1, (kmhNow - 95) / 55)) : 0;
+        speedLines.update(elapsed, Math.min(1, intensity + (boosting ? 0.45 : 0)));
+    }
     uiAccumulator += elapsed;
     if (uiAccumulator >= 0.1) {
         updateUI();
@@ -2518,7 +2676,9 @@ function updateCamera() {
         const target = v2 ? v2.roam.focus : bikeGroup.position;
         
         // FOV dynamique basé sur la vitesse
-        let fovBoost = IS_V2 ? Math.min(1, kmh / 140) * 12 : state.freeMode.speed * 10;
+        // V2: the view opens up with speed, much more past 90 km/h.
+        const fast = Math.max(0, Math.min(1, (kmh - 90) / 60));
+        let fovBoost = IS_V2 ? Math.min(1, kmh / 90) * 5 + Math.pow(fast, 1.2) * 13 : state.freeMode.speed * 10;
         if (state.keys.up || (GAME_SETTINGS.controlMode === 'analog' && analogData.y < -0.3)) {
             fovBoost += IS_V2 ? 3 : 8; // Boost supplémentaire lors de l'accélération
         }
@@ -2567,9 +2727,11 @@ function updateCamera() {
             distanceOffset = 4.6;
             heightOffset = 2.5;
         } else if (roamMode === 'bike' && v2) {
-            // The bike is smaller in free roam (life-size street).
-            distanceOffset *= 0.56;
-            heightOffset *= 0.6;
+            // The bike is smaller in free roam (life-size street); at speed
+            // the camera drops lower and closer, the road rushes by.
+            const fast = Math.max(0, Math.min(1, (kmh - 90) / 60));
+            distanceOffset *= 0.56 * (1 - 0.38 * fast);
+            heightOffset *= 0.6 * (1 - 0.36 * fast);
         } else if (roamMode === 'car') {
             distanceOffset = 13 + state.freeMode.speed * 4;
             heightOffset = 5.5;
@@ -2608,6 +2770,12 @@ function updateCamera() {
         camera.position.x += (targetX - camera.position.x) * 0.12;
         camera.position.z += (targetZ - camera.position.z) * 0.12;
         camera.position.y += (targetY - camera.position.y) * 0.12;
+        // Road buzz at speed.
+        const buzz = v2 && roamMode !== 'walk' ? Math.max(0, Math.min(1, (kmh - 100) / 60)) : 0;
+        if (buzz > 0) {
+            camera.position.x += (Math.random() - 0.5) * 0.05 * buzz;
+            camera.position.y += (Math.random() - 0.5) * 0.04 * buzz;
+        }
         camera.lookAt(lookX, roamMode === 'walk' ? 1.25 : 1, lookZ);
     } else {
         // Dynamic FOV based on speed (Visual Acceleration)

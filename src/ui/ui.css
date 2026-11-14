@@ -2147,3 +2147,19 @@ body.v2 #rider-voice-options button::after {
 #rider-voice-options .rider-voice__pick.active {
   outline: 1px solid #f6c416;
 }
+
+/* Discreet messages (bad landing, flip hints): smaller and lower */
+body.v2 #ui-toast.is-discreet {
+  top: calc(62% + var(--safe-t));
+  padding: 5px 16px 6px;
+  gap: 2px;
+  background: rgba(8, 9, 12, 0.5);
+}
+
+body.v2 #ui-toast.is-discreet .ui-toast__title {
+  font-size: 18px !important;
+}
+
+body.v2 #ui-toast.is-discreet .ui-toast__text {
+  font-size: 11px !important;
+}

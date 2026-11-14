@@ -338,8 +338,9 @@ function installToasts() {
     document.getElementById('ui-layer')?.append(box);
     let timer = null;
     document.addEventListener('wheelie:toast', (event) => {
-        const { title, text } = event.detail || {};
+        const { title, text, discreet } = event.detail || {};
         box.innerHTML = `<span class="ui-toast__title">${title || ''}</span>${text ? `<span class="ui-toast__text">${text}</span>` : ''}`;
+        box.classList.toggle('is-discreet', !!discreet);
         box.classList.remove('is-shown');
         void box.offsetWidth;
         box.classList.add('is-shown');

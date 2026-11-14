@@ -444,7 +444,7 @@ export function createRider({ scene }) {
         pose.stop = damp(pose.stop, kmh < 4 && linear && !airborne ? 1 : 0, kmh < 4 ? 5 : 12, dt);
         pose.skid = damp(pose.skid, skidding ? 1 : 0, 10, dt);
         pose.brake = damp(pose.brake, braking ? 1 : 0, 14, dt);
-        if ((linear || frame.freeBike) && !skidding) bikeGroup.rotation.z = pose.lean + pose.stop * 0.07;
+        if ((linear || frame.freeBike) && !skidding) bikeGroup.rotation.z = pose.lean + pose.stop * 0.07 + (frame.wobble || 0);
 
         // Bars: wide steering at walking pace, still visible at speed.
         const steerTarget = -steer * (0.34 - 0.2 * Math.min(1, kmh / 70)) + (skidding ? Math.sin(pose.time * 31) * 0.12 : 0);
@@ -487,6 +487,8 @@ export function createRider({ scene }) {
         pose.lastKmh = kmh;
         pose.lastAngle = angleRatio;
         pose.throttle = damp(pose.throttle, throttle, 14, dt);
+        // The throttle twist is a visible gesture (slower than the throttle itself).
+        pose.twist = damp(pose.twist || 0, throttle, 7, dt);
         // Stunts: superman (legs out behind), no hander (arms up), can-can
         // (a leg swung over the tank). Blended in and out quickly.
         if (frame.trick) pose.trickType = frame.trick;
@@ -553,10 +555,12 @@ export function createRider({ scene }) {
             const inside = Math.max(0, -side * hang) * 2.2;
             toRiderSpace(shoulders[i], root);
             toRiderSpace(grips[i], target);
+            // Right arm (side < 0): the elbow lifts as the wrist rolls the gas on.
+            const twist = side < 0 ? pose.twist : 0;
             elbowHint.set(
-                side * (0.85 + tuck * 0.55 + inside * 0.6 + pose.brake * 0.1),
-                -0.55 + tuck * 0.3 - pose.brake * 0.25 + pose.pump * 0.25,
-                -0.35 - tuck * 0.25 + inside * 0.2
+                side * (0.85 + tuck * 0.55 + inside * 0.6 + pose.brake * 0.1 + twist * 0.25),
+                -0.55 + tuck * 0.3 - pose.brake * 0.25 + pose.pump * 0.25 + twist * 0.55,
+                -0.35 - tuck * 0.25 + inside * 0.2 - twist * 0.15
             );
             if (nohander > 0.001) {
                 // Arms thrown up in a V.
@@ -567,7 +571,7 @@ export function createRider({ scene }) {
             hands[i].position.copy(target);
             hands[i].quaternion.copy(handQuaternion);
             // Right hand (rider's right is -x): rolls the throttle open.
-            if (side < 0) hands[i].rotateX(-pose.throttle * 0.5 + pose.brake * 0.15);
+            if (side < 0) hands[i].rotateX(-pose.twist * 1.15 + pose.brake * 0.15);
             else hands[i].rotateX(pose.brake * 0.1);
         }
         // Legs: on the pegs; one foot down at a standstill, one out in a skid.
@@ -859,6 +863,23 @@ export function createRider({ scene }) {
         riderGroup.visible = visible;
     }
 
+    // Backflip: the bike turns about its middle, not the rear axle.
+    const pivotRest = new THREE.Vector3(0, REAR_RADIUS, REAR_AXLE_Z);
+    const flipCentre = new THREE.Vector3(0, REAR_RADIUS + 0.45, (REAR_AXLE_Z + FRONT_AXLE_Z) / 2);
+    function setFlip(angle) {
+        if (!angle) {
+            bikePivot.position.copy(pivotRest);
+            return;
+        }
+        const phi = -angle;
+        const dy = pivotRest.y - flipCentre.y;
+        const dz = pivotRest.z - flipCentre.z;
+        bikePivot.rotation.x = phi;
+        bikePivot.position.set(0,
+            flipCentre.y + dy * Math.cos(phi) - dz * Math.sin(phi),
+            flipCentre.z + dy * Math.sin(phi) + dz * Math.cos(phi));
+    }
+
     // Bike + rider size: arcade scale in races, smaller in free roam.
     let worldScale = SCALE;
     function setWorldScale(value) {
@@ -891,7 +912,7 @@ export function createRider({ scene }) {
 
     reset();
     return {
-        setLivery, dismount, updateWalk, mount, setRiderVisible, setBoost, exhaustPoint, setWorldScale,
+        setLivery, dismount, updateWalk, mount, setRiderVisible, setBoost, exhaustPoint, setWorldScale, setFlip,
         get worldScale() { return worldScale; },
         bikeGroup, bikePivot, materials, update, reset, startCrash, updateCrash, slideSpeed, getHitBox,
         get crashing() { return crash.active; },

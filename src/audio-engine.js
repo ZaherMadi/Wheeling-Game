@@ -387,7 +387,8 @@ export function createAudioEngine({ effects, getManifest }) {
         setLoop('engine_high', Math.sqrt(highWeight) * 0.46 * load, (0.52 + rpm * 0.62) * pitch);
         engineFilter.frequency.setTargetAtTime(1500 + sim.throttle * 5200 + rpm * 4200, context.currentTime, 0.08);
 
-        const speedRatio = onFoot ? 0 : clamp01(kmh / 250);
+        // Free roam speeds are real ones: the wind gets loud sooner.
+        const speedRatio = onFoot ? 0 : clamp01(kmh / (frame.linear ? 250 : 165));
         setLoop('wind', Math.pow(speedRatio, 1.5) * 0.55, 0.8 + speedRatio * 0.5);
         setLoop('tire_wet', onFoot ? 0 : clamp01(kmh / 110) * 0.22, 0.75 + speedRatio * 0.5);
         setLoop('city_ambience', 0.16 - speedRatio * 0.09, 1);
