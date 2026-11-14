@@ -712,7 +712,10 @@ export function createRider({ scene }) {
 
         // Bike ------------------------------------------------------------
         if (spec.bike === 'flipBack') {
-            bikePivot.rotation.x = Math.max(-2.75, bikePivot.rotation.x - dt * 5.5);
+            // Turned further than that (a backflip landed on its back): it
+            // falls back onto it rather than snapping.
+            const pitch = bikePivot.rotation.x;
+            bikePivot.rotation.x = pitch < -2.75 ? damp(pitch, -2.75, 6, dt) : Math.max(-2.75, pitch - dt * 5.5);
             bikeGroup.rotation.z = damp(bikeGroup.rotation.z, crash.side * 0.5, 4, dt);
         } else if (spec.bike === 'endo') {
             // Nose dives over the front wheel, then the bike falls on its side.
@@ -869,6 +872,7 @@ export function createRider({ scene }) {
     function setFlip(angle) {
         if (!angle) {
             bikePivot.position.copy(pivotRest);
+            bikePivot.rotation.x = 0;
             return;
         }
         const phi = -angle;

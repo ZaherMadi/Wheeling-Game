@@ -638,6 +638,23 @@ body.v2 .ui-final__value {
   text-shadow: 0 4px 0 rgba(0, 0, 0, 0.55), 0 0 26px rgba(246, 196, 22, 0.5);
 }
 
+body.v2 .gameover-reason {
+  margin: -2px auto 4px !important;
+}
+
+body.v2 .gameover-reason strong {
+  font-family: var(--display);
+  font-style: italic;
+  font-size: 22px;
+  color: var(--red);
+  text-shadow: 0 2px 0 rgba(0, 0, 0, 0.7), 0 0 14px rgba(255, 61, 61, 0.45);
+}
+
+body.v2 .gameover-reason span {
+  font-size: 14px !important;
+  color: var(--text);
+}
+
 body.v2 .ui-best {
   font-family: var(--display);
   font-size: 14px !important;
@@ -1869,8 +1886,38 @@ body.v2 .ui-garage__hint {
     background: linear-gradient(180deg, rgba(6, 8, 14, 0) 0 35%, rgba(6, 8, 14, 0.7) 55%, rgba(6, 8, 14, 0.85));
   }
 
+  /* Compact, so the rider keeps more than half of the screen above it. */
   body.v2 .ui-rider .rider-panel {
     width: min(430px, 94vw);
+    padding: 12px 14px !important;
+  }
+
+  body.v2 .ui-rider .ui-title {
+    font-size: 20px !important;
+    margin: 0 0 8px !important;
+  }
+
+  body.v2 .ui-rider .ui-livery {
+    gap: 8px !important;
+  }
+
+  body.v2 .ui-rider .ui-livery__label {
+    width: 62px;
+    font-size: 11px;
+  }
+
+  body.v2 .ui-rider .ui-livery__swatches {
+    gap: 6px;
+  }
+
+  body.v2 .ui-rider .ui-swatch {
+    width: min(26px, 6.6vw);
+    height: min(26px, 6.6vw);
+  }
+
+  body.v2 .ui-rider .ui-livery__number {
+    padding: 4px 8px;
+    font-size: 18px;
   }
 }
 

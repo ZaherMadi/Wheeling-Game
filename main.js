@@ -79,14 +79,23 @@ const TRICK_FLAG = 0x40;
 // the server replay as well.
 const BOOST = { frames: 150, accel: 0.02, maxSpeed: 4.0, drain: 0.004, maxCharges: 3, rate: 6 };
 const BOOST_FLAG = 0x80;
-// Backflips (mirrored by wheelie_replay.py): in a wheelie at the takeoff,
-// holding the wheelie button in the air keeps the bike rotating backwards.
-// Held through the flight: one turn from 130 km/h, two from 150, half a
-// turn 10 km/h under (bad landing), less below (crash).
+// Backflips (mirrored by wheelie_replay.py): from 130 km/h, in a wheelie at
+// the takeoff with the wheelie button held. Holding it in the air turns the
+// bike backwards: held all the way, one turn (two from 150 km/h). Let go,
+// the bike turns back to the nearest whole turn (or level) at `settle` a
+// frame. Slower than 130 km/h: an ordinary jump. Judged at touchdown on how
+// far the bike is from a whole turn: `clean`, `bad` (fragile 4 s), else on
+// its back (the run ends).
 const FLIP = {
-    minAngle: 0.35, kmh: 130, doubleKmh: 150, minTurn: 0.25, clean: 0.08, overBad: 0.25,
-    bonus: [0, 100, 200], trickBonus: [0, 150, 300], badFrames: 600
+    minAngle: 0.35, kmh: 130, doubleKmh: 150, settle: 0.04, clean: 0.1, bad: 0.3,
+    bonus: [0, 100, 200], trickBonus: [0, 150, 300], badFrames: 240
 };
+// In the air the wheelie no longer pivots on the rear wheel: the bike
+// levels out (it can no longer go over the top in mid-air).
+const AIR_LEVEL_RATE = 0.03;
+// Too slow: under 50 km/h for more than 4 s, the police stop the run.
+// Counted once 50 km/h has been reached (or from 10 s in); skids reset it.
+const SLOW = { kmh: 50, frames: 240, armFrame: 600, warnFrames: 30 };
 
 function flightFrames(vy) {
     let y = JUMP.rampHeight;
@@ -100,22 +109,29 @@ function flightFrames(vy) {
 }
 
 function flipTurnsFor(kmh) {
-    if (kmh < FLIP.kmh) return Math.max(0.3, 1 - (FLIP.kmh - kmh) / 20);
-    if (kmh < FLIP.doubleKmh) return 1;
-    return 2;
+    return kmh >= FLIP.doubleKmh ? 2 : 1;
 }
 
-function flipLanding(flipAngle, flipKmh) {
+// Button released: one frame back towards the nearest whole turn.
+function flipSettle(flipAngle) {
+    const target = 2 * Math.PI * Math.floor(flipAngle / (2 * Math.PI) + 0.5);
+    if (flipAngle < target) return Math.min(target, flipAngle + FLIP.settle);
+    return Math.max(target, flipAngle - FLIP.settle);
+}
+
+function flipLanding(flipAngle) {
     const turns = flipAngle / (2 * Math.PI);
     const whole = Math.floor(turns + 0.5);
-    const rest = turns - whole;
-    if (whole === 0) return turns < FLIP.minTurn ? ['none', 0] : ['crash', 0];
-    if (Math.abs(rest) <= FLIP.clean) {
-        if (whole >= 2 && flipKmh < FLIP.doubleKmh) return ['bad', 0];
-        return ['clean', Math.min(whole, 2)];
-    }
-    if (rest < 0 || rest <= FLIP.overBad) return ['bad', 0];
-    return ['crash', 0];
+    const off = Math.abs(turns - whole);
+    if (off > FLIP.bad) return ['crash', 0];
+    if (off > FLIP.clean) return ['bad', 0];
+    if (whole === 0) return ['none', 0];
+    return ['clean', Math.min(whole, 2)];
+}
+
+// Speed bonus on the score: x1 at 20 km/h up to x1.5 from 200 km/h.
+function speedMultiplier(kmh) {
+    return 1.0 + 0.5 * Math.min(1.0, (kmh - 20) / 180);
 }
 const RAMP = { width: 4.4, length: 5.5 };
 const TRICK_TYPES = ['superman', 'nohander', 'cancan'];
@@ -166,6 +182,7 @@ let state = {
     phase: 1,
     vulnerableUntil: -1,
     badLanding: 0,
+    slow: { armed: false, frames: 0 },
     obstacles: [],
     animatedObjects: [],
     graffitiList: [],
@@ -248,6 +265,9 @@ const matConstructionStripe = new THREE.MeshStandardMaterial({ color: 0xffcc00 }
 const matHole = new THREE.MeshBasicMaterial({ color: 0x000000 });
 // Bike z at the previous camera update (declared early: resetGame clears it).
 let lastCameraBikeZ = null;
+// "Too slow" banner (see showPoliceWarning).
+let policeWarning = null;
+let policeWarningShown = -1;
 let speedLines = null;
 // Free roam chase camera: its heading and the last followed position.
 let freeCamYaw = null;
@@ -1120,7 +1140,10 @@ function visualSnapshot() {
         carModel: free && v2 ? v2.roam.carModel : null,
         reversing: free && v2 ? v2.roam.reversing : false,
         airborne: !free && state.jump.airborne,
-        trick: state.trick.active ? state.trick.type : null
+        trick: state.trick.active ? state.trick.type : null,
+        // Too slow: how close the police car is (0 far behind, 1 alongside).
+        police: !free && state.isPlaying && state.slow.frames >= SLOW.warnFrames
+            ? Math.min(1, state.slow.frames / SLOW.frames) : null
     };
 }
 
@@ -1160,6 +1183,8 @@ function resetGame() {
     state.phase = 1;
     state.vulnerableUntil = -1;
     state.badLanding = 0;
+    state.slow = { armed: false, frames: 0 };
+    hidePoliceWarning();
     lastCameraBikeZ = null;
     freeCamYaw = null;
     freeCamLast = null;
@@ -1405,11 +1430,11 @@ function checkCollisions() {
             if ((state.trick.active || fragile) && !state.skidding) {
                 // Hit during a stunt, or still shaken by a bad landing: no saving it.
                 obs.active = false;
-                gameOver();
+                gameOver(state.trick.active ? 'trickHit' : 'fragileHit');
                 return;
             }
             if (state.skidding && !skidStarted) {
-                gameOver();
+                gameOver('hit');
             } else if (!state.skidding) {
                 startSkid();
                 skidStarted = true;
@@ -1549,13 +1574,13 @@ function setTrick(active) {
 function announceFlip(kmh) {
     if (kmh >= FLIP.doubleKmh) toast('DOUBLE BACKFLIP POSSIBLE', 'Reste appuyé : double · lâche après un tour : simple', { discreet: true, float: true });
     else if (kmh >= FLIP.kmh) toast('BACKFLIP', 'Reste appuyé jusqu’à l’atterrissage', { discreet: true, float: true });
-    else if (kmh >= FLIP.kmh - 10) toast('UN PEU JUSTE…', `Backflip à ${FLIP.kmh} km/h`, { discreet: true, float: true });
-    else toast('TROP LENT !', `Backflip à ${FLIP.kmh} km/h`, { discreet: true, float: true });
+    // In a wheelie but too slow: just a jump, nothing to fear.
+    else toast('PAS DE BACKFLIP', `Il faut ${FLIP.kmh} km/h au tremplin`, { discreet: true, float: true });
 }
 
 function landFlip(frame) {
     const jump = state.jump;
-    const [outcome, turns] = flipLanding(jump.flipAngle, jump.flipKmh);
+    const [outcome, turns] = flipLanding(jump.flipAngle);
     if (outcome === 'clean') {
         const bonus = (jump.trickFrames > 0 ? FLIP.trickBonus : FLIP.bonus)[turns];
         state.score += bonus;
@@ -1567,10 +1592,10 @@ function landFlip(frame) {
         state.vulnerableUntil = frame + FLIP.badFrames;
         state.badLanding = 1.6;
         audio.play('skid', { volume: 0.45 });
-        toast('MAUVAISE CHUTE', 'Fragile 10 s : un obstacle = chute', { discreet: true, float: true });
+        toast('MAUVAISE RÉCEPTION', 'Fragile 4 s : un obstacle = chute', { discreet: true, float: true });
     } else if (outcome === 'crash') {
         // Landed on its back.
-        gameOver();
+        gameOver('flip');
     }
 }
 
@@ -1766,7 +1791,7 @@ function updatePhases(frame) {
             gantry.userData.announced = true;
             const { title, subtitle } = PHASES[gantry.userData.phase];
             state.phase = gantry.userData.phase;
-            toast(`${title} · ${subtitle}`, gantry.userData.phase === 2 ? 'Tremplins : FIGURE (F) en l’air · en wheeling, garde ESPACE : backflip'
+            toast(`${title} · ${subtitle}`, gantry.userData.phase === 2 ? `Tremplins : FIGURE${isMobile() ? '' : ' (F)'} en l’air · backflip : en wheeling à 130 km/h, garde ${isMobile() ? 'WHEELIE' : 'ESPACE'}`
                 : gantry.userData.phase === 3 ? 'Un obstacle pendant une figure = chute' : 'Évite les obstacles');
         }
     }
@@ -1911,9 +1936,61 @@ function updateSpeedLines(dt) {
     }
 }
 
-async function gameOver() {
+// Why the run ended, shown on the game-over screen.
+const DEFEAT_REASONS = {
+    slow: ['TROP LENT', 'Moins de 50 km/h pendant plus de 4 s : arrêté par la police.'],
+    loop: ['WHEELING TROP HAUT', 'La moto est passée par-dessus.'],
+    hit: ['COLLISION', 'Un deuxième obstacle pendant le dérapage.'],
+    trickHit: ['OBSTACLE EN FIGURE', 'Un obstacle touché pendant une figure.'],
+    fragileHit: ['OBSTACLE APRÈS UNE MAUVAISE RÉCEPTION', 'Juste après un saut mal reçu, un obstacle fait tomber.'],
+    trickLanding: ['ATTERRISSAGE EN FIGURE', 'Relâche FIGURE avant de toucher le sol.'],
+    flip: ['BACKFLIP RATÉ', 'Atterri sur le dos : garde le wheeling jusqu’au bout du saut.']
+};
+
+function showDefeatReason(reason) {
+    const element = document.getElementById('gameover-reason');
+    const [label, detail] = DEFEAT_REASONS[reason] || [];
+    if (element) {
+        element.textContent = '';
+        if (label) {
+            const strong = document.createElement('strong');
+            strong.textContent = label;
+            const span = document.createElement('span');
+            span.textContent = detail;
+            element.append(strong, span);
+        }
+        element.hidden = !label;
+    }
+    // V2: "ARRÊTÉ !" when the police end the run, "CHUTE !" otherwise.
+    const title = document.querySelector('#game-over-screen h1');
+    if (IS_V2 && title) title.textContent = reason === 'slow' ? 'ARRÊTÉ !' : 'CHUTE !';
+}
+
+// Police warning while the bike is too slow (both versions; its state is
+// declared at the top: resetGame clears it).
+function showPoliceWarning(secondsLeft) {
+    if (!policeWarning) {
+        policeWarning = document.createElement('div');
+        policeWarning.id = 'police-warning';
+        policeWarning.setAttribute('role', 'alert');
+        document.body.append(policeWarning);
+    }
+    if (policeWarningShown === secondsLeft) return;
+    policeWarningShown = secondsLeft;
+    policeWarning.innerHTML = `<strong>TROP LENT !</strong><span>Police dans ${secondsLeft} s · accélère au-dessus de ${SLOW.kmh} km/h</span>`;
+    policeWarning.classList.add('is-shown');
+}
+
+function hidePoliceWarning() {
+    policeWarningShown = -1;
+    policeWarning?.classList.remove('is-shown');
+}
+
+async function gameOver(reason = 'crash') {
     if (!state.isPlaying) return;
     speedLines?.hide();
+    hidePoliceWarning();
+    showDefeatReason(reason);
     unrankedReason = null;
     if (state.runToken && !state.runReplayOverflow && state.inputLog.length >= 120) {
         state.inputLog[state.inputLog.length - 2] |= 0x10;
@@ -1944,15 +2021,18 @@ async function gameOver() {
     // A fall in the first seconds gets laughed at.
     speak(state.gameTime < 10 ? 'earlyCrash' : 'crash', { force: true, allowWhenStopped: true });
     audio.stopRun();
-    audio.play('collision', { volume: 0.85 });
-    const crashKind = state.bike.angle > CONFIG.maxAngle || GAME_SETTINGS.gameMode === 'free' ? 'loop' : 'hit';
+    if (reason === 'slow') audio.play('police_siren', { volume: 0.7 });
+    else audio.play('collision', { volume: 0.85 });
+    const crashKind = reason === 'loop' || reason === 'flip' || state.bike.angle > CONFIG.maxAngle ||
+        GAME_SETTINGS.gameMode === 'free' ? 'loop' : 'hit';
     const crashSpeed = (GAME_SETTINGS.gameMode === 'free' ? state.freeMode.speed : state.speed) * 60;
     // How the rider was riding decides how he falls.
     const crashInfo = visualSnapshot();
     state.isPlaying = false;
     state.skidding = false;
     const sequence = ++crashSequence;
-    if (v2) playCrashSequence(crashKind, crashSpeed, sequence, crashInfo);
+    if (v2 && reason === 'slow') playPoliceStop(sequence);
+    else if (v2) playCrashSequence(crashKind, crashSpeed, sequence, crashInfo);
     const screenDelay = new Promise((resolve) => setTimeout(resolve, v2 ? 1150 : 0));
     const currentScore = Math.floor(state.score);
     const previousBest = state.highScore;
@@ -2038,6 +2118,15 @@ async function gameOver() {
 // V2 only: keep rendering after the run ends so the fall plays out.
 let crashSequence = 0;
 function playCrashSequence(kind, unitsPerSecond, sequence, info) {
+    // Mid-flip: the fall starts from the bike's turn, within one turn
+    // backwards (on its back: 'loop') or the nearest way round otherwise.
+    if (state.jump.flipActive) {
+        const turn = 2 * Math.PI;
+        let angle = ((state.jump.flipAngle % turn) + turn) % turn;
+        if (kind !== 'loop' && angle > Math.PI) angle -= turn;
+        v2.rider.setFlip(angle);
+        v2.rider.bikePivot.rotation.x = -angle;
+    }
     v2.rider.startCrash(kind, unitsPerSecond, info);
     state.speed = 0;
     state.freeMode.speed = 0;
@@ -2050,6 +2139,26 @@ function playCrashSequence(kind, unitsPerSecond, sequence, info) {
         const moving = v2.rider.updateCrash(dt);
         renderScene(dt);
         if (moving) requestAnimationFrame(tick);
+    };
+    requestAnimationFrame(tick);
+}
+
+// V2, too slow: the patrol car cuts in ahead and the bike rolls to a stop.
+function playPoliceStop(sequence) {
+    v2.policeStop();
+    let rolling = state.speed * 60;
+    state.speed = 0;
+    updateUI();
+    const start = performance.now();
+    let last = start;
+    const tick = (now) => {
+        if (sequence !== crashSequence || state.isPlaying) return;
+        const dt = Math.min((now - last) / 1000, 0.05);
+        last = now;
+        rolling = Math.max(0, rolling - 70 * dt);
+        bikeGroup.position.z -= rolling * dt;
+        renderScene(dt);
+        if (now - start < 2500) requestAnimationFrame(tick);
     };
     requestAnimationFrame(tick);
 }
@@ -2128,6 +2237,10 @@ function animate(timestamp = performance.now()) {
         if (state.skidding) {
             recordRankedInput(0x08);
             state.frame++;
+            // A skid does not count as riding too slowly (server: the same).
+            state.slow.frames = 0;
+            state.slow.sirenPlayed = false;
+            hidePoliceWarning();
             // Every recorded skid frame slows the bike, including the last
             // one: the server replay (wheelie_replay.py) does the same.
             state.speed *= 0.98;
@@ -2259,7 +2372,7 @@ function animate(timestamp = performance.now()) {
 
                     // Game over when fall is complete
                     if (fallProgress >= 1.0) {
-                        gameOver();
+                        gameOver('loop');
                     }
                 }
             } else {
@@ -2332,13 +2445,14 @@ function animate(timestamp = performance.now()) {
             isBraking = isBraking && grounded;
             const wheelieInput = state.keys.space && !trickGround;
             if (takeoff) {
-                jump.flipActive = wheelieInput && state.bike.angle >= FLIP.minAngle;
+                const inWheelie = wheelieInput && state.bike.angle >= FLIP.minAngle;
+                jump.flipActive = inWheelie && startKmh >= FLIP.kmh;
                 if (jump.flipActive) {
                     jump.flipKmh = startKmh;
                     jump.flipAngle = state.bike.angle;
                     jump.flipRate = (2 * Math.PI * flipTurnsFor(startKmh) - state.bike.angle) / flightFrames(jump.vy);
-                    announceFlip(startKmh);
                 }
+                if (inWheelie) announceFlip(startKmh);
             }
             const inputFlags =
                 (isAccelerating ? 0x01 : 0) |
@@ -2404,16 +2518,22 @@ function animate(timestamp = performance.now()) {
                 const brakePower = CONFIG.brakeForce * brakeEfficiency;
                 state.speed = Math.max(0, state.speed - brakePower);
             }
-            state.bike.angularVelocity += lift;
-            state.bike.angularVelocity -= CONFIG.gravity;
-            state.bike.angularVelocity *= 0.98;
-            state.bike.angle += state.bike.angularVelocity;
-            if (state.bike.angle < 0) {
-                state.bike.angle = 0;
+            if (grounded) {
+                state.bike.angularVelocity += lift;
+                state.bike.angularVelocity -= CONFIG.gravity;
+                state.bike.angularVelocity *= 0.98;
+                state.bike.angle += state.bike.angularVelocity;
+                if (state.bike.angle < 0) {
+                    state.bike.angle = 0;
+                    state.bike.angularVelocity = 0;
+                }
+            } else {
+                // In the air: no rear wheel to pivot on, the bike levels out.
                 state.bike.angularVelocity = 0;
+                state.bike.angle = Math.max(0, state.bike.angle - AIR_LEVEL_RATE);
             }
             if (state.bike.angle > CONFIG.maxAngle) {
-                gameOver();
+                gameOver('loop');
             }
             // In the air the nose follows the flight: up off the lip, down to land.
             const airPitch = jump.airborne ? Math.max(-0.45, Math.min(0.5, jump.vy * 3.2)) : 0;
@@ -2500,21 +2620,14 @@ function animate(timestamp = performance.now()) {
                     announcedCombo = false;
                 }
 
-                // Multiplicateur de vitesse (bonus additionnel)
-                let speedMultiplier = 1.0;
-                if (kmh >= 150) {
-                    speedMultiplier = 1.3;
-                } else {
-                    speedMultiplier = 1.0 + ((kmh - 20) / 130) * 0.3;
-                }
-
                 // Application du multiplicateur de difficulté
                 let difficultyMult = 1.0;
                 if (GAME_SETTINGS.difficulty === 'medium') difficultyMult = 1.2;
                 if (GAME_SETTINGS.difficulty === 'hard') difficultyMult = 1.4;
 
                 // Multiplicateur total : (angle × temps) × vitesse × difficulté
-                const totalMultiplier = combinedWheelieMultiplier * speedMultiplier * difficultyMult;
+                // (vitesse : x1 à 20 km/h jusqu'à x1,5 dès 200 km/h).
+                const totalMultiplier = combinedWheelieMultiplier * speedMultiplier(kmh) * difficultyMult;
 
                 scoreIncrement *= totalMultiplier;
                 state.score += scoreIncrement;
@@ -2536,7 +2649,7 @@ function animate(timestamp = performance.now()) {
                 state.score += JUMP.groundRate * FIXED_STEP * trickDifficulty;
             }
             if (jump.airborne) {
-                if (jump.flipActive && wheelieInput) jump.flipAngle += jump.flipRate;
+                if (jump.flipActive) jump.flipAngle = wheelieInput ? jump.flipAngle + jump.flipRate : flipSettle(jump.flipAngle);
                 jump.y += jump.vy;
                 jump.vy -= JUMP.gravity;
                 if (jump.y <= 0) {
@@ -2545,13 +2658,35 @@ function animate(timestamp = performance.now()) {
                     jump.lastLanding = frame;
                     if (trickAir) {
                         // Still in the stunt when the wheels touch down.
-                        gameOver();
+                        gameOver('trickLanding');
                     } else {
                         land(jump.trickFrames, trickDifficulty);
                         if (jump.flipActive) landFlip(frame);
                     }
                     jump.flipActive = false;
                 }
+            }
+            // Too slow for too long: the police stop the run (server: the same,
+            // on the speed at the end of the frame).
+            const slow = state.slow;
+            if (state.speed * 50 >= SLOW.kmh) {
+                slow.armed = true;
+                slow.frames = 0;
+            } else if (slow.armed || frame >= SLOW.armFrame) {
+                slow.armed = true;
+                slow.frames += 1;
+            }
+            if (slow.frames > SLOW.frames) {
+                gameOver('slow');
+            } else if (slow.frames >= SLOW.warnFrames && state.isPlaying) {
+                if (!slow.sirenPlayed) {
+                    slow.sirenPlayed = true;
+                    audio.play('police_siren', { volume: 0.45 });
+                }
+                showPoliceWarning(Math.ceil((SLOW.frames + 1 - slow.frames) / 60));
+            } else {
+                if (slow.frames === 0) slow.sirenPlayed = false;
+                hidePoliceWarning();
             }
             if (!IS_V2) {
                 state.trick.spin = state.trick.active ? state.trick.spin + dt * 7.5 : 0;

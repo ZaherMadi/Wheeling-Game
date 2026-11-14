@@ -8,6 +8,7 @@ import { createAdScreen } from './adscreen.js';
 import { createFx } from './fx.js';
 import { loadLivery, mountLiveryPanel } from './livery.js';
 import { createFreeRoam } from './freeroam.js';
+import { decoratePoliceCar } from './police.js';
 import { installRacingUI } from '../ui/ui.js';
 
 const DAY_CYCLE_SECONDS = 600;
@@ -104,8 +105,73 @@ export function createRealisticVersion({ scene, renderer, camera, mobile, audio,
         }
     }
 
+    // Races: the patrol car that comes for a rider going too slowly. It rolls
+    // up from behind in the next lane, then cuts in ahead to stop the bike.
+    let patrol = null;
+    function patrolCar() {
+        if (!patrol) {
+            const group = world.createCar('sedan', 0xf4f4f2);
+            decoratePoliceCar(group);
+            group.scale.setScalar(1.3);
+            group.visible = false;
+            scene.add(group);
+            patrol = { group, time: 0, side: 1, stopping: false, t: 0, from: new THREE.Vector3(), fromYaw: Math.PI };
+        }
+        return patrol;
+    }
+
+    function updatePatrol(dt, progress) {
+        if (patrol && patrol.stopping) {
+            const p = patrol;
+            p.time += dt;
+            p.t = Math.min(1, p.t + dt / 0.9);
+            const ease = 1 - Math.pow(1 - p.t, 3);
+            const b = rider.bikeGroup.position;
+            p.group.position.set(
+                p.from.x + (b.x + p.side * 1.6 - p.from.x) * ease, 0,
+                p.from.z + (b.z - 7.5 - p.from.z) * ease);
+            p.group.rotation.y = p.fromYaw + p.side * 0.65 * ease;
+            p.group.userData.flash(p.time);
+            return;
+        }
+        if (progress === null || progress === undefined) {
+            if (patrol) patrol.group.visible = false;
+            return;
+        }
+        const p = patrolCar();
+        const b = rider.bikeGroup.position;
+        // On the roomier side of the road.
+        if (!p.group.visible) p.side = b.x > 0 ? -1 : 1;
+        p.time += dt;
+        p.group.visible = true;
+        // Out of sight behind the camera at first, alongside at the end.
+        p.group.position.set(b.x + p.side * 4.4, 0, b.z + 20 - progress * 23);
+        p.group.rotation.y = Math.PI;
+        p.group.userData.flash(p.time);
+    }
+
+    function policeStop() {
+        const p = patrolCar();
+        if (!p.group.visible) {
+            // Not seen coming (should not happen): start from just behind.
+            const b = rider.bikeGroup.position;
+            p.side = b.x > 0 ? -1 : 1;
+            p.group.position.set(b.x + p.side * 4.4, 0, b.z + 6);
+            p.group.rotation.y = Math.PI;
+            p.group.visible = true;
+        }
+        p.stopping = true;
+        p.t = 0;
+        p.from.copy(p.group.position);
+        p.fromYaw = p.group.rotation.y;
+    }
+
     function reset() {
         if (seed !== null) world.reseed(seed);
+        if (patrol) {
+            patrol.stopping = false;
+            patrol.group.visible = false;
+        }
         roam.reset();
         rider.reset();
         fx.clear();
@@ -191,6 +257,7 @@ export function createRealisticVersion({ scene, renderer, camera, mobile, audio,
         camera.rotateZ(rider.crashing ? 0 : cameraRoll);
         camera.position.y -= cameraKick * 0.5;
 
+        updatePatrol(dt, snapshot.linear ? snapshot.police : null);
         const roaming = snapshot.playing && !snapshot.linear;
         if (roaming) roam.update(dt, bike);
         world.update(camera, roaming ? roam.focus : bike.position);
@@ -198,13 +265,47 @@ export function createRealisticVersion({ scene, renderer, camera, mobile, audio,
         fx.update(dt, camera, viewport.y);
     }
 
-    // Rider screen: slow orbit around the rider, kept on the left of the view.
+    // Rider screen: slow orbit around the rider, framed in the part of the
+    // screen the options panel leaves free (on its left in landscape, above
+    // it in portrait), close enough to see the look, never cut off.
     let showroomFrame = null;
     const savedPosition = new THREE.Vector3();
     const savedQuaternion = new THREE.Quaternion();
     const look = new THREE.Vector3();
-    const toward = new THREE.Vector3();
-    const right = new THREE.Vector3();
+    const SUBJECT_RADIUS = 2.6;
+    const SUBJECT_HEIGHT = 1.45;
+    function freeArea() {
+        const width = window.innerWidth;
+        const height = window.innerHeight;
+        const panel = document.querySelector('#rider-screen .rider-panel')?.getBoundingClientRect();
+        if (!panel || !panel.width) return { width, height, x0: 0, x1: width, y0: 0, y1: height };
+        if (height > width) {
+            // Portrait: above the panel (at least the top 40 % of the screen).
+            return { width, height, x0: 0, x1: width, y0: 0, y1: Math.max(height * 0.4, panel.top - 6) };
+        }
+        return { width, height, x0: 0, x1: Math.max(width * 0.4, panel.left - 6), y0: 0, y1: height };
+    }
+
+    function frameShowroom(angle) {
+        const area = freeArea();
+        const halfTan = Math.tan(THREE.MathUtils.degToRad(camera.fov) / 2);
+        // Half-angles of the free area as seen from the camera.
+        const halfV = Math.atan(halfTan * (area.y1 - area.y0) / area.height);
+        const halfH = Math.atan(halfTan * camera.aspect * (area.x1 - area.x0) / area.width);
+        const distance = Math.max(5.4, SUBJECT_RADIUS / Math.sin(Math.min(halfV, halfH)));
+        const b = rider.bikeGroup.position;
+        camera.position.set(
+            b.x + Math.sin(angle) * distance,
+            SUBJECT_HEIGHT + 0.6 * distance / 5.4,
+            b.z + Math.cos(angle) * distance);
+        look.set(b.x, SUBJECT_HEIGHT, b.z);
+        camera.lookAt(look);
+        // The rider drawn at the centre of the free area, not of the screen.
+        const centreX = (area.x0 + area.x1) / 2;
+        const centreY = (area.y0 + area.y1) / 2;
+        camera.setViewOffset(area.width, area.height, area.width / 2 - centreX, area.height / 2 - centreY, area.width, area.height);
+    }
+
     function showroom(on) {
         if (on && showroomFrame === null) {
             savedPosition.copy(camera.position);
@@ -212,12 +313,7 @@ export function createRealisticVersion({ scene, renderer, camera, mobile, audio,
             let angle = 0.9;
             const tick = () => {
                 angle += 0.0045;
-                const b = rider.bikeGroup.position;
-                camera.position.set(b.x + Math.sin(angle) * 5.4, 2.1, b.z + Math.cos(angle) * 5.4);
-                toward.set(b.x - camera.position.x, 0, b.z - camera.position.z).normalize();
-                right.set(-toward.z, 0, toward.x);
-                look.set(b.x, 1.5, b.z).addScaledVector(right, 1.9);
-                camera.lookAt(look);
+                frameShowroom(angle);
                 renderer.render(scene, camera);
                 showroomFrame = requestAnimationFrame(tick);
             };
@@ -225,6 +321,7 @@ export function createRealisticVersion({ scene, renderer, camera, mobile, audio,
         } else if (!on && showroomFrame !== null) {
             cancelAnimationFrame(showroomFrame);
             showroomFrame = null;
+            camera.clearViewOffset();
             camera.position.copy(savedPosition);
             camera.quaternion.copy(savedQuaternion);
             renderer.render(scene, camera);
@@ -239,7 +336,7 @@ export function createRealisticVersion({ scene, renderer, camera, mobile, audio,
     }
 
     return {
-        world, rider, fx, roam, frame, reset, setQuality, showroom, startAd, adScreen,
+        world, rider, fx, roam, frame, reset, setQuality, showroom, startAd, adScreen, policeStop,
         get resolutionScale() { return resolution.scale; },
         smoke: () => fx.smoke(rider.bikeGroup.position, bikeVelocity),
         spark: () => fx.spark(point.copy(rider.bikeGroup.position).setY(0.08), bikeVelocity, 2)
