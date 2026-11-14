@@ -1402,6 +1402,7 @@ function resetGame() {
     state.police = { phase: 'idle', lastSeen: -1e9, gaveUp: false };
     state.tricksOnly = false;
     state.edge = { frames: 0, pending: null };
+    state.turns = 0;
     secretCode.step = 0;
     state.bavette = { left: 0, total: 0 };
     // The plate rides only on the V2 bike, once unlocked and switched on.
@@ -1473,6 +1474,9 @@ function resetGame() {
 }
 
 let startInProgress = false;
+// The game-over screen's buttons ignore taps this long after it appears
+// (a finger still hammering the controls), see the screen tap guard.
+const GAME_OVER_TAP_GUARD_MS = 700;
 let completedRankedRun = null;
 
 let connectingNotice = null;
@@ -1593,11 +1597,8 @@ async function startGame() {
         // Standing at the start: the 5HC intro on the bus shelter ahead.
         if (v2) setTimeout(() => v2.startAd(), 400);
 
-        if (isMobile() && !document.fullscreenElement) {
-            document.documentElement.requestFullscreen().catch(err => {
-                console.log('Auto-fullscreen failed:', err);
-            });
-        }
+        // iPhones have no fullscreen for pages: nothing to do there.
+        if (isMobile() && !document.fullscreenElement) requestFullscreen();
 
         if (GAME_SETTINGS.autoRace) {
             autoRaceActive = false;
@@ -1626,6 +1627,23 @@ async function startGame() {
         }
     } finally {
         startInProgress = false;
+    }
+}
+
+// Fullscreen where the browser has it (not on iPhone): true when it worked.
+function fullscreenAvailable() {
+    const root = document.documentElement;
+    return typeof (root.requestFullscreen || root.webkitRequestFullscreen) === 'function';
+}
+
+function requestFullscreen() {
+    const root = document.documentElement;
+    const request = root.requestFullscreen || root.webkitRequestFullscreen;
+    if (typeof request !== 'function') return Promise.resolve(false);
+    try {
+        return Promise.resolve(request.call(root)).then(() => true, () => false);
+    } catch {
+        return Promise.resolve(false);
     }
 }
 
@@ -1659,6 +1677,8 @@ function resumeGame() {
 
 // Leaves a run without a score (from the pause or the game-over screen).
 function quitToMenu() {
+    // Left on purpose: not a run cut short.
+    clearLiveRun();
     state.userPaused = false;
     state.isPlaying = false;
     crashSequence++;
@@ -2522,6 +2542,8 @@ function updatePoliceChase(kmh, dt) {
 
 async function gameOver(reason = 'crash') {
     if (!state.isPlaying) return;
+    // The run ends normally: nothing to report at the next visit.
+    clearLiveRun();
     speedLines?.hide();
     hidePoliceWarning();
     showDefeatReason(reason);
@@ -3824,13 +3846,24 @@ let announcedCombo = false;
 let announcedSpeed = false;
 let announcedNearFall = false;
 
+// The list of sounds, asked again twice if the network hiccups (one failure
+// used to leave the whole visit silent).
+async function fetchAudioManifest() {
+    for (let attempt = 1; ; attempt++) {
+        try {
+            const response = await fetch('/audio/manifest.json');
+            if (!response.ok) throw new Error(`Audio manifest request failed: ${response.status}`);
+            return await response.json();
+        } catch (error) {
+            if (attempt >= 3) throw error;
+            await new Promise((resolve) => setTimeout(resolve, attempt * 1500));
+        }
+    }
+}
+
 function getAudioManifest() {
     if (!audioManifestPromise) {
-        audioManifestPromise = fetch('/audio/manifest.json')
-            .then((response) => {
-                if (!response.ok) throw new Error(`Audio manifest request failed: ${response.status}`);
-                return response.json();
-            })
+        audioManifestPromise = fetchAudioManifest()
             .then((manifest) => {
                 const available = new Set(Array.isArray(manifest.available) ? manifest.available : []);
                 voiceAssetsAvailable = Object.values(voiceLineGroups[voiceGroup()] || {})
@@ -4214,7 +4247,7 @@ function setupAnalogControls() {
     });
 }
 
-window.addEventListener('resize', () => {
+function applyResize() {
     camera.aspect = window.innerWidth / window.innerHeight;
     camera.updateProjectionMatrix();
     renderer.setSize(window.innerWidth, window.innerHeight);
@@ -4225,7 +4258,63 @@ window.addEventListener('resize', () => {
         else updateCamera();
         renderer.render(scene, camera);
     }
+}
+
+// Turning the phone: iOS sends several resizes while it turns, each one
+// reallocating the whole picture (memory the phone may not have: the page
+// is then reloaded, the run lost). One resize once it has settled. A run
+// in progress pauses: the screen moves under the fingers mid-ride.
+let resizeTimer = 0;
+let wasLandscape = window.innerWidth > window.innerHeight;
+window.addEventListener('resize', () => {
+    const landscape = window.innerWidth > window.innerHeight;
+    if (landscape !== wasLandscape) {
+        wasLandscape = landscape;
+        if (state.isPlaying && !state.userPaused) {
+            pauseGame();
+            state.turns = (state.turns || 0) + 1;
+            noteLiveRun();
+            logEvent('Téléphone tourné pendant une partie : pause', { landscape, seconds: Math.round(state.gameTime) });
+        }
+    }
+    clearTimeout(resizeTimer);
+    resizeTimer = setTimeout(applyResize, 150);
 });
+
+// A tap that opens a screen must not also press the button that appears
+// under the finger (JOUER then MODE LIBRE, a death then MENU): a screen's
+// buttons ignore clicks for a moment after it shows up.
+const SCREEN_TAP_GUARD_MS = 350;
+// The game-over screen comes while fingers still hammer the controls.
+const guardFor = (screen) => (screen.id === 'game-over-screen' ? GAME_OVER_TAP_GUARD_MS : SCREEN_TAP_GUARD_MS);
+const screenShownAt = new WeakMap();
+const screenObserver = new MutationObserver((mutations) => {
+    for (const { target } of mutations) {
+        const active = target.classList.contains('active');
+        if (active && !target.dataset.wasActive) screenShownAt.set(target, performance.now());
+        target.dataset.wasActive = active ? '1' : '';
+    }
+});
+document.querySelectorAll('.screen').forEach((screen) => screenObserver.observe(screen, { attributes: true, attributeFilter: ['class'] }));
+document.addEventListener('click', (event) => {
+    const screen = event.target.closest?.('.screen');
+    const shownAt = screen ? screenShownAt.get(screen) : undefined;
+    if (shownAt !== undefined && performance.now() - shownAt < guardFor(screen) && event.isTrusted) {
+        event.stopPropagation();
+        event.preventDefault();
+    }
+}, true);
+
+// Safari on iPhone ignores user-scalable=no: no zoom from a double tap
+// (fast taps on the controls) or a pinch.
+document.addEventListener('gesturestart', (event) => event.preventDefault());
+document.addEventListener('dblclick', (event) => event.preventDefault(), { passive: false });
+let lastTouchEnd = 0;
+document.addEventListener('touchend', (event) => {
+    const now = event.timeStamp;
+    if (now - lastTouchEnd < 320 && !event.target.closest?.('input, textarea, select')) event.preventDefault();
+    lastTouchEnd = now;
+}, { passive: false });
 
 document.addEventListener('keydown', (e) => {
     if (['ArrowLeft', 'ArrowRight', 'ArrowUp', 'ArrowDown'].includes(e.code)) e.preventDefault();
@@ -4439,8 +4528,9 @@ document.getElementById('mode-linear').addEventListener('click', () => {
     GAME_SETTINGS.gameMode = 'linear';
     document.getElementById('mode-linear').classList.add('active');
     document.getElementById('mode-free').classList.remove('active');
-    document.getElementById('desc-linear').style.display = 'inline';
-    document.getElementById('desc-free').style.display = 'none';
+    // Descriptions some layouts do not have.
+    document.getElementById('desc-linear')?.style.setProperty('display', 'inline');
+    document.getElementById('desc-free')?.style.setProperty('display', 'none');
     // Remettre l'emoji souffle pour le mode linéaire
     const gasEmoji = document.getElementById('gas-emoji');
     if (gasEmoji) gasEmoji.innerText = '💨';
@@ -4450,8 +4540,8 @@ document.getElementById('mode-free').addEventListener('click', () => {
     GAME_SETTINGS.gameMode = 'free';
     document.getElementById('mode-free').classList.add('active');
     document.getElementById('mode-linear').classList.remove('active');
-    document.getElementById('desc-linear').style.display = 'none';
-    document.getElementById('desc-free').style.display = 'inline';
+    document.getElementById('desc-linear')?.style.setProperty('display', 'none');
+    document.getElementById('desc-free')?.style.setProperty('display', 'inline');
     // Changer l'emoji du bouton gaz en éclair pour le mode libre
     const gasEmoji = document.getElementById('gas-emoji');
     if (gasEmoji) gasEmoji.innerText = '⚡';
@@ -4546,13 +4636,15 @@ document.getElementById('language-en')?.addEventListener('click', () => {
     setAudioLanguage('en');
 });
 
+// No fullscreen for pages on iPhone: no button that does nothing.
+if (!fullscreenAvailable()) document.getElementById('fullscreen-btn')?.style.setProperty('display', 'none');
 document.getElementById('fullscreen-btn')?.addEventListener('click', async () => {
     try {
         if (document.fullscreenElement) {
             await document.exitFullscreen();
             return;
         }
-        await document.documentElement.requestFullscreen();
+        if (!(await requestFullscreen())) return;
         if (screen.orientation && screen.orientation.lock) {
             await screen.orientation.lock('landscape').catch((error) => {
                 console.info('Landscape orientation lock is unavailable:', error);
@@ -4691,7 +4783,7 @@ async function createWheelieRun() {
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
             difficulty: GAME_SETTINGS.difficulty, version: IS_V2 ? 'v2' : 'v1', nickname: localStorage.getItem('wheelie_nickname') || undefined,
-            human_pass: storedPass() || undefined
+            human_pass: storedPass() || undefined, human_check: 1
         })
     });
 
@@ -4792,6 +4884,15 @@ async function submitCompletedRun(nickname) {
         return false;
     }
 
+    submitting = true;
+    try {
+        return await sendCompletedRun(nickname);
+    } finally {
+        submitting = false;
+    }
+}
+
+async function sendCompletedRun(nickname) {
     const run = completedRankedRun;
     const body = JSON.stringify({
         run_token: run.runToken, nickname, input_log: encodeInputLog(run.inputLog), flip_mode: run.flipMode, plate: run.plate
@@ -4851,6 +4952,159 @@ async function submitCompletedRun(nickname) {
     }
     return false;
 }
+
+// Checkpoints: during a ranked run, once the score is worth keeping, the
+// replay since the last one goes to the server every 10 s, and when the page
+// is hidden. The server replays it and, with a nickname, the run is on the
+// leaderboard at that score: a run cut short (phone out of memory, page
+// reloaded, app closed) keeps what it reached. The final submission
+// replaces it.
+const CHECKPOINT = { everySeconds: 10, minScore: 100, minGapMs: 3500 };
+let checkpoint = { token: null, sentFrames: 0, busy: false, at: 0, stopped: false };
+
+function checkpointWanted() {
+    return state.isPlaying && GAME_SETTINGS.gameMode === 'linear' && !!state.runToken && !state.tricksOnly
+        && state.score >= CHECKPOINT.minScore && state.inputLog && !state.runReplayOverflow;
+}
+
+async function sendCheckpoint({ keepalive = false } = {}) {
+    if (!checkpointWanted() || checkpoint.busy) return;
+    const token = state.runToken;
+    if (checkpoint.token !== token) checkpoint = { token, sentFrames: 0, busy: false, at: 0, stopped: false };
+    if (checkpoint.stopped || Date.now() - checkpoint.at < CHECKPOINT.minGapMs) return;
+    const frames = state.inputLog.length >> 1;
+    const from = checkpoint.sentFrames;
+    if (frames <= from) return;
+    checkpoint.busy = true;
+    checkpoint.at = Date.now();
+    try {
+        const response = await apiFetch(`${API_BASE_URL}/wheelie-sessions/checkpoint`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            keepalive,
+            body: JSON.stringify({
+                run_token: token, nickname: localStorage.getItem('wheelie_nickname') || undefined,
+                offset: from, chunk: encodeInputLog(state.inputLog.slice(from * 2, frames * 2)),
+                flip_mode: state.flipMode, plate: state.plate.on || state.plate.off
+            })
+        }, 8000);
+        if (checkpoint.token !== token) return;
+        if (response.ok) {
+            const data = await response.json().catch(() => ({}));
+            checkpoint.sentFrames = frames;
+            if (data.ranked && Number.isFinite(data.score)) checkpoint.savedScore = data.score;
+            noteLiveRun();
+        } else if (response.status === 409) {
+            // A piece lost on the way: start again where the server is.
+            const data = await response.json().catch(() => ({}));
+            if (Number.isInteger(data.expected_offset)) checkpoint.sentFrames = Math.min(data.expected_offset, frames);
+            else checkpoint.stopped = true;
+        } else if (response.status === 401 || response.status === 422) {
+            // The final submission will say why; no point sending more.
+            checkpoint.stopped = true;
+            report('ranking.checkpoint', `Point d’étape refusé (${response.status})`, {
+                group: `checkpoint ${response.status}`, details: { status: response.status, frames, score: Math.floor(state.score) },
+            });
+        }
+    } catch {
+        // Offline for now: the next one carries this piece too.
+    } finally {
+        if (checkpoint.token === token) checkpoint.busy = false;
+    }
+}
+
+// A run the page did not live to finish (phone out of memory after being
+// turned, app closed, reload): noted on the phone while it goes, read at
+// the next visit to tell the player what was kept, and Sentry how often.
+const LIVE_RUN_KEY = 'wheelie_live_run';
+function noteLiveRun() {
+    if (!state.isPlaying || GAME_SETTINGS.gameMode !== 'linear' || state.tricksOnly) return;
+    try {
+        localStorage.setItem(LIVE_RUN_KEY, JSON.stringify({
+            score: Math.floor(state.score), saved: checkpoint.token === state.runToken ? checkpoint.savedScore || 0 : 0,
+            ranked: !!state.runToken, seconds: Math.round(state.gameTime), turns: state.turns || 0,
+            landscape: window.innerWidth > window.innerHeight, at: Date.now()
+        }));
+    } catch {
+        // No storage: nothing noted.
+    }
+}
+function clearLiveRun() {
+    try {
+        localStorage.removeItem(LIVE_RUN_KEY);
+    } catch {
+        // No storage.
+    }
+}
+function checkCutRun() {
+    let run = null;
+    try {
+        run = JSON.parse(localStorage.getItem(LIVE_RUN_KEY) || 'null');
+    } catch {
+        run = null;
+    }
+    clearLiveRun();
+    if (!run || Date.now() - run.at > 2 * 3600 * 1000 || run.score < 30) return;
+    report('ranking.run_cut', `Partie coupée avant la fin : ${run.score} points (${run.saved} enregistrés)`, {
+        level: run.score >= 300 && run.saved < run.score * 0.8 ? 'error' : 'warning',
+        group: run.saved ? 'enregistrée' : 'perdue', details: run,
+    });
+    if (run.saved > 0) {
+        welcome('Ta dernière partie a été coupée', `Le téléphone a rechargé la page, mais ton score est enregistré au classement : ${run.saved} points.`);
+    } else if (run.ranked) {
+        welcome('Ta dernière partie a été coupée', `Le téléphone a rechargé la page avant que ton score (${run.score} points) puisse être enregistré.`);
+    }
+}
+setTimeout(checkCutRun, 2500);
+
+setInterval(() => {
+    if (checkpointWanted() && Date.now() - checkpoint.at >= CHECKPOINT.everySeconds * 1000) sendCheckpoint();
+    if (state.isPlaying && Math.round(state.gameTime) % 5 === 0) noteLiveRun();
+}, 1000);
+// Leaving the page (app switch, lock, tab closed): send what is there now.
+document.addEventListener('visibilitychange', () => {
+    if (document.hidden) {
+        noteLiveRun();
+        sendCheckpoint({ keepalive: true });
+    }
+});
+window.addEventListener('pagehide', () => sendCheckpoint({ keepalive: true }));
+
+// A tab left open across an update keeps the old game: its lazily loaded
+// files are gone ("Importing a module script failed") and the server may
+// expect more of it (the human check). Back on the main menu, with nothing
+// in progress, it reloads into the new one.
+const loadedBuild = document.querySelector('script[type="module"][src*="/assets/index-"]')?.getAttribute('src') || null;
+let submitting = false;
+function safeToReload() {
+    return !state.isPlaying && !startInProgress && !submitting
+        && document.getElementById('start-screen')?.classList.contains('active')
+        && document.getElementById('nickname-popup')?.style.display !== 'flex';
+}
+async function reloadIfUpdated() {
+    if (!loadedBuild || !safeToReload()) return;
+    try {
+        const html = await (await fetch('/', { cache: 'no-store' })).text();
+        const latest = html.match(/\/assets\/index-[\w-]+\.js/)?.[0];
+        if (latest && !loadedBuild.endsWith(latest) && safeToReload()) {
+            logEvent('Nouvelle version du jeu : rechargement', { from: loadedBuild, to: latest });
+            location.reload();
+        }
+    } catch {
+        // Offline: next time.
+    }
+}
+document.addEventListener('visibilitychange', () => {
+    if (!document.hidden) reloadIfUpdated();
+});
+setInterval(reloadIfUpdated, 5 * 60 * 1000);
+// A lazily loaded file of an older version missing: reload if nothing is lost.
+window.addEventListener('vite:preloadError', (event) => {
+    if (!state.isPlaying && !submitting) {
+        event.preventDefault();
+        location.reload();
+    }
+});
 
 const PENDING_KEY = 'wheelie_pending_submission';
 function savePendingSubmission(entry) {

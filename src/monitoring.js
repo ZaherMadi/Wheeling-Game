@@ -18,6 +18,8 @@ export const KINDS = {
     'ranking.submit_failed': 'Le score n’a pas pu être envoyé après 3 essais (réseau ou serveur en panne). Il est gardé et renvoyé à la partie suivante.',
     'ranking.session': 'Impossible d’ouvrir une session classée au départ d’une partie (serveur lent, en erreur ou injoignable).',
     'ranking.rate_limited': 'Le serveur a refusé une session : trop de parties lancées depuis la même adresse en 5 minutes.',
+    'ranking.run_cut': 'Une partie compétitive s’est arrêtée sans fin de partie (page rechargée par le téléphone, appli fermée...), vue à la visite suivante. « details » dit le score atteint, celui enregistré par les points d’étape, et si le téléphone a été tourné.',
+    'ranking.checkpoint': 'Le serveur a refusé un point d’étape d’une partie en cours (envoyé toutes les 10 s).',
     'ranking.leaderboard': 'Le classement n’a pas pu être chargé.',
     'ranking.player': 'Les statistiques d’un joueur ou le changement d’apparence du pseudo ont échoué.',
     'voice.player': 'La voix du pseudo du joueur (ElevenLabs, côté serveur) n’a pas pu être récupérée ou générée.',
@@ -55,6 +57,9 @@ export function initMonitoring() {
     }
     if (!DSN || (isLocal() && !forced)) return;
     const env = environment();
+    // Vercel's preview addresses are visited by its own headless browser,
+    // which cannot load the protected files: noise, not players.
+    if (env === 'preview' && !forced) return;
     // Session Replay is costly on phones: kept for computers, and only
     // around an error.
     const desktop = typeof matchMedia === 'function' && matchMedia('(pointer: fine)').matches;
@@ -190,6 +195,14 @@ export function trackFrame(now, extra) {
     if (!windowStart) windowStart = now;
     frames++;
     const span = now - windowStart;
+    // A gap of seconds without a frame is the page in the background (or
+    // the screen locked), not a slow game: start counting again.
+    if (span > 5000) {
+        frames = 0;
+        windowStart = now;
+        slowSince = 0;
+        return;
+    }
     if (span < 2000) return;
     const fps = (frames * 1000) / span;
     frames = 0;
