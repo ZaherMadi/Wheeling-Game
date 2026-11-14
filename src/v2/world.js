@@ -4,6 +4,7 @@
 // Blocks come in themed variants built once at startup; each is merged into
 // one mesh per material (two levels of detail) and recycled from a pool, so
 // nothing is allocated while riding.
+import { report } from '../monitoring.js';
 import * as THREE from 'three';
 import { Batch, Sink, facadeMatrix, sideMatrix, transform } from './geometry.js';
 import { createFoliageTexture } from './citytextures.js';
@@ -147,6 +148,7 @@ export function createWorld({ scene, renderer, mobile }) {
             paintSponsor(printAtlas.canvas.getContext('2d'), printAtlas.sponsorRect, logo);
             printAtlas.map.needsUpdate = true;
         };
+        logo.onerror = () => report('asset.image', 'Logo 5HC des abribus introuvable', { once: true, details: { file: '/5hc-logo.webp' } });
         logo.src = '/5hc-logo.webp';
     }
     const decalAtlas = createDecalAtlas(mobile, anisotropy);

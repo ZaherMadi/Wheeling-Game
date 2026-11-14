@@ -1,3 +1,4 @@
+import { reportError } from './monitoring.js';
 // The player's name, spoken. For each new nickname the ranking server asks
 // ElevenLabs (its key never reaches the browser) for a few lines with the
 // name in them ("C'est parti, Joueur77 !", the police lines...), stores the
@@ -77,6 +78,7 @@ export function createPlayerVoice({ apiBase, audio, apiFetch }) {
                 return true;
             } catch (error) {
                 console.warn('Player voice unavailable:', error);
+                reportError('voice.player', error, { once: true, details: { generate: !!generate } });
                 return false;
             } finally {
                 pending = null;

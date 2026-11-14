@@ -1,3 +1,5 @@
+// First: Sentry watches everything that follows (src/monitoring.js).
+import { report, reportError, logEvent, setGameSnapshot, setGameTags, setPlayer, trackFrame, openFeedback, monitoringEnabled } from './src/monitoring.js';
 import * as THREE from 'three';
 import './src/style.css';
 import voiceLineGroups from './src/voice-lines.json';
@@ -200,6 +202,12 @@ renderer.setPixelRatio(1);
 renderer.setSize(window.innerWidth, window.innerHeight);
 renderer.shadowMap.enabled = true;
 renderer.shadowMap.type = THREE.PCFSoftShadowMap;
+renderer.domElement.addEventListener('webglcontextlost', () => {
+    report('render.webgl_lost', 'Contexte WebGL perdu', {
+        level: 'error', once: true,
+        details: { playing: state.isPlaying, seconds: Math.round(state.gameTime), quality: localStorage.getItem('wheelie_quality') || 'auto' },
+    });
+});
 
 const container = document.getElementById('game-container');
 if (container) {
@@ -374,6 +382,7 @@ function createBike() {
 
     }, undefined, (error) => {
         console.error('An error happened loading the bike model:', error);
+        reportError('asset.model', error, { once: true });
     }));
 
     return bikeGroup;
@@ -932,6 +941,7 @@ async function loadGraffiti() {
         }
     } catch (e) {
         console.error("Could not load graffiti.json", e);
+        reportError('asset.data', e, { once: true, details: { file: 'graffiti.json' } });
     }
 }
 
@@ -1244,6 +1254,7 @@ async function startGame() {
             runToken = await takeWheelieRun();
         } catch (error) {
             console.error('Classement indisponible:', error);
+            logEvent('Session classée indisponible au départ', { error: String(error && error.message || error) });
         } finally {
             clearTimeout(notice);
             showConnecting(false);
@@ -1917,6 +1928,16 @@ async function gameOver() {
                 : !state.runToken ? `pas de session de classement (${state.sessionError || lastSessionError || 'serveur injoignable au départ'})`
                     : 'partie trop courte';
             reportUnrankedRun(unrankedReason, Math.floor(state.score), state.gameTime);
+            if (state.score >= 30) {
+                report('ranking.unranked', `Partie non classée : ${unrankedReason}`, {
+                    level: state.score >= 300 ? 'error' : 'warning',
+                    group: unrankedReason.replace(/\(\d+\)/g, '(n)'),
+                    details: {
+                        score: Math.floor(state.score), seconds: Math.round(state.gameTime), difficulty: GAME_SETTINGS.difficulty,
+                        version: IS_V2 ? 'v2' : 'v1', frames: state.inputLog.length / 2, reason: unrankedReason,
+                    },
+                });
+            }
         }
     }
     state.runToken = null;
@@ -2056,6 +2077,7 @@ function animate(timestamp = performance.now()) {
     }
 
     requestAnimationFrame(animate);
+    trackFrame(timestamp, frameReport);
     const elapsed = Math.min((timestamp - lastFrameTime) / 1000, 0.083);
     lastFrameTime = timestamp;
     simulationAccumulator += elapsed;
@@ -3074,6 +3096,7 @@ function getAudioManifest() {
             })
             .catch((error) => {
                 console.warn('Game audio is unavailable:', error);
+                reportError('asset.audio', error, { once: true, details: { file: 'audio/manifest.json' } });
                 voiceAssetsAvailable = false;
                 sfxAssetsAvailable = false;
                 updateVoiceToggle();
@@ -3781,6 +3804,40 @@ document.getElementById('pause-restart-btn')?.addEventListener('click', () => {
 document.getElementById('pause-menu-btn')?.addEventListener('click', quitToMenu);
 document.getElementById('gameover-menu-btn')?.addEventListener('click', quitToMenu);
 
+// What Sentry receives with each report: where the game is at.
+setGameSnapshot(() => ({
+    version: IS_V2 ? 'v2' : 'v1',
+    mode: !state.isPlaying ? 'menu' : GAME_SETTINGS.gameMode === 'free' ? 'libre' : 'compétitif',
+    difficulty: GAME_SETTINGS.difficulty,
+    score: Math.floor(state.score),
+    seconds: Math.round(state.gameTime),
+    speed: Math.round(state.speed * 10) / 10,
+    ranked: !!state.runToken,
+    frames: state.inputLog ? state.inputLog.length / 2 : 0,
+    paused: state.isPaused || state.userPaused,
+    quality: localStorage.getItem('wheelie_quality') || 'auto',
+}));
+setGameTags({ game_version: IS_V2 ? 'v2' : 'v1' });
+setPlayer(localStorage.getItem('wheelie_nickname'));
+function frameReport() {
+    const info = renderer.info.render;
+    return {
+        mode: GAME_SETTINGS.gameMode, quality: localStorage.getItem('wheelie_quality') || 'auto',
+        pixelRatio: renderer.getPixelRatio(), width: window.innerWidth, height: window.innerHeight,
+        drawCalls: info.calls, triangles: info.triangles,
+    };
+}
+// Paramètres › Signaler un problème (hidden when Sentry is off).
+{
+    const button = document.getElementById('btn-report-problem');
+    if (button) {
+        if (!monitoringEnabled()) button.style.display = 'none';
+        button.addEventListener('click', () => {
+            openFeedback().catch((error) => console.warn('Feedback form unavailable:', error));
+        });
+    }
+}
+
 // API Configuration
 const API_BASE_URL = 'https://51-games-api.vercel.app/api/ranking';
 let unrankedReason = null;
@@ -3867,6 +3924,8 @@ async function createWheelieRun() {
 
     if (!response.ok) {
         lastSessionError = response.status === 429 ? 'trop de parties lancées en peu de temps' : `serveur de classement en erreur (${response.status})`;
+        if (response.status === 429) report('ranking.rate_limited', 'Session classée refusée : trop de parties', { once: true });
+        else logEvent('Session classée refusée', { status: response.status });
         throw new Error(`Impossible d’ouvrir une session classée (${response.status})`);
     }
 
@@ -3896,6 +3955,12 @@ async function lateSession(sequence) {
         }
     }
     state.sessionError = lastSessionError || 'serveur de classement injoignable';
+    if (sequence === crashSequence && state.isPlaying) {
+        report('ranking.session', `Pas de session classée après 25 s : ${state.sessionError}`, {
+            group: state.sessionError.replace(/\(\d+\)/g, '(n)'),
+            details: { reason: state.sessionError, difficulty: GAME_SETTINGS.difficulty, version: IS_V2 ? 'v2' : 'v1', online: navigator.onLine },
+        });
+    }
 }
 
 // A ranked session is opened ahead of the ride (the API can take a couple of
@@ -3956,6 +4021,10 @@ async function submitCompletedRun(nickname) {
                 const message = error.detail || `Échec de l’envoi du score (${response.status})`;
                 // The server refused the run itself: retrying will not help.
                 if (response.status < 500) {
+                    report('ranking.rejected', `Score refusé par le serveur : ${message}`, {
+                        level: 'error', group: String(message).replace(/\d+/g, 'n'),
+                        details: { status: response.status, message, frames: run.inputLog.length / 2, version: IS_V2 ? 'v2' : 'v1', difficulty: GAME_SETTINGS.difficulty },
+                    });
                     setRankingStatus(`Score non classé : ${message}`);
                     completedRankedRun = null;
                     return false;
@@ -3972,6 +4041,10 @@ async function submitCompletedRun(nickname) {
         } catch (error) {
             console.warn(`Score submission attempt ${attempt} failed:`, error);
             if (attempt === 3) {
+                report('ranking.submit_failed', `Score non envoyé après 3 essais : ${error.message}`, {
+                    group: String(error.message).replace(/\d+/g, 'n'),
+                    details: { error: error.message, frames: run.inputLog.length / 2, online: navigator.onLine },
+                });
                 // Keep it: sent again at the next start (the session lasts 30 min).
                 savePendingSubmission({ token: run.runToken, nickname, log: encodeInputLog(run.inputLog), at: Date.now() });
                 setRankingStatus('Score en attente : il sera envoyé dès que le serveur répond (' + error.message + ').');
@@ -3987,8 +4060,9 @@ const PENDING_KEY = 'wheelie_pending_submission';
 function savePendingSubmission(entry) {
     try {
         localStorage.setItem(PENDING_KEY, JSON.stringify(entry));
-    } catch {
+    } catch (error) {
         // Storage unavailable: the score is lost.
+        reportError('storage.unavailable', error, { details: { lost: 'score en attente' } });
     }
 }
 
@@ -4012,6 +4086,9 @@ async function flushPendingSubmission() {
             body: JSON.stringify({ run_token: entry.token, nickname: entry.nickname, input_log: entry.log })
         }, 10000);
         if (response.ok || (response.status >= 400 && response.status < 500)) localStorage.removeItem(PENDING_KEY);
+        if (response.status >= 400 && response.status < 500 && response.status !== 409) {
+            report('ranking.rejected', `Score en attente refusé par le serveur (${response.status})`, { level: 'error', group: `pending ${response.status}` });
+        } else if (response.ok) logEvent('Score en attente envoyé');
     } catch {
         // Still offline: try again next time.
     }
@@ -4030,6 +4107,7 @@ async function fetchLeaderboardFromAPI(skip = 0, limit = 20) {
         return data.leaderboard || [];
     } catch (error) {
         console.error('Erreur API:', error);
+        reportError('ranking.leaderboard', error, { once: true, details: { skip, limit, game: GAME_NAME, online: navigator.onLine } });
         return [];
     }
 }
@@ -4050,6 +4128,7 @@ async function getPlayerStats(nickname) {
         return data;
     } catch (error) {
         console.error('Erreur API:', error);
+        reportError('ranking.player', error, { once: true, details: { step: 'statistiques du joueur', online: navigator.onLine } });
         return null;
     }
 }
@@ -4101,6 +4180,7 @@ function welcome(title, text) {
 
 function setNickname(nickname) {
     localStorage.setItem('wheelie_nickname', nickname);
+    setPlayer(nickname);
     displayNickname();
     document.dispatchEvent(new CustomEvent('wheelie:nickname', { detail: { nickname } }));
 }
@@ -4123,7 +4203,8 @@ async function changeNicknameLook() {
         if (!response.ok && response.status !== 404) throw new Error(String(response.status));
         setNickname(wanted);
         say(`C’est fait : ${wanted}`);
-    } catch {
+    } catch (error) {
+        reportError('ranking.player', error, { details: { step: 'apparence du pseudo' } });
         say('Le serveur ne répond pas, réessaie plus tard.');
     }
 }

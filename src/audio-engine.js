@@ -1,3 +1,4 @@
+import { reportError } from './monitoring.js';
 // Game audio: layered motorcycle engine driven by a simulated gearbox, road /
 // wind / city beds, and one-shot effects. Everything plays from prerecorded
 // clips in /audio (see scripts/generate-voice-lines.mjs).
@@ -181,6 +182,7 @@ export function createAudioEngine({ effects, getManifest }) {
                 .then((data) => decode(data))
                 .catch((error) => {
                     console.warn(`Could not load clip "${id}":`, error);
+                    reportError('asset.audio', error, { once: true, details: { clip: id } });
                     buffers.delete(id);
                     return null;
                 });
@@ -197,6 +199,7 @@ export function createAudioEngine({ effects, getManifest }) {
             return loopIds.has(id) ? makeSeamless(decoded) : decoded;
         }).catch((error) => {
             console.warn(`Could not load sound effect "${id}":`, error);
+            reportError('asset.audio', error, { once: true, details: { clip: id } });
             buffers.delete(id);
             return null;
         });

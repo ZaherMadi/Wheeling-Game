@@ -2,6 +2,7 @@
 // (muted, looping) while the player has not left yet. If no shelter is in
 // sight it stands on its own post on the pavement.
 import * as THREE from 'three';
+import { report } from '../monitoring.js';
 
 const WIDTH = 1.24;
 const HEIGHT = 1.9;
@@ -21,6 +22,9 @@ export function createAdScreen({ scene }) {
         video.preload = 'auto';
         video.setAttribute('muted', '');
         video.setAttribute('playsinline', '');
+        video.addEventListener('error', () => {
+            report('asset.video', 'Vidéo 5HC illisible', { once: true, details: { code: video.error ? video.error.code : null, message: video.error ? video.error.message : '' } });
+        });
         const texture = new THREE.VideoTexture(video);
         texture.colorSpace = THREE.SRGBColorSpace;
         group = new THREE.Group();
@@ -53,7 +57,12 @@ export function createAdScreen({ scene }) {
         } catch {
             // Not loaded yet.
         }
-        video.play().catch(() => {});
+        video.play().catch((error) => {
+            // Autoplay refused by the browser (data saver...): expected.
+            if (error && error.name !== 'NotAllowedError' && error.name !== 'AbortError') {
+                report('asset.video', `Vidéo 5HC : lecture impossible (${error.name})`, { once: true, details: { error: String(error.message || error) } });
+            }
+        });
     }
 
     function hide() {
