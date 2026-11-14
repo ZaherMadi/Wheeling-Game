@@ -230,10 +230,6 @@
     ],
     "wheelie": [
       {
-        "id": "frs_wheelie_1",
-        "text": "Je la tiens, je la tiens !"
-      },
-      {
         "id": "frs_wheelie_2",
         "text": "Ouais, ça c'est propre !"
       },

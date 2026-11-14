@@ -7,7 +7,8 @@ import { ROAM_SCALE, createRider } from './rider.js';
 import { createAdScreen } from './adscreen.js';
 import { createFx } from './fx.js';
 import { loadLivery, mountLiveryPanel } from './livery.js';
-import { createFreeRoam } from './freeroam.js';
+import { createFreeRoam, totalPoints } from './freeroam.js';
+import { PLATE_POINTS } from '../unlocks.js';
 import { decoratePoliceCar } from './police.js';
 import { installRacingUI } from '../ui/ui.js';
 
@@ -42,16 +43,23 @@ export function createRealisticVersion({ scene, renderer, camera, mobile, audio,
             return '';
         }
     };
-    rider.setLivery({ ...loadLivery(), name: riderName() });
-    mountLiveryPanel(document.getElementById('rider-options'), (livery) => {
-        rider.setLivery({ ...livery, name: riderName() });
+    // The plate only once unlocked (4000 points) and switched on.
+    const riderLook = (livery = loadLivery()) => ({
+        ...livery, name: riderName(), plate: !!livery.plate && totalPoints() >= PLATE_POINTS, plateText: livery.plateText || ''
+    });
+    rider.setLivery(riderLook());
+    const mountPanel = () => mountLiveryPanel(document.getElementById('rider-options'), (livery) => {
+        rider.setLivery(riderLook(livery));
         // The menu is a still frame: show the new look at once.
         renderer.render(scene, camera);
-    });
+    }, { points: totalPoints });
+    mountPanel();
     document.addEventListener('wheelie:nickname', () => {
-        rider.setLivery({ ...loadLivery(), name: riderName() });
+        rider.setLivery(riderLook());
         renderer.render(scene, camera);
     });
+    // Points earned since: the plate or the shop may have unlocked.
+    document.addEventListener('wheelie:points', () => rider.setLivery(riderLook()));
 
     // The 5HC intro on the bus shelter in front of the start.
     const adScreen = createAdScreen({ scene });
@@ -223,8 +231,9 @@ export function createRealisticVersion({ scene, renderer, camera, mobile, audio,
             if (rider.slideSpeed() > 3 && Math.random() < 0.7) {
                 fx.spark(point.copy(bike.position).setY(0.08), bikeVelocity, highQuality ? 3 : 1);
             }
-        } else if (roam.mode !== 'bike') {
-            // On foot or in a car: the rider is driven by free roam.
+        } else if (roam.mode !== 'bike' || snapshot.fallen) {
+            // On foot or in a car (or getting up after a fall): the rider is
+            // driven by free roam.
         } else {
             rider.update(dt, snapshot);
             const airborne = snapshot.angleRatio > 0.015;
@@ -233,7 +242,12 @@ export function createRealisticVersion({ scene, renderer, camera, mobile, audio,
                 fx.spray(wheelPoint(-0.72), bikeVelocity, amount, dt);
                 if (!airborne) fx.spray(wheelPoint(0.73), bikeVelocity, amount * 0.35, dt);
             }
-            if (snapshot.angleRatio > 0.93 && snapshot.kmh > 10) {
+            if (snapshot.bavette) {
+                // The bavette on the road: a shower of sparks from the plate
+                // (or the bare tail).
+                const tail = snapshot.plateOn ? rider.platePoint(point) : wheelPoint(-1.05);
+                fx.spark(tail.setY(0.06), bikeVelocity, highQuality ? 6 : 3);
+            } else if (snapshot.angleRatio > 0.93 && snapshot.kmh > 10) {
                 fx.spark(wheelPoint(-1.05).setY(0.06), bikeVelocity, highQuality ? 2 : 1);
             }
             if (airborne) peakAngle = Math.max(peakAngle, snapshot.angleRatio);
@@ -308,6 +322,8 @@ export function createRealisticVersion({ scene, renderer, camera, mobile, audio,
 
     function showroom(on) {
         if (on && showroomFrame === null) {
+            mountPanel();
+            rider.setLivery(riderLook());
             savedPosition.copy(camera.position);
             savedQuaternion.copy(camera.quaternion);
             let angle = 0.9;

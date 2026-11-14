@@ -13,6 +13,8 @@ const GLASS = 0x0c1116;
 const TYRE = 0x141416;
 const RIM = 0xb8bcc2;
 const TRIM = 0x1a1c1f;
+// Behind the spokes, bumper intakes.
+const WELL = 0x2b2e33;
 
 function profileShape(points) {
     const shape = new THREE.Shape();
@@ -114,15 +116,42 @@ function buildModel(name) {
         const b = (m.cabin[1][0] + m.cabin[2][0]) / 2 + 0.1;
         pillar(b, m.belt, b, m.roof - 0.04, 0.1);
     }
-    // Wheels: tyre, rim, hub.
+    // Wheels: tyre, alloy rim (silver lip, dark wheel well, five-ish
+    // spokes), hub.
     for (const z of [front, rear]) {
         for (const side of [-1, 1]) {
             const x = side * (m.width / 2 - 0.13);
             add(PRIMS.cylinder.clone().rotateZ(Math.PI / 2).applyMatrix4(transform(x, m.radius, z, 0.22, m.radius, m.radius)), TYRE);
-            add(PRIMS.cylinder.clone().rotateZ(Math.PI / 2).applyMatrix4(transform(x + side * 0.02, m.radius, z, 0.2, m.radius * 0.62, m.radius * 0.62)), RIM);
+            add(PRIMS.cylinder.clone().rotateZ(Math.PI / 2).applyMatrix4(transform(x + side * 0.02, m.radius, z, 0.2, m.radius * 0.64, m.radius * 0.64)), RIM);
+            add(PRIMS.cylinder.clone().rotateZ(Math.PI / 2).applyMatrix4(transform(x + side * 0.024, m.radius, z, 0.2, m.radius * 0.55, m.radius * 0.55)), WELL);
+            for (let k = 0; k < 3; k++) {
+                add(PRIMS.box.clone().applyMatrix4(transform(x + side * 0.112, m.radius, z, 0.02, m.radius * 1.08, 0.055, (k * Math.PI) / 3, 0, 0)), RIM);
+            }
             add(PRIMS.cylinder6.clone().rotateZ(Math.PI / 2).applyMatrix4(transform(x + side * 0.03, m.radius, z, 0.2, m.radius * 0.18, m.radius * 0.18)), TRIM);
         }
     }
+    // Sills between the wheels, bumpers (lower intake, rear diffuser),
+    // door shut lines, wipers, an exhaust.
+    const sill = front - rear - m.radius * 2 - 0.3;
+    for (const side of [-1, 1]) {
+        add(PRIMS.box.clone().applyMatrix4(transform(side * (m.width / 2 - 0.01), 0.37, (front + rear) / 2, 0.05, 0.1, sill)), TRIM);
+        if (name !== 'van') {
+            const b = (m.cabin[1][0] + m.cabin[2][0]) / 2 + 0.1;
+            for (const seam of [b - 0.06, m.cabin[3][0] - 0.12, m.cabin[1][0] - (name === 'coupe' ? 0 : 0.1)]) {
+                add(PRIMS.box.clone().applyMatrix4(transform(side * (m.width / 2 + 0.004), (0.45 + m.belt) / 2, seam, 0.012, m.belt - 0.45, 0.012)), TRIM);
+            }
+        }
+        // Orange side repeater behind the front wheel.
+        add(PRIMS.box.clone().applyMatrix4(transform(side * (m.width / 2 + 0.004), m.nose * 0.7, front + m.radius + 0.25, 0.012, 0.03, 0.07)), 0xe08a1a);
+    }
+    add(PRIMS.box.clone().applyMatrix4(transform(0, 0.42, half - 0.01, m.width * 0.62, 0.11, 0.07)), WELL);
+    add(PRIMS.box.clone().applyMatrix4(transform(0, 0.4, -half - 0.01, m.width * 0.72, 0.12, 0.06)), WELL);
+    if (name !== 'van') {
+        for (const side of [-1, 1]) {
+            add(PRIMS.box.clone().applyMatrix4(transform(side * 0.28, m.belt + 0.03, m.cabin[3][0] - 0.1, 0.42, 0.015, 0.03, 0, side * 0.25, 0)), TRIM);
+        }
+    }
+    add(PRIMS.cylinder6.clone().rotateX(Math.PI / 2).applyMatrix4(transform(m.width * 0.3, 0.33, -half - 0.03, 0.045, 0.045, 0.14)), RIM);
     // Lights, grille, plates, mirrors, door handles.
     for (const side of [-1, 1]) {
         add(PRIMS.box.clone().applyMatrix4(transform(side * (m.width / 2 - 0.3), m.nose * 0.82, half - 0.02, 0.36, 0.12, 0.08)), 0xf4f1e6);

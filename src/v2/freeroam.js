@@ -17,9 +17,10 @@ const PENALTY_KEY = 'wheelie_points_penalty';
 const STRIKES_KEY = 'wheelie_zero_strikes';
 const CONFISCATED_KEY = 'wheelie_bike_confiscated';
 export const BIKE_RECOVERY_POINTS = 100;
+// Nice: the Ariane and around.
 const STREETS = [
-    'Avenue du 51', 'Rue de la Paix', 'Boulevard Haussmann', 'Rue des Lilas', 'Avenue des Fleurs', 'Rue du Marché',
-    'Boulevard du Soleil', 'Rue Victor Hugo', 'Avenue de la Gare', 'Rue des Artistes', 'Quai des Brumes', 'Rue Lafayette'
+    'Avenue du 51', 'Rue du Bosquet', 'Rue de l’Aspre', 'Rue Assalit', 'Rue d’Italie',
+    'Boulevard de l’Ariane', 'Avenue des Pâquerettes', 'Avenue du Général Obry', 'Rue Pierre Séguran'
 ];
 const SIDE_STREET_HALF = 4.4;
 // On foot at life size (the rider used to be 1.7x bigger and faster).
@@ -518,6 +519,8 @@ export function createFreeRoam({ scene, world, rider, audio, onTurn, playerVoice
 
     return {
         move, update, action, clampBike, afterTurn, reset, tryBoost, boostState,
+        // A fall on the bike: the nearest passer-by (20 m) says something.
+        concern: (x, z) => talk.concern({ x, z }),
         get boostFactor() { return now() < boost.until ? 2 : 1; },
         get carRear() {
             if (mode !== 'car' || !drive.group) return null;

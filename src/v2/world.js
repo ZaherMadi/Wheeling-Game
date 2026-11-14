@@ -262,7 +262,8 @@ export function createWorld({ scene, renderer, mobile }) {
     const billboardCtx = billboardCanvas.getContext('2d');
     [
         ['WHEELIE KING', '51 GAMES', ['#1b2a6b', '#e2622a']],
-        ['ZONE 51', 'RIDE OR DIE', ['#3b1466', '#d43d6b']],
+        // One billboard in four: 5HC (the site written big).
+        ['5HC.FR', 'STREETWEAR · 5hc.fr', ['#0b0b0d', '#f6c416']],
         ['510 CITY', 'BORN TO RIDE', ['#0d3b4f', '#e0a52a']]
     ].forEach(([title, subtitle, palette], i) => {
         const poster = createBillboardTexture(title, subtitle, palette);

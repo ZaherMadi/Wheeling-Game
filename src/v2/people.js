@@ -68,9 +68,25 @@ function buildGeometries() {
             at(new THREE.BoxGeometry(0.2 * S, 0.12 * S, 0.05 * S), 0, 1.13, -0.29)
         ),
         skirt: new THREE.CylinderGeometry(0.18 * S, 0.27 * S, 0.36 * S, 16, 1, true).translate(0, 0.8 * S, 0),
-        ponytail: new THREE.CapsuleGeometry(0.038 * S, 0.14 * S, 4, 6).rotateX(0.35).translate(0, (headY - 0.04) * S, -0.13 * S)
+        ponytail: new THREE.CapsuleGeometry(0.038 * S, 0.14 * S, 4, 6).rotateX(0.35).translate(0, (headY - 0.04) * S, -0.13 * S),
+        // A dog on a lead: body, head, snout, ears and tail; legs apart.
+        dog: merge(
+            at(new THREE.CapsuleGeometry(0.12, 0.4, 4, 10), 0, 0.42, 0, Math.PI / 2),
+            at(new THREE.SphereGeometry(0.105, 12, 10), 0, 0.6, 0.3),
+            at(new THREE.BoxGeometry(0.075, 0.065, 0.13), 0, 0.57, 0.41),
+            at(new THREE.BoxGeometry(0.035, 0.08, 0.05), 0.06, 0.69, 0.27, -0.2, 0, 0.25),
+            at(new THREE.BoxGeometry(0.035, 0.08, 0.05), -0.06, 0.69, 0.27, -0.2, 0, -0.25),
+            at(new THREE.CapsuleGeometry(0.025, 0.2, 4, 6), 0, 0.56, -0.33, -0.7)
+        ),
+        dogLeg: new THREE.CapsuleGeometry(0.034, 0.24, 4, 6).translate(0, -0.15, 0),
+        // The lead: a thin cord along y, stretched between hand and collar.
+        lead: new THREE.CylinderGeometry(0.008, 0.008, 1, 5).translate(0, 0.5, 0)
     };
 }
+
+// Builds: [width, height] (most people average).
+const BUILDS = [[1, 1], [1, 1], [1, 1], [0.86, 1.04], [1.32, 1], [1.18, 0.97], [1, 1.08], [0.95, 0.91]];
+const DOG_COATS = [0x6b4a2e, 0x1a1410, 0xe8dcc6, 0xc9a46a, 0x8a8a8a, 0x3b2a1e];
 
 const ACCESSORIES = ['cap', 'beanie', 'bucket', 'fedora', 'glasses', 'headphones', 'backpack', 'skirt', 'ponytail'];
 
@@ -91,6 +107,9 @@ export function createPeople({ scene, count = 18 }) {
     for (const name of ACCESSORIES) {
         meshes[name] = instanced(geometries[name], count, name === 'glasses' ? glassMaterial : name === 'skirt' ? skirtMaterial : material);
     }
+    meshes.dog = instanced(geometries.dog, count);
+    meshes.dogLeg = instanced(geometries.dogLeg, count * 4);
+    meshes.lead = instanced(geometries.lead, count);
     for (const mesh of Object.values(meshes)) {
         mesh.castShadow = true;
         mesh.frustumCulled = false;
@@ -154,6 +173,13 @@ export function createPeople({ scene, count = 18 }) {
         paint(meshes.backpack, i, pick(PACKS));
         paint(meshes.skirt, i, pick(SHIRTS));
         paint(meshes.ponytail, i, hair);
+        // Body build, and now and then a dog on a lead (any size).
+        walker.build = pick(BUILDS);
+        walker.dog = Math.random() < 0.18 ? { size: range(0.7, 1.25), side: Math.random() < 0.5 ? -1 : 1 } : null;
+        const coat = pick(DOG_COATS);
+        paint(meshes.dog, i, coat);
+        for (let k = 0; k < 4; k++) paint(meshes.dogLeg, i * 4 + k, coat);
+        paint(meshes.lead, i, pick([0xa8322d, 0x1d1e22, 0x2b3a55, 0x3f6b3a]));
         for (const mesh of Object.values(meshes)) mesh.instanceColor.needsUpdate = true;
     }
 
@@ -163,6 +189,13 @@ export function createPeople({ scene, count = 18 }) {
     const out = new THREE.Matrix4();
     const tilt = new THREE.Matrix4();
     const hidden = new THREE.Matrix4().makeScale(0, 0, 0);
+    const body = new THREE.Matrix4();
+    const dogBase = new THREE.Matrix4();
+    const hand = new THREE.Vector3();
+    const collar = new THREE.Vector3();
+    const cord = new THREE.Vector3();
+    const up = new THREE.Vector3(0, 1, 0);
+    const turn = new THREE.Quaternion();
 
     function update(dt, focus) {
         clock += dt;
@@ -190,6 +223,9 @@ export function createPeople({ scene, count = 18 }) {
             base.makeRotationY(yaw);
             if (walker.stagger > 0) base.multiply(tilt.makeRotationZ(Math.sin(walker.stagger * 18) * walker.stagger * 0.6));
             base.setPosition(walker.x, talking ? 0 : Math.abs(Math.sin(walker.phase)) * 0.03 * S, walker.z);
+            // Slim, stocky, tall or short.
+            const [width, height] = walker.build || [1, 1];
+            base.multiply(body.makeScale(width, height, width > 1.1 ? width * 0.95 : 1));
             meshes.torso.setMatrixAt(i, base);
             meshes.head.setMatrixAt(i, base);
             meshes.hair.setMatrixAt(i, walker.style.beanie || walker.style.fedora ? hidden : base);
@@ -209,8 +245,48 @@ export function createPeople({ scene, count = 18 }) {
                 out.multiplyMatrices(base, part).multiply(swing);
                 meshes.arm.setMatrixAt(i * 2 + k, out);
             }
+            updateDog(walker, yaw, talking);
         }
         for (const mesh of Object.values(meshes)) mesh.instanceMatrix.needsUpdate = true;
+    }
+
+    // The dog trots beside and a little ahead; the lead runs from the hand.
+    function updateDog(walker, yaw, talking) {
+        const i = walker.index;
+        const dog = walker.dog;
+        if (!dog) {
+            meshes.dog.setMatrixAt(i, hidden);
+            meshes.lead.setMatrixAt(i, hidden);
+            for (let k = 0; k < 4; k++) meshes.dogLeg.setMatrixAt(i * 4 + k, hidden);
+            return;
+        }
+        const forward = talking ? 0.5 : 0.9;
+        const sideways = dog.side * 0.55;
+        const dx = Math.sin(yaw) * forward + Math.cos(yaw) * sideways;
+        const dz = Math.cos(yaw) * forward - Math.sin(yaw) * sideways;
+        const trot = talking ? 0 : walker.phase * 1.7;
+        dogBase.makeRotationY(yaw);
+        dogBase.scale(cord.set(dog.size, dog.size, dog.size));
+        dogBase.setPosition(walker.x + dx, talking ? 0 : Math.abs(Math.sin(trot)) * 0.02, walker.z + dz);
+        meshes.dog.setMatrixAt(i, dogBase);
+        [[0.08, 0.17], [-0.08, 0.17], [0.08, -0.17], [-0.08, -0.17]].forEach(([lx, lz], k) => {
+            part.makeTranslation(lx, 0.36, lz);
+            swing.makeRotationX(talking ? 0 : Math.sin(trot + (k === 0 || k === 3 ? 0 : Math.PI)) * 0.5);
+            out.multiplyMatrices(dogBase, part).multiply(swing);
+            meshes.dogLeg.setMatrixAt(i * 4 + k, out);
+        });
+        // From the walker's hand (dog side) to the collar.
+        hand.set(dog.side * 0.27 * S, 0.88 * S, 0.1).applyAxisAngle(up, yaw);
+        hand.x += walker.x;
+        hand.z += walker.z;
+        collar.set(0, 0.52 * dog.size, 0.24 * dog.size).applyAxisAngle(up, yaw);
+        collar.x += walker.x + dx;
+        collar.z += walker.z + dz;
+        cord.subVectors(collar, hand);
+        const length = cord.length();
+        turn.setFromUnitVectors(up, cord.normalize());
+        out.compose(hand, turn, cord.set(1, length, 1));
+        meshes.lead.setMatrixAt(i, out);
     }
 
     // People within `radius` of (x, z), closest first.

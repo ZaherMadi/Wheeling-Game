@@ -126,8 +126,14 @@ export function createStreetTalk({ audio, people, playerVoice = null }) {
     }
 
     // mode: 'walk' | 'bike' | 'car'; player: { x, z }
+    let fallWarmed = false;
     function update(dt, mode, player) {
         clock += dt;
+        // In free roam: what passers-by say after a fall, ready in advance.
+        if (!fallWarmed) {
+            fallWarmed = true;
+            audio.warmUp(clips.filter((clip) => clip.category === 'fall').map((clip) => clip.id));
+        }
         if (mode !== 'walk') return;
         if (!warmed) {
             warmed = true;
@@ -155,6 +161,22 @@ export function createStreetTalk({ audio, people, playerVoice = null }) {
             }
             break;
         }
+    }
+
+    // The player fell: the nearest passer-by within `radius` metres reacts.
+    function concern(player, radius = 20) {
+        const walker = people.near(player.x, player.z, radius)
+            .sort((a, b) => Math.hypot(a.x - player.x, a.z - player.z) - Math.hypot(b.x - player.x, b.z - player.z))[0];
+        if (!walker) return false;
+        if (busy) {
+            token++;
+            audio.stopSaying();
+        }
+        const voice = voiceFor(walker);
+        const pan = Math.max(-0.8, Math.min(0.8, (walker.x - player.x) / 6));
+        people.talk(walker, player.x, player.z, 3);
+        run([() => line(voice, 'fall', 'Passant', { pan, volume: 1 })]);
+        return true;
     }
 
     // The police speak over anything else (and count as an exchange).
@@ -189,7 +211,7 @@ export function createStreetTalk({ audio, people, playerVoice = null }) {
     }
 
     return {
-        update, police, warmPolice, reset, claim,
+        update, police, warmPolice, reset, claim, concern,
         get stats() { return { ...stats, interactions, recent: recent.length }; },
         get busy() { return busy; }
     };

@@ -162,6 +162,13 @@ function decorateLeaderboard() {
     dropInlineLook(list);
     list.classList.add('ui-board');
     button($('back-from-leaderboard'), { icon: 'back', label: 'RETOUR', variant: 'ghost' });
+    button($('trophies-btn'), { icon: 'trophy', label: 'SALLE DES TROPHÉES', variant: 'row' });
+    const room = $('trophy-screen');
+    if (room) {
+        room.classList.add('ui-panel-screen');
+        room.querySelector('h1')?.classList.add('ui-title');
+        button($('back-from-trophies'), { icon: 'back', label: 'RETOUR', variant: 'ghost' });
+    }
 }
 
 function decorateGameOver() {

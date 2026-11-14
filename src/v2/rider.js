@@ -90,6 +90,50 @@ function createHelmetTexture(base = '#0a0a0c', accent = '#f2c014', number = '51'
     return texture;
 }
 
+// Number plate, French style: blue bands (F on the left, 06 on the right),
+// the player's text in the middle (8 characters at most).
+export function createPlateTexture(text = '51-WHEEL') {
+    const canvas = document.createElement('canvas');
+    canvas.width = 512;
+    canvas.height = 232;
+    const ctx = canvas.getContext('2d');
+    ctx.fillStyle = '#f7f7f2';
+    ctx.fillRect(0, 0, 512, 232);
+    ctx.fillStyle = '#1d3f9e';
+    ctx.fillRect(0, 0, 62, 232);
+    ctx.fillRect(450, 0, 62, 232);
+    ctx.fillStyle = '#f4c20d';
+    for (let i = 0; i < 12; i++) {
+        const a = (i / 12) * Math.PI * 2;
+        ctx.beginPath();
+        ctx.arc(31 + Math.cos(a) * 17, 70 + Math.sin(a) * 17, 3.2, 0, Math.PI * 2);
+        ctx.fill();
+    }
+    ctx.fillStyle = '#ffffff';
+    ctx.textAlign = 'center';
+    ctx.textBaseline = 'middle';
+    ctx.font = '900 46px Arial, sans-serif';
+    ctx.fillText('F', 31, 168);
+    ctx.font = '900 40px Arial, sans-serif';
+    ctx.fillText('06', 481, 168);
+    ctx.fillStyle = '#111';
+    const label = String(text || '').toUpperCase().slice(0, 8);
+    let size = 120;
+    ctx.font = `900 ${size}px "Arial Black", Arial, sans-serif`;
+    while (size > 40 && ctx.measureText(label).width > 370) {
+        size -= 4;
+        ctx.font = `900 ${size}px "Arial Black", Arial, sans-serif`;
+    }
+    ctx.fillText(label, 256, 122);
+    ctx.lineWidth = 8;
+    ctx.strokeStyle = '#111';
+    ctx.strokeRect(4, 4, 504, 224);
+    const texture = new THREE.CanvasTexture(canvas);
+    texture.colorSpace = THREE.SRGBColorSpace;
+    texture.anisotropy = 4;
+    return texture;
+}
+
 export function createRider({ scene }) {
     // --- Materials --------------------------------------------------------
     const standard = (color, roughness, metalness = 0) =>
@@ -157,7 +201,7 @@ export function createRider({ scene }) {
     frame.add(paint, box, transform(-0.12, 0.8, 0.02, 0.03, 0.2, 0.42, -0.3));
     frame.add(seatMaterial, box, transform(0, 0.94, -0.36, 0.27, 0.09, 0.56, 0.06));
     frame.add(darkMetal, box, transform(0, 0.78, -0.8, 0.2, 0.035, 0.42, 0.35));
-    frame.add(plate, box, transform(0, 0.74, -1.0, 0.17, 0.11, 0.012, 0.25));
+
     for (const side of [-1, 1]) {
         frame.add(darkMetal, box, transform(side * 0.13, 0.39, -0.385, 0.05, 0.075, 0.69, 0.045));
         frame.add(chrome, tube, transform(side * 0.2, 0.45, -0.27, 0.022, 0.12, 0.022, 0, 0, Math.PI / 2));
@@ -167,6 +211,25 @@ export function createRider({ scene }) {
     frame.add(darkMetal, tube, transform(-0.2, 0.56, -0.68, 0.085, 0.46, 0.085, Math.PI / 2 - 0.3));
     frame.add(chrome, tube, transform(-0.2, 0.63, -0.9, 0.06, 0.04, 0.06, Math.PI / 2 - 0.3));
     frame.build(chassis);
+
+    // The number plate under the tail (customised, can be torn off).
+    const plateFace = new THREE.MeshStandardMaterial({ map: createPlateTexture(), roughness: 0.45, metalness: 0.15 });
+    const plateMesh = new THREE.Mesh(box, [plate, plate, plate, plate, plate, plateFace]);
+    const PLATE_REST = { x: 0, y: 0.74, z: -1.0, tilt: 0.25 };
+    plateMesh.scale.set(0.24, 0.105, 0.012);
+    plateMesh.castShadow = true;
+    let plateEnabled = false;
+    let plateText = '';
+    const loosePlate = { active: false, velocity: new THREE.Vector3(), spin: new THREE.Vector3(), rest: false };
+    function restPlate() {
+        if (plateMesh.parent !== chassis) chassis.add(plateMesh);
+        plateMesh.position.set(PLATE_REST.x, PLATE_REST.y, PLATE_REST.z);
+        plateMesh.rotation.set(PLATE_REST.tilt, 0, 0);
+        plateMesh.scale.set(0.24, 0.105, 0.012);
+        plateMesh.visible = plateEnabled;
+        loosePlate.active = false;
+    }
+    restPlate();
 
     const tailLamp = new THREE.Mesh(box, tailLight);
     tailLamp.position.set(0, 0.985, -0.925);
@@ -410,7 +473,51 @@ export function createRider({ scene }) {
         velocity: new THREE.Vector3(), bikeVelocity: new THREE.Vector3(), spinRates: new THREE.Vector3()
     };
 
+    // Torn off by the bavette: it flies off behind and slides on the road.
+    function tearPlate(unitsPerSecond = 0) {
+        if (!plateEnabled || loosePlate.active) return;
+        const worldScale = new THREE.Vector3();
+        plateMesh.getWorldScale(worldScale);
+        scene.attach(plateMesh);
+        plateMesh.scale.copy(worldScale);
+        const forward = new THREE.Vector3(0, 0, 1).applyQuaternion(bikeGroup.quaternion);
+        loosePlate.velocity.copy(forward).multiplyScalar(Math.min(unitsPerSecond, 40) * 0.55);
+        loosePlate.velocity.y = 2.6;
+        loosePlate.velocity.x += (Math.random() - 0.5) * 2;
+        loosePlate.spin.set(8 + Math.random() * 6, (Math.random() - 0.5) * 6, (Math.random() - 0.5) * 8);
+        loosePlate.active = true;
+        loosePlate.rest = false;
+    }
+
+    function stepLoosePlate(dt) {
+        if (!loosePlate.active || loosePlate.rest) return;
+        loosePlate.velocity.y -= 14 * dt;
+        plateMesh.position.addScaledVector(loosePlate.velocity, dt);
+        plateMesh.rotation.x += loosePlate.spin.x * dt;
+        plateMesh.rotation.y += loosePlate.spin.y * dt;
+        plateMesh.rotation.z += loosePlate.spin.z * dt;
+        if (plateMesh.position.y <= 0.03) {
+            plateMesh.position.y = 0.03;
+            // Bounces, then slides flat to a stop.
+            if (loosePlate.velocity.y < -2) loosePlate.velocity.y *= -0.3;
+            else loosePlate.velocity.y = 0;
+            loosePlate.velocity.x *= 0.85;
+            loosePlate.velocity.z *= 0.85;
+            loosePlate.spin.multiplyScalar(0.6);
+            if (loosePlate.velocity.lengthSq() < 0.05) {
+                plateMesh.rotation.set(-Math.PI / 2, plateMesh.rotation.y, 0);
+                loosePlate.rest = true;
+            }
+        }
+    }
+
+    // Where the plate is (sparks of the bavette).
+    function platePoint(out) {
+        return plateMesh.getWorldPosition(out);
+    }
+
     function reset() {
+        restPlate();
         if (riderGroup.parent !== chassis) {
             chassis.add(riderGroup);
             riderGroup.position.set(0, 0, 0);
@@ -434,6 +541,7 @@ export function createRider({ scene }) {
     //          angle (rad), angleRatio 0..1, skidding, linear }
     function update(dt, frame) {
         pose.time += dt;
+        stepLoosePlate(dt);
         const { kmh, throttle, braking, steer, angle, angleRatio, skidding, linear } = frame;
         const speedRatio = Math.min(1, kmh / 200);
         const airborne = angleRatio > 0.015;
@@ -705,6 +813,7 @@ export function createRider({ scene }) {
 
     // Returns false once everything has come to rest.
     function updateCrash(dt) {
+        stepLoosePlate(dt);
         if (!crash.active) return false;
         crash.time += dt;
         const t = crash.time;
@@ -777,6 +886,15 @@ export function createRider({ scene }) {
         }
         animateLimbs(t);
         return t < 3;
+    }
+
+    // Free roam: the fall is over, the rider gets up (the bike stays down).
+    function finishCrash() {
+        crash.active = false;
+    }
+
+    function riderPosition(out) {
+        return riderGroup.getWorldPosition(out);
     }
 
     function slideSpeed() {
@@ -895,7 +1013,15 @@ export function createRider({ scene }) {
 
     // Rider customisation: number, hoodie, helmet and bike colours.
     const luminance = (color) => 0.2126 * color.r + 0.7152 * color.g + 0.0722 * color.b;
-    function setLivery({ number = '51', hoodie = '#f6c416', helmet: helmetColor = '#0a0a0c', bike = '#f2c014', name = '' } = {}) {
+    function setLivery({ number = '51', hoodie = '#f6c416', helmet: helmetColor = '#0a0a0c', bike = '#f2c014', name = '', plate: withPlate = false, plateText: text = '' } = {}) {
+        plateEnabled = !!withPlate;
+        if (!loosePlate.active) plateMesh.visible = plateEnabled;
+        if (text !== plateText) {
+            plateText = text;
+            plateFace.map.dispose();
+            plateFace.map = createPlateTexture(text || '51-WHEEL');
+            plateFace.needsUpdate = true;
+        }
         jersey.color.set(hoodie);
         jerseyAccent.set(hoodie);
         jerseyDark.color.copy(jerseyAccent).multiplyScalar(0.84);
@@ -917,6 +1043,7 @@ export function createRider({ scene }) {
     reset();
     return {
         setLivery, dismount, updateWalk, mount, setRiderVisible, setBoost, exhaustPoint, setWorldScale, setFlip,
+        tearPlate, platePoint, resetPlate: restPlate, finishCrash, riderPosition,
         get worldScale() { return worldScale; },
         bikeGroup, bikePivot, materials, update, reset, startCrash, updateCrash, slideSpeed, getHitBox,
         get crashing() { return crash.active; },

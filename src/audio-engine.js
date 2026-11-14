@@ -395,7 +395,8 @@ export function createAudioEngine({ effects, getManifest }) {
         setLoop('wind', Math.pow(speedRatio, 1.5) * 0.55, 0.8 + speedRatio * 0.5);
         setLoop('tire_wet', onFoot ? 0 : clamp01(kmh / 110) * 0.22, 0.75 + speedRatio * 0.5);
         setLoop('city_ambience', 0.16 - speedRatio * 0.09, 1);
-        setLoop('scrape', angleRatio > 0.93 && kmh > 10 ? 0.4 : 0, 0.9 + speedRatio * 0.3);
+        // The bavette grinding on the road; lighter when the wheelie just touches.
+        setLoop('scrape', frame.bavette ? 0.8 : angleRatio > 0.93 && kmh > 10 ? 0.4 : 0, (frame.bavette ? 1.05 : 0.9) + speedRatio * 0.3);
 
         // Events
         const throttleOn = throttle > 0.1;

@@ -1414,6 +1414,13 @@
         <p class="setting-desc" id="diff-desc" style="margin: 8px 0;">Difficile: Beaucoup d'obstacles !</p>
       </div>
 
+      <h3 style="margin: 10px 0;">BACKFLIPS</h3>
+      <div class="settings-group" style="margin: 15px 0;">
+        <button id="flip-auto" class="setting-btn">🔄 AUTOMATIQUE</button>
+        <button id="flip-manual" class="setting-btn">🎮 MANUEL</button>
+        <p class="setting-desc" id="flip-desc" style="margin: 8px 0;"></p>
+      </div>
+
       <button class="back-to-main-btn" style="margin: 15px 0;">← RETOUR</button>
     </div>
 
@@ -1526,7 +1533,15 @@
     <div id="leaderboard-list" style="width: calc(100% - 20px); max-width: 500px; margin: 10px auto; max-height: 400px; overflow-y: auto; overflow-x: hidden; padding: 0 10px; box-sizing: border-box;">
       <p style="color: #888;">Aucun score enregistré...</p>
     </div>
+    <button id="trophies-btn" type="button" style="margin-top: 10px; font-size: 16px; padding: 12px 25px;">🏅 SALLE DES TROPHÉES</button>
     <button id="back-from-leaderboard" style="margin-top: 15px; background: #444; font-size: 16px; padding: 12px 25px;">← RETOUR</button>
+  </div>
+
+  <!-- TROPHY ROOM: medals, "first for..." trophies, what points unlock -->
+  <div id="trophy-screen" class="screen">
+    <h1 class="trophy-title">SALLE DES TROPHÉES</h1>
+    <div id="trophy-content" class="trophy-content"></div>
+    <button id="back-from-trophies" type="button" style="margin-top: 12px; background: #444; font-size: 16px; padding: 12px 25px;">← RETOUR</button>
   </div>
 
   <script type="module" src="/main.js"></script>

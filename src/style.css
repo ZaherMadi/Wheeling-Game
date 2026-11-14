@@ -121,3 +121,112 @@ button:focus-visible {
   font-size: 14px;
   opacity: 0.85;
 }
+
+/* Trophy room (both versions). */
+#trophy-screen {
+  justify-content: flex-start;
+  overflow-y: auto;
+  padding: calc(16px + env(safe-area-inset-top, 0px)) 16px calc(20px + env(safe-area-inset-bottom, 0px));
+}
+
+.trophy-title {
+  margin: 4px 0 10px;
+  font-size: clamp(22px, 6vw, 30px);
+  text-align: center;
+}
+
+.trophy-content {
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+  width: min(520px, 100%);
+}
+
+.trophy-section {
+  padding: 12px 14px;
+  border-radius: 8px;
+  background: rgba(10, 11, 14, 0.78);
+  border: 1px solid rgba(246, 196, 22, 0.25);
+}
+
+.trophy-section__title {
+  margin: 0 0 10px;
+  font-size: 14px;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  color: #f6c416;
+  text-align: center;
+}
+
+.trophy-row {
+  display: flex;
+  justify-content: space-around;
+  align-items: flex-end;
+  gap: 8px;
+}
+
+.trophy-item {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 4px;
+  min-width: 0;
+  text-align: center;
+}
+
+.trophy-item.is-locked svg {
+  filter: grayscale(1) brightness(0.45);
+  opacity: 0.7;
+}
+
+.trophy-item.is-won svg {
+  filter: drop-shadow(0 0 10px rgba(246, 196, 22, 0.55));
+}
+
+.trophy-item__label {
+  font-size: 12px;
+  line-height: 1.2;
+  color: rgba(255, 255, 255, 0.85);
+}
+
+.trophy-item.is-locked .trophy-item__label {
+  color: rgba(255, 255, 255, 0.45);
+}
+
+.trophy-note {
+  margin: 10px 0 0;
+  font-size: 13px;
+  text-align: center;
+  color: rgba(255, 255, 255, 0.75);
+}
+
+.trophy-unlocks {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.trophy-unlock {
+  display: grid;
+  grid-template-columns: 92px 1fr auto;
+  align-items: center;
+  gap: 10px;
+  padding: 7px 10px;
+  border-radius: 6px;
+  background: rgba(255, 255, 255, 0.04);
+  font-size: 14px;
+  color: rgba(255, 255, 255, 0.55);
+}
+
+.trophy-unlock.is-open {
+  color: #fff;
+  background: rgba(246, 196, 22, 0.12);
+}
+
+.trophy-unlock__points {
+  font-variant-numeric: tabular-nums;
+  color: #f6c416;
+}

@@ -5,8 +5,10 @@ import './src/style.css';
 import voiceLineGroups from './src/voice-lines.json';
 import soundEffects from './src/sound-effects.json';
 import { createAudioEngine } from './src/audio-engine.js';
-import { BIKE_RECOVERY_POINTS, addPoints, releaseBike, syncPoints } from './src/v2/freeroam.js';
+import { BIKE_RECOVERY_POINTS, addPoints, finePoints, releaseBike, syncPoints, totalPoints } from './src/v2/freeroam.js';
 import { createPlayerVoice } from './src/player-voice.js';
+import { renderTrophyRoom } from './src/trophy-room.js';
+import { rewards } from './src/unlocks.js';
 import { createSpeedLines } from './src/v2/speedlines.js';
 import riderVoices from './src/rider-voices.json';
 
@@ -96,6 +98,43 @@ const AIR_LEVEL_RATE = 0.03;
 // Too slow: under 50 km/h for more than 4 s, the police stop the run.
 // Counted once 50 km/h has been reached (or from 10 s in); skids reset it.
 const SLOW = { kmh: 50, frames: 240, armFrame: 600, warnFrames: 30 };
+// Bavette (mirrored by wheelie_replay.py): a wheelie going over the top no
+// longer ends the run at once. The tail scrapes the road, held at the top,
+// for up to bavetteFrames() frames: fewer when the wheelie came up abruptly
+// (none from fatalAv) or fast. Let go of the wheelie (or brake) and the
+// bike drops back; hold it to the end and it goes over.
+const BAVETTE = { gentleAv: 0.02, fatalAv: 0.12, maxFrames: 45, minFrames: 4, releaseAv: -0.012 };
+// A plate on the bike (V2, unlocked at 4000 points): enough bavette in one
+// run tears it off, +20 points once.
+const PLATE = { wearFrames: 120, bonus: 20, unlockPoints: 4000 };
+// Manual backflips (setting): every jump; holding the wheelie button turns
+// the bike backwards, the brake forwards (60 % as fast), at a rate set by
+// the takeoff speed. Judged on the bike's whole angle at touchdown.
+const FLIP_MANUAL = { brake: 0.6, good: [-0.45, 1.1], bad: [-0.8, 1.6] };
+
+function bavetteFrames(angularVelocity, kmh) {
+    if (angularVelocity >= BAVETTE.fatalAv) return 0;
+    const softness = 1.0 - Math.max(0.0, angularVelocity - BAVETTE.gentleAv) / (BAVETTE.fatalAv - BAVETTE.gentleAv);
+    const speedFactor = Math.max(0.5, Math.min(1.0, 1.25 - kmh / 200));
+    const frames = Math.floor(BAVETTE.maxFrames * softness * speedFactor);
+    return frames >= BAVETTE.minFrames ? frames : 0;
+}
+
+function manualFlipRate(kmh) {
+    if (kmh <= 80) return 0.0073 * Math.max(0.0, kmh) / 80;
+    if (kmh <= 115) return 0.0073 + (kmh - 80) / 35 * (0.085 - 0.0073);
+    return Math.min(0.16, 0.085 + (kmh - 115) * 0.0012);
+}
+
+function manualFlipLanding(totalAngle) {
+    const whole = Math.floor(totalAngle / (2 * Math.PI) + 0.5);
+    const off = totalAngle - 2 * Math.PI * whole;
+    if (off >= FLIP_MANUAL.good[0] && off <= FLIP_MANUAL.good[1]) {
+        return whole !== 0 ? ['clean', Math.min(Math.abs(whole), 2), whole < 0] : ['none', 0];
+    }
+    if (off >= FLIP_MANUAL.bad[0] && off <= FLIP_MANUAL.bad[1]) return ['bad', 0];
+    return ['crash', 0];
+}
 
 function flightFrames(vy) {
     let y = JUMP.rampHeight;
@@ -183,6 +222,11 @@ let state = {
     vulnerableUntil: -1,
     badLanding: 0,
     slow: { armed: false, frames: 0 },
+    // Bavette (frames left while held, and in all) and this run's plate.
+    bavette: { left: 0, total: 0 },
+    plate: { on: false, off: false },
+    // Backflip mode of this run (the setting when it started).
+    flipMode: 'auto',
     obstacles: [],
     animatedObjects: [],
     graffitiList: [],
@@ -268,6 +312,9 @@ let lastCameraBikeZ = null;
 // "Too slow" banner (see showPoliceWarning).
 let policeWarning = null;
 let policeWarningShown = -1;
+// Obstacles thrown by the bike (see knockObstacle).
+const knockedObstacles = [];
+const knockSize = new THREE.Vector3();
 let speedLines = null;
 // Free roam chase camera: its heading and the last followed position.
 let freeCamYaw = null;
@@ -1031,7 +1078,121 @@ function init() {
 const FREE_BIKE = { top: 38.9, boostTop: 52, brake: 11, coast: 1.3, drag: 0.0007, reverse: 1.6 };
 const freeRide = { speed: 0, hold: 0, gas: 0, steer: 0 };
 
+// Free roam falls on the bike. Over 100 km/h into the front or the back of
+// a car: thrown over the bars. Into its side: a skid, and another car
+// during the skid is a fall. A fall costs 50 points and 10 s: the rider
+// gets up, walks to the bike, lifts it and gets back on.
+const ROAM_FALL = { kmh: 100, skidSeconds: 2.5, points: 50, seconds: 10 };
+const roamFall = { active: false, t: 0, phase: '', skid: 0, target: new THREE.Vector3(), at: new THREE.Vector3(), yaw: 0 };
+
+function roamImpact(hit, v, roam) {
+    const kmh = Math.abs(v) * 3.6;
+    if (hit.hitSide === 'end' && kmh > ROAM_FALL.kmh) {
+        startRoamFall(v, false, roam);
+        return 0;
+    }
+    if (hit.hitSide === 'side' && kmh > 25) {
+        // Still against the same car: just slowed down.
+        if (roamFall.skid > 0 && hit === roamFall.skidCar) return v * 0.97;
+        if (roamFall.skid > 0) {
+            startRoamFall(v, true, roam);
+            return 0;
+        }
+        roamFall.skid = ROAM_FALL.skidSeconds;
+        roamFall.skidCar = hit;
+        audio.play('skid', { volume: 0.6 });
+        toast('DÉRAPAGE !', 'Encore une voiture et c’est la chute', { discreet: true, float: true });
+        return v * 0.6;
+    }
+    return v * 0.35;
+}
+
+function startRoamFall(v, skidding, roam) {
+    if (!v2) return;
+    roamFall.active = true;
+    roamFall.t = 0;
+    roamFall.phase = 'crash';
+    roamFall.skid = 0;
+    freeRide.speed = 0;
+    const unitsPerSecond = Math.abs(v);
+    v2.rider.startCrash('hit', unitsPerSecond, {
+        kmh: unitsPerSecond * 3.6, skidding, steer: freeRide.steer, angleRatio: 0
+    });
+    audio.play('collision', { volume: 0.9 });
+    audio.play(unitsPerSecond * 3.6 > 90 ? 'bike_fall_fast' : 'bike_fall', { volume: 0.75, delay: 0.15 });
+    const lost = finePoints(ROAM_FALL.points);
+    document.dispatchEvent(new CustomEvent('wheelie:points'));
+    toast(lost ? `-${lost} PTS` : 'CHUTE !', `Chute · tu te relèves (${ROAM_FALL.seconds} s)`);
+    // Someone nearby asks if he is all right.
+    setTimeout(() => {
+        const at = bikeGroup.position;
+        roam.concern(at.x, at.z);
+    }, 1400);
+}
+
+// One frame of the fall and of getting back on.
+function updateRoamFall(dt) {
+    const rider = v2.rider;
+    roamFall.t += dt;
+    const t = roamFall.t;
+    const bike = bikeGroup.position;
+    if (roamFall.phase === 'crash') {
+        rider.updateCrash(dt);
+        if (t > 3.4) {
+            // Gets up where he landed, facing the bike.
+            rider.riderPosition(roamFall.at);
+            rider.finishCrash();
+            roamFall.yaw = Math.atan2(bike.x - roamFall.at.x, bike.z - roamFall.at.z);
+            rider.dismount(roamFall.at.x, roamFall.at.z, roamFall.yaw);
+            roamFall.phase = 'walk';
+        }
+    } else if (roamFall.phase === 'walk') {
+        // Walks back to the bike (to its side).
+        roamFall.target.set(bike.x + Math.cos(bikeGroup.rotation.y) * 0.9, 0, bike.z - Math.sin(bikeGroup.rotation.y) * 0.9);
+        const dx = roamFall.target.x - roamFall.at.x;
+        const dz = roamFall.target.z - roamFall.at.z;
+        const distance = Math.hypot(dx, dz);
+        // Jogs back when far, walks the last metres.
+        const pace = distance > 3 ? 4.2 : 1.8;
+        const step = Math.min(distance, pace * dt);
+        if (distance > 0.05) {
+            roamFall.at.x += (dx / distance) * step;
+            roamFall.at.z += (dz / distance) * step;
+            roamFall.yaw = Math.atan2(dx, dz);
+        }
+        rider.updateWalk(dt, roamFall.at.x, roamFall.at.z, roamFall.yaw, distance > 0.05 ? pace / 60 : 0, 0, pace > 2);
+        if (distance <= 0.05 || t > 8.2) {
+            // Never left far away: the last bit is skipped.
+            roamFall.at.copy(roamFall.target);
+            roamFall.phase = 'lift';
+        }
+    } else if (roamFall.phase === 'lift') {
+        // Puts the bike back on its wheels.
+        const k = 1 - Math.exp(-dt * 3);
+        bikeGroup.rotation.z += (0 - bikeGroup.rotation.z) * k;
+        bikeGroup.rotation.x += (0 - bikeGroup.rotation.x) * k;
+        bikePivot.rotation.x += (0 - bikePivot.rotation.x) * k;
+        bikeGroup.position.y += (0 - bikeGroup.position.y) * k;
+        const toBike = Math.atan2(bike.x - roamFall.at.x, bike.z - roamFall.at.z);
+        rider.updateWalk(dt, roamFall.at.x, roamFall.at.z, toBike, 0);
+        if (t > ROAM_FALL.seconds) {
+            bikeGroup.rotation.set(0, bikeGroup.rotation.y, 0);
+            bikePivot.rotation.x = 0;
+            bikeGroup.position.y = 0;
+            rider.reset();
+            roamFall.active = false;
+            toast('C’EST REPARTI', 'De retour sur la moto', { discreet: true, float: true });
+        }
+    }
+}
+
 function rideFreeBike(dt, roam) {
+    if (roamFall.active) {
+        updateRoamFall(dt);
+        freeRide.speed = 0;
+        return 0;
+    }
+    roamFall.skid = Math.max(0, roamFall.skid - dt);
     let gas = 0;
     let brake = 0;
     let steer = 0;
@@ -1084,7 +1245,8 @@ function rideFreeBike(dt, roam) {
     bikeGroup.position.x += Math.sin(heading) * v * dt;
     bikeGroup.position.z += Math.cos(heading) * v * dt;
     // Side streets open the way; traffic stops the bike dead.
-    if (roam.clampBike(bikeGroup.position)) v *= 0.35;
+    const hit = roam.clampBike(bikeGroup.position);
+    if (hit) v = roamImpact(hit, v, roam);
     freeRide.speed = v;
     freeRide.gas = gas;
     freeRide.steer = steer * Math.min(1, Math.abs(v) / 4);
@@ -1141,6 +1303,10 @@ function visualSnapshot() {
         reversing: free && v2 ? v2.roam.reversing : false,
         airborne: !free && state.jump.airborne,
         trick: state.trick.active ? state.trick.type : null,
+        bavette: !free && state.bavette.left > 0,
+        // Free roam: fallen off the bike (the rider is moved by the fall).
+        fallen: free && roamFall.active,
+        plateOn: !free && state.plate.on,
         // Too slow: how close the police car is (0 far behind, 1 alongside).
         police: !free && state.isPlaying && state.slow.frames >= SLOW.warnFrames
             ? Math.min(1, state.slow.frames / SLOW.frames) : null
@@ -1149,6 +1315,7 @@ function visualSnapshot() {
 
 function renderScene(dt, snapshot = visualSnapshot()) {
     updateCamera();
+    if (dt > 0) updateKnockedObstacles(dt);
     if (v2) v2.frame(dt, snapshot);
     renderer.render(scene, camera);
 }
@@ -1184,6 +1351,11 @@ function resetGame() {
     state.vulnerableUntil = -1;
     state.badLanding = 0;
     state.slow = { armed: false, frames: 0 };
+    state.bavette = { left: 0, total: 0 };
+    // The plate rides only on the V2 bike, once unlocked and switched on.
+    state.plate = { on: IS_V2 && GAME_SETTINGS.gameMode === 'linear' && plateEquipped(), off: false };
+    state.flipMode = GAME_SETTINGS.flipMode;
+    if (v2) v2.rider.resetPlate();
     hidePoliceWarning();
     lastCameraBikeZ = null;
     freeCamYaw = null;
@@ -1229,6 +1401,7 @@ function resetGame() {
     if (v2) v2.reset();
     state.obstacles.forEach(obs => scene.remove(obs.mesh));
     state.obstacles.forEach(obs => disposeObjectTree(obs.mesh));
+    knockedObstacles.length = 0;
     state.obstacles = [];
     state.animatedObjects = [];
     groundChunks.forEach(dropChunk);
@@ -1412,6 +1585,54 @@ function quitToMenu() {
     }
 }
 
+// Obstacles hit by the bike: thrown along the road, tumbling, bouncing,
+// then lying where they stop (visual only, the run is decided above).
+function knockObstacle(obs) {
+    if (obs.knocked) return;
+    obs.knocked = true;
+    const mesh = obs.mesh;
+    obs.box.getSize(knockSize);
+    // Big ones (road works) only shift and rock; small ones fly.
+    const heavy = knockSize.x * knockSize.z > 6;
+    const unitsPerSecond = state.speed * 60;
+    const side = Math.sign(mesh.position.x - bikeGroup.position.x) || (Math.random() < 0.5 ? -1 : 1);
+    const throwSpeed = heavy ? 0.12 : 0.55 + Math.random() * 0.25;
+    knockedObstacles.push({
+        mesh,
+        base: mesh.position.y,
+        velocity: new THREE.Vector3(side * (heavy ? 0.6 : 2 + Math.random() * 3), heavy ? 0.6 : 2.5 + unitsPerSecond * 0.06,
+            -unitsPerSecond * throwSpeed),
+        spin: new THREE.Vector3((Math.random() - 0.5) * (heavy ? 0.6 : 9), (Math.random() - 0.5) * (heavy ? 1 : 6),
+            (Math.random() - 0.5) * (heavy ? 0.6 : 9)),
+        life: 4
+    });
+    audio.play('whoosh', { volume: 0.25, rate: 0.7 });
+}
+
+function updateKnockedObstacles(dt) {
+    for (let i = knockedObstacles.length - 1; i >= 0; i--) {
+        const item = knockedObstacles[i];
+        const { mesh, velocity, spin } = item;
+        item.life -= dt;
+        if (!mesh.parent || item.life <= 0) {
+            knockedObstacles.splice(i, 1);
+            continue;
+        }
+        velocity.y -= 18 * dt;
+        mesh.position.addScaledVector(velocity, dt);
+        mesh.rotation.x += spin.x * dt;
+        mesh.rotation.y += spin.y * dt;
+        mesh.rotation.z += spin.z * dt;
+        if (mesh.position.y <= item.base) {
+            mesh.position.y = item.base;
+            velocity.y = velocity.y < -2 ? -velocity.y * 0.35 : 0;
+            velocity.x *= 0.7;
+            velocity.z *= 0.7;
+            spin.multiplyScalar(0.55);
+        }
+    }
+}
+
 function checkCollisions() {
     if (!state.isPlaying) return;
     // Flying over everything.
@@ -1427,6 +1648,7 @@ function checkCollisions() {
             // ignored: no skid frame is recorded yet, so ending the run here
             // would produce a replay the server refuses.
             const fragile = state.frame - 1 < state.vulnerableUntil;
+            knockObstacle(obs);
             if ((state.trick.active || fragile) && !state.skidding) {
                 // Hit during a stunt, or still shaken by a bad landing: no saving it.
                 obs.active = false;
@@ -1580,11 +1802,13 @@ function announceFlip(kmh) {
 
 function landFlip(frame) {
     const jump = state.jump;
-    const [outcome, turns] = flipLanding(jump.flipAngle);
+    const manual = state.flipMode === 'manual';
+    const [outcome, turns, forwards] = manual ? manualFlipLanding(state.bike.angle + jump.flipAngle) : flipLanding(jump.flipAngle);
     if (outcome === 'clean') {
         const bonus = (jump.trickFrames > 0 ? FLIP.trickBonus : FLIP.bonus)[turns];
         state.score += bonus;
-        const name = turns >= 2 ? 'DOUBLE BACKFLIP' : 'BACKFLIP';
+        const flip = forwards ? 'FRONTFLIP' : 'BACKFLIP';
+        const name = turns >= 2 ? `DOUBLE ${flip}` : flip;
         toast(`+${bonus}`, jump.trickFrames > 0 ? `${name} + FIGURE !` : `${name} !`, { float: true });
         audio.play('new_record', { volume: 0.45 });
         audio.play('landing', { volume: 0.5 });
@@ -1592,10 +1816,58 @@ function landFlip(frame) {
         state.vulnerableUntil = frame + FLIP.badFrames;
         state.badLanding = 1.6;
         audio.play('skid', { volume: 0.45 });
+        // The bike slams down: sparks under it.
+        if (v2) for (let i = 0; i < 3; i++) v2.spark();
         toast('MAUVAISE RÉCEPTION', 'Fragile 4 s : un obstacle = chute', { discreet: true, float: true });
     } else if (outcome === 'crash') {
         // Landed on its back.
         gameOver('flip');
+    }
+}
+
+// Bavette ------------------------------------------------------------------
+function startBavette() {
+    state.bavette.started = state.frame;
+    // The tip once a run; after that the sparks and the grinding say it.
+    if (state.bavette.tipped) return;
+    state.bavette.tipped = true;
+    toast('BAVETTE !', `Lâche le ${isMobile() ? 'WHEELIE' : 'wheeling'} avant qu’elle lâche`, { discreet: true, float: true });
+}
+
+function endBavette(saved) {
+    const held = state.frame - (state.bavette.started ?? state.frame);
+    if (saved && held >= 20) {
+        toast('BELLE BAVETTE', 'Rattrapée de justesse', { discreet: true, float: true });
+        audio.play('landing', { volume: 0.4 });
+    }
+}
+
+function plateTornOff() {
+    toast(`+${PLATE.bonus}`, 'PLAQUE ARRACHÉE !', { float: true });
+    audio.play('plate_snap', { volume: 0.7 });
+    if (v2) {
+        v2.rider.tearPlate(state.speed * 60);
+        // A burst of sparks as it tears off.
+        for (let i = 0; i < 4; i++) v2.spark();
+    }
+}
+
+// The plate: unlocked at 4000 points, switched on in the rider screen.
+function plateEquipped() {
+    try {
+        // On by default once unlocked (src/v2/livery.js).
+        const livery = JSON.parse(localStorage.getItem('wheelie_rider_livery') || 'null') || {};
+        return livery.plate !== false && totalPoints() >= PLATE.unlockPoints;
+    } catch {
+        return false;
+    }
+}
+
+function readSetting(key) {
+    try {
+        return localStorage.getItem(key);
+    } catch {
+        return null;
     }
 }
 
@@ -1615,6 +1887,8 @@ function land(trickFrames, difficulty) {
 // Free roam ----------------------------------------------------------------------
 function roamAction() {
     if (!v2 || !state.isPlaying || state.isPaused || GAME_SETTINGS.gameMode !== 'free') return;
+    // Getting up after a fall: nothing to get off.
+    if (roamFall.active) return;
     v2.roam.action();
 }
 
@@ -1944,12 +2218,16 @@ const DEFEAT_REASONS = {
     trickHit: ['OBSTACLE EN FIGURE', 'Un obstacle touché pendant une figure.'],
     fragileHit: ['OBSTACLE APRÈS UNE MAUVAISE RÉCEPTION', 'Juste après un saut mal reçu, un obstacle fait tomber.'],
     trickLanding: ['ATTERRISSAGE EN FIGURE', 'Relâche FIGURE avant de toucher le sol.'],
-    flip: ['BACKFLIP RATÉ', 'Atterri sur le dos : garde le wheeling jusqu’au bout du saut.']
+    flip: ['BACKFLIP RATÉ', 'Atterri sur le dos : garde le wheeling jusqu’au bout du saut.'],
+    bavette: ['BAVETTE LÂCHÉE', 'Resté appuyé trop longtemps sur la bavette : la moto est passée par-dessus.']
 };
 
 function showDefeatReason(reason) {
     const element = document.getElementById('gameover-reason');
-    const [label, detail] = DEFEAT_REASONS[reason] || [];
+    let [label, detail] = DEFEAT_REASONS[reason] || [];
+    if (reason === 'flip' && state.flipMode === 'manual') {
+        detail = 'Posé trop penché : pose-toi à plat (wheeling = en arrière, frein = en avant).';
+    }
     if (element) {
         element.textContent = '';
         if (label) {
@@ -1996,7 +2274,9 @@ async function gameOver(reason = 'crash') {
         state.inputLog[state.inputLog.length - 2] |= 0x10;
         completedRankedRun = {
             runToken: state.runToken,
-            inputLog: Uint8Array.from(state.inputLog)
+            inputLog: Uint8Array.from(state.inputLog),
+            flipMode: state.flipMode,
+            plate: state.plate.on || state.plate.off
         };
     } else {
         completedRankedRun = null;
@@ -2023,8 +2303,13 @@ async function gameOver(reason = 'crash') {
     audio.stopRun();
     if (reason === 'slow') audio.play('police_siren', { volume: 0.7 });
     else audio.play('collision', { volume: 0.85 });
-    const crashKind = reason === 'loop' || reason === 'flip' || state.bike.angle > CONFIG.maxAngle ||
+    const crashKind = reason === 'loop' || reason === 'flip' || reason === 'bavette' || state.bike.angle > CONFIG.maxAngle ||
         GAME_SETTINGS.gameMode === 'free' ? 'loop' : 'hit';
+    // Then the bike itself going down, harder the faster it was going.
+    if (reason !== 'slow') {
+        const fallKmh = speedKmh();
+        audio.play(fallKmh > 90 ? 'bike_fall_fast' : 'bike_fall', { volume: 0.55 + Math.min(0.4, fallKmh / 400), delay: 0.12 });
+    }
     const crashSpeed = (GAME_SETTINGS.gameMode === 'free' ? state.freeMode.speed : state.speed) * 60;
     // How the rider was riding decides how he falls.
     const crashInfo = visualSnapshot();
@@ -2036,7 +2321,13 @@ async function gameOver(reason = 'crash') {
     const screenDelay = new Promise((resolve) => setTimeout(resolve, v2 ? 1150 : 0));
     const currentScore = Math.floor(state.score);
     const previousBest = state.highScore;
-    if (GAME_SETTINGS.gameMode === 'linear') addPoints(currentScore);
+    if (GAME_SETTINGS.gameMode === 'linear') {
+        const before = totalPoints();
+        addPoints(currentScore);
+        // Something new unlocked by this run? Said once the screen is up.
+        announceUnlocks(before, totalPoints());
+        document.dispatchEvent(new CustomEvent('wheelie:points'));
+    }
     // The bike taken by the police in free roam comes back with 100 points.
     if (GAME_SETTINGS.gameMode === 'linear' && currentScore >= BIKE_RECOVERY_POINTS && releaseBike()) {
         document.dispatchEvent(new CustomEvent('wheelie:notice', { detail: {
@@ -2442,9 +2733,22 @@ function animate(timestamp = performance.now()) {
             // The wheelie button is recorded in the air too: it drives the
             // backflip (it gives no lift there, as on the server).
             isAccelerating = isAccelerating && grounded && !trickGround;
+            const manualFlips = state.flipMode === 'manual';
+            // Manual backflips: the brake in the air turns the bike forwards
+            // (recorded; it does nothing else there, as on the server).
+            const airBrake = manualFlips && !grounded && isBraking;
             isBraking = isBraking && grounded;
             const wheelieInput = state.keys.space && !trickGround;
-            if (takeoff) {
+            if (takeoff && manualFlips) {
+                jump.flipActive = true;
+                jump.flipKmh = startKmh;
+                jump.flipAngle = 0;
+                jump.flipRate = manualFlipRate(startKmh);
+                if (!jump.hinted && startKmh >= 115) {
+                    jump.hinted = true;
+                    toast('BACKFLIP MANUEL', `${isMobile() ? 'WHEELIE' : 'ESPACE'} : en arrière · FREIN : en avant · pose-toi à plat`, { discreet: true, float: true });
+                }
+            } else if (takeoff) {
                 const inWheelie = wheelieInput && state.bike.angle >= FLIP.minAngle;
                 jump.flipActive = inWheelie && startKmh >= FLIP.kmh;
                 if (jump.flipActive) {
@@ -2456,7 +2760,7 @@ function animate(timestamp = performance.now()) {
             }
             const inputFlags =
                 (isAccelerating ? 0x01 : 0) |
-                (isBraking ? 0x02 : 0) |
+                (isBraking || airBrake ? 0x02 : 0) |
                 (wheelieInput ? 0x04 : 0) |
                 (takeoff ? TAKEOFF_FLAG : 0) |
                 (trickAir || trickGround ? TRICK_FLAG : 0) |
@@ -2518,7 +2822,26 @@ function animate(timestamp = performance.now()) {
                 const brakePower = CONFIG.brakeForce * brakeEfficiency;
                 state.speed = Math.max(0, state.speed - brakePower);
             }
-            if (grounded) {
+            const bavette = state.bavette;
+            if (grounded && bavette.left > 0) {
+                // Bavette: the tail on the road, held at the top.
+                bavette.total += 1;
+                if (wheelieInput && !isBraking) {
+                    bavette.left -= 1;
+                    if (bavette.left === 0) gameOver('bavette');
+                } else {
+                    bavette.left = 0;
+                    state.bike.angle = CONFIG.maxAngle;
+                    state.bike.angularVelocity = BAVETTE.releaseAv;
+                    endBavette(true);
+                }
+                if (state.plate.on && bavette.total >= PLATE.wearFrames) {
+                    state.plate.on = false;
+                    state.plate.off = true;
+                    state.score += PLATE.bonus;
+                    plateTornOff();
+                }
+            } else if (grounded) {
                 state.bike.angularVelocity += lift;
                 state.bike.angularVelocity -= CONFIG.gravity;
                 state.bike.angularVelocity *= 0.98;
@@ -2527,8 +2850,20 @@ function animate(timestamp = performance.now()) {
                     state.bike.angle = 0;
                     state.bike.angularVelocity = 0;
                 }
+                if (state.bike.angle > CONFIG.maxAngle) {
+                    bavette.left = bavetteFrames(state.bike.angularVelocity, kmh);
+                    if (bavette.left === 0) {
+                        gameOver('loop');
+                    } else {
+                        state.bike.angle = CONFIG.maxAngle;
+                        state.bike.angularVelocity = 0;
+                        startBavette(bavette.left);
+                    }
+                }
             } else {
                 // In the air: no rear wheel to pivot on, the bike levels out.
+                if (bavette.left > 0) endBavette(false);
+                bavette.left = 0;
                 state.bike.angularVelocity = 0;
                 state.bike.angle = Math.max(0, state.bike.angle - AIR_LEVEL_RATE);
             }
@@ -2538,8 +2873,10 @@ function animate(timestamp = performance.now()) {
             // In the air the nose follows the flight: up off the lip, down to land.
             const airPitch = jump.airborne ? Math.max(-0.45, Math.min(0.5, jump.vy * 3.2)) : 0;
             if (jump.flipActive && jump.airborne) {
-                if (v2) v2.rider.setFlip(jump.flipAngle);
-                else bikePivot.rotation.x = -jump.flipAngle;
+                // Manual: the whole bike's angle (levelling wheelie + the turn).
+                const shown = manualFlips ? state.bike.angle + jump.flipAngle : jump.flipAngle;
+                if (v2) v2.rider.setFlip(shown);
+                else bikePivot.rotation.x = -shown;
             } else {
                 if (v2) v2.rider.setFlip(0);
                 bikePivot.rotation.x = -state.bike.angle - airPitch;
@@ -2649,7 +2986,12 @@ function animate(timestamp = performance.now()) {
                 state.score += JUMP.groundRate * FIXED_STEP * trickDifficulty;
             }
             if (jump.airborne) {
-                if (jump.flipActive) jump.flipAngle = wheelieInput ? jump.flipAngle + jump.flipRate : flipSettle(jump.flipAngle);
+                if (jump.flipActive && manualFlips) {
+                    if (wheelieInput) jump.flipAngle += jump.flipRate;
+                    else if (airBrake) jump.flipAngle -= jump.flipRate * FLIP_MANUAL.brake;
+                } else if (jump.flipActive) {
+                    jump.flipAngle = wheelieInput ? jump.flipAngle + jump.flipRate : flipSettle(jump.flipAngle);
+                }
                 jump.y += jump.vy;
                 jump.vy -= JUMP.gravity;
                 if (jump.y <= 0) {
@@ -3193,7 +3535,9 @@ const GAME_SETTINGS = {
     sfxEnabled: localStorage.getItem('wheelie_sfx_enabled') !== 'false',
     language: localStorage.getItem('wheelie_language') === 'en' ? 'en' : 'fr',
     // 'player': the voice talks to the player; 'self': the rider talks about himself.
-    perspective: localStorage.getItem('wheelie_voice_perspective') === 'self' ? 'self' : 'player'
+    perspective: localStorage.getItem('wheelie_voice_perspective') === 'self' ? 'self' : 'player',
+    // Backflips: 'auto' (hold through the jump) or 'manual' (turn it yourself).
+    flipMode: readSetting('wheelie_flip_mode') === 'manual' ? 'manual' : 'auto'
 };
 
 let audioManifestPromise;
@@ -3701,6 +4045,30 @@ function showSettingsMain() {
     if (backBtn) backBtn.style.display = 'block';
 }
 
+// Backflip mode: automatic (hold through the jump) or manual.
+const FLIP_MODE_TEXT = {
+    auto: 'Automatique : en wheeling à 130 km/h au tremplin, garde le wheeling, la moto fait le tour seule.',
+    manual: 'Manuel : en l’air, wheeling = tourner en arrière, frein = en avant. C’est l’angle à l’atterrissage qui compte. Lent sous 80 km/h, un tour complet possible dès 115.'
+};
+function showFlipMode() {
+    document.getElementById('flip-auto')?.classList.toggle('active', GAME_SETTINGS.flipMode === 'auto');
+    document.getElementById('flip-manual')?.classList.toggle('active', GAME_SETTINGS.flipMode === 'manual');
+    const desc = document.getElementById('flip-desc');
+    if (desc) desc.textContent = FLIP_MODE_TEXT[GAME_SETTINGS.flipMode];
+}
+function setFlipMode(mode) {
+    GAME_SETTINGS.flipMode = mode;
+    try {
+        localStorage.setItem('wheelie_flip_mode', mode);
+    } catch {
+        // Kept for this visit.
+    }
+    showFlipMode();
+}
+document.getElementById('flip-auto')?.addEventListener('click', () => setFlipMode('auto'));
+document.getElementById('flip-manual')?.addEventListener('click', () => setFlipMode('manual'));
+showFlipMode();
+
 // Category Buttons
 document.getElementById('btn-cat-controls')?.addEventListener('click', () => showSubmenu('submenu-controls'));
 document.getElementById('btn-cat-gamemode')?.addEventListener('click', () => showSubmenu('submenu-gamemode'));
@@ -4136,7 +4504,9 @@ async function submitCompletedRun(nickname) {
     }
 
     const run = completedRankedRun;
-    const body = JSON.stringify({ run_token: run.runToken, nickname, input_log: encodeInputLog(run.inputLog) });
+    const body = JSON.stringify({
+        run_token: run.runToken, nickname, input_log: encodeInputLog(run.inputLog), flip_mode: run.flipMode, plate: run.plate
+    });
     setRankingStatus('Envoi du score…');
     for (let attempt = 1; attempt <= 3; attempt++) {
         try {
@@ -4181,7 +4551,9 @@ async function submitCompletedRun(nickname) {
                     details: { error: error.message, frames: run.inputLog.length / 2, online: navigator.onLine },
                 });
                 // Keep it: sent again at the next start (the session lasts 30 min).
-                savePendingSubmission({ token: run.runToken, nickname, log: encodeInputLog(run.inputLog), at: Date.now() });
+                savePendingSubmission({
+                    token: run.runToken, nickname, log: encodeInputLog(run.inputLog), at: Date.now(), flipMode: run.flipMode, plate: run.plate
+                });
                 setRankingStatus('Score en attente : il sera envoyé dès que le serveur répond (' + error.message + ').');
                 return false;
             }
@@ -4218,7 +4590,10 @@ async function flushPendingSubmission() {
         const response = await apiFetch(`${API_BASE_URL}/wheelie-sessions/submit`, {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ run_token: entry.token, nickname: entry.nickname, input_log: entry.log })
+            body: JSON.stringify({
+                run_token: entry.token, nickname: entry.nickname, input_log: entry.log,
+                flip_mode: entry.flipMode || 'auto', plate: !!entry.plate
+            })
         }, 10000);
         if (response.ok || (response.status >= 400 && response.status < 500)) localStorage.removeItem(PENDING_KEY);
         if (response.status >= 400 && response.status < 500 && response.status !== 409) {
@@ -4392,6 +4767,41 @@ function updateLeaderboard(nickname, score) {
     localStorage.setItem('wheelie_leaderboard', JSON.stringify(leaderboard));
 }
 
+async function showTrophyRoom() {
+    document.getElementById('leaderboard-screen')?.classList.remove('active');
+    document.getElementById('trophy-screen')?.classList.add('active');
+    const content = document.getElementById('trophy-content');
+    const nickname = readSetting('wheelie_nickname');
+    const points = totalPoints();
+    renderTrophyRoom(content, { trophies: null, points, nickname, error: nickname ? 'Chargement des trophées…' : null });
+    if (!nickname) return;
+    try {
+        const response = await apiFetch(`${API_BASE_URL}/player/${encodeURIComponent(nickname)}/trophies?version=${IS_V2 ? 'v2' : 'v1'}`);
+        if (!response.ok) throw new Error(`HTTP ${response.status}`);
+        renderTrophyRoom(content, { trophies: await response.json(), points, nickname });
+    } catch (error) {
+        report('ranking.player', 'Trophées indisponibles', { once: true, details: { error: String(error.message || error) } });
+        renderTrophyRoom(content, { trophies: null, points, nickname, error: 'Trophées indisponibles pour le moment (serveur).' });
+    }
+}
+
+// Rewards crossed by the points of the run that just ended.
+function announceUnlocks(before, after) {
+    const unlocked = rewards().filter((reward) => reward.points > before && reward.points <= after);
+    if (!unlocked.length) return;
+    const names = unlocked.map((reward) => reward.name).join(' · ');
+    setTimeout(() => {
+        if (IS_V2) {
+            document.dispatchEvent(new CustomEvent('wheelie:notice', { detail: {
+                title: 'DÉBLOQUÉ !', text: `${names} — voir la salle des trophées.`, seconds: 7
+            } }));
+        } else {
+            toast('DÉBLOQUÉ !', names);
+        }
+        audio.play('new_record', { volume: 0.45 });
+    }, 1600);
+}
+
 async function showLeaderboard() {
     const startScreen = document.getElementById('start-screen');
     const leaderboardScreen = document.getElementById('leaderboard-screen');
@@ -4475,6 +4885,12 @@ document.getElementById('nickname-input')?.addEventListener('focus', function(e)
 });
 
 document.getElementById('leaderboard-btn')?.addEventListener('click', showLeaderboard);
+// Trophy room: from the leaderboard and back.
+document.getElementById('trophies-btn')?.addEventListener('click', showTrophyRoom);
+document.getElementById('back-from-trophies')?.addEventListener('click', () => {
+    document.getElementById('trophy-screen')?.classList.remove('active');
+    document.getElementById('leaderboard-screen')?.classList.add('active');
+});
 document.getElementById('back-from-leaderboard')?.addEventListener('click', () => {
     const leaderboardScreen = document.getElementById('leaderboard-screen');
     const startScreen = document.getElementById('start-screen');
@@ -4527,5 +4943,11 @@ function releaseSplash() {
 
 // Development only: lets tests and the console inspect a running game.
 if (import.meta.env.DEV) {
-    window.__wheelie = { state, renderer, scene, camera, audio, CONFIG, playerVoice, gameOver, setIdleIn(seconds) { idleTime = 0; nextIdleAt = seconds; }, get v2() { return v2; } };
+    window.__wheelie = {
+        state, renderer, scene, camera, audio, CONFIG, playerVoice, gameOver, setIdleIn(seconds) { idleTime = 0; nextIdleAt = seconds; },
+        get v2() { return v2; },
+        // Free roam fall at `kmh` (skidding: the side-impact kind).
+        fallTest(kmh, skidding = false) { startRoamFall(kmh / 3.6, skidding, v2.roam); },
+        get roamFall() { return roamFall; }
+    };
 }

@@ -138,6 +138,8 @@ export function createTraffic({ scene, world, onHonk }) {
             if (px < pz) position.x += (dx >= 0 ? 1 : -1) * (px + 0.02);
             else position.z += (dz >= 0 ? 1 : -1) * (pz + 0.02);
             moved = car;
+            // Hit on its side, or on its front / back (cars run along z).
+            car.hitSide = px < pz ? 'side' : 'end';
         }
         return moved;
     }

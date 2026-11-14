@@ -184,5 +184,23 @@
     "text": "Car door opening then shutting with a solid thud, close up, no music, no voices",
     "durationSeconds": 1.5,
     "loop": false
+  },
+  {
+    "id": "plate_snap",
+    "text": "A thin metal motorcycle license plate snapping off its bracket: a sharp metallic crack, then the plate clattering and bouncing a few times on asphalt. No music, no voice.",
+    "durationSeconds": 1.6,
+    "loop": false
+  },
+  {
+    "id": "bike_fall",
+    "text": "A motorcycle falling over backwards onto asphalt after a failed wheelie: the rear fender scraping, then the whole bike slamming down on its side, plastic cracking, metal clattering and a short slide. No music, no voice.",
+    "durationSeconds": 2.4,
+    "loop": false
+  },
+  {
+    "id": "bike_fall_fast",
+    "text": "A motorcycle crashing at speed and sliding a long way on its side on asphalt: heavy impact, grinding metal, plastic parts breaking off, then the slide slowing down. No music, no voice.",
+    "durationSeconds": 3.2,
+    "loop": false
   }
 ]

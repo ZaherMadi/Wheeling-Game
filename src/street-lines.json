@@ -80,6 +80,12 @@
       "Eh, regarde devant toi !",
       "Oh, doucement !",
       "Ça va pas, non ?"
+    ],
+    "fall": [
+      "Ça va monsieur ?",
+      "Attention monsieur !",
+      "Vous voulez que j'appelle les pompiers ?",
+      "Oh là là, vous vous êtes fait mal ?"
     ]
   },
   "rider": {
