@@ -117,7 +117,12 @@ const POLICE = {
 // for up to bavetteFrames() frames: fewer when the wheelie came up abruptly
 // (none from fatalAv) or fast. Let go of the wheelie (or brake) and the
 // bike drops back; hold it to the end and it goes over.
-const BAVETTE = { gentleAv: 0.02, fatalAv: 0.12, maxFrames: 45, minFrames: 4, releaseAv: -0.012 };
+const BAVETTE = {
+    gentleAv: 0.02, fatalAv: 0.12, maxFrames: 45, minFrames: 4, releaseAv: -0.012,
+    // Points a second on the tail, on top of the wheelie's: 5 up to 50 km/h,
+    // rising to 20 at 150 km/h.
+    rateMin: 5.0, rateMax: 20.0, rateFromKmh: 50.0, rateToKmh: 150.0
+};
 // A plate on the bike (V2, unlocked at 4000 points): enough bavette in one
 // run tears it off, +20 points once.
 const PLATE = { wearFrames: 120, bonus: 20, unlockPoints: 4000 };
@@ -132,6 +137,11 @@ function bavetteFrames(angularVelocity, kmh) {
     const speedFactor = Math.max(0.5, Math.min(1.0, 1.25 - kmh / 200));
     const frames = Math.floor(BAVETTE.maxFrames * softness * speedFactor);
     return frames >= BAVETTE.minFrames ? frames : 0;
+}
+
+function bavetteRate(kmh) {
+    const span = (kmh - BAVETTE.rateFromKmh) / (BAVETTE.rateToKmh - BAVETTE.rateFromKmh);
+    return BAVETTE.rateMin + (BAVETTE.rateMax - BAVETTE.rateMin) * Math.max(0.0, Math.min(1.0, span));
 }
 
 function manualFlipRate(kmh) {
@@ -1506,10 +1516,19 @@ async function startGame() {
         }
         // First ranked run of the visit (or the pass expired): the human check.
         if (check) {
+            // On a phone the home-made check runs unseen: say it is connecting.
+            const phone = window.matchMedia('(pointer: coarse)').matches;
+            const working = phone && check.check.mode === 'home' ? setTimeout(() => showConnecting(true), 350) : null;
             const result = await runHumanCheck({
-                sitekey: check.sitekey, apiBase: API_BASE_URL, apiFetch,
-                onEvent: (event) => logEvent('Vérification anti-robot', { result: event })
+                check: check.check, phone, apiBase: API_BASE_URL, apiFetch,
+                onEvent: (event) => {
+                    clearTimeout(working);
+                    showConnecting(false);
+                    logEvent('Vérification anti-robot', { result: event });
+                }
             });
+            clearTimeout(working);
+            showConnecting(false);
             if (result === 'cancel') {
                 startInProgress = false;
                 quitToMenu();
@@ -1901,6 +1920,7 @@ function landFlip(frame) {
 // Bavette ------------------------------------------------------------------
 function startBavette() {
     state.bavette.started = state.frame;
+    state.bavette.points = 0;
     // The tip once a run; after that the sparks and the grinding say it.
     if (state.bavette.tipped) return;
     state.bavette.tipped = true;
@@ -1909,9 +1929,13 @@ function startBavette() {
 
 function endBavette(saved) {
     const held = state.frame - (state.bavette.started ?? state.frame);
+    // What the tail earned (5 to 20 points a second with the speed), lightly.
+    const points = Math.max(1, Math.round(state.bavette.points || 0));
     if (saved && held >= 20) {
-        toast('BELLE BAVETTE', 'Rattrapée de justesse', { discreet: true, float: true });
+        toast(`+${points} BELLE BAVETTE`, 'Rattrapée de justesse', { discreet: true, float: true });
         audio.play('landing', { volume: 0.4 });
+    } else {
+        toast(`+${points}`, 'BAVETTE', { discreet: true, float: true });
     }
 }
 
@@ -3069,6 +3093,9 @@ function animate(timestamp = performance.now()) {
             if (grounded && bavette.left > 0) {
                 // Bavette: the tail on the road, held at the top.
                 bavette.total += 1;
+                const bavettePoints = bavetteRate(kmh) * FIXED_STEP;
+                state.score += bavettePoints;
+                bavette.points = (bavette.points || 0) + bavettePoints;
                 if (wheelieInput && !isBraking) {
                     bavette.left -= 1;
                     if (bavette.left === 0) gameOver('bavette');
@@ -4671,11 +4698,12 @@ async function createWheelieRun() {
     if (response.status === 403) {
         // No pass, or an expired one: the human check comes first.
         const data = await response.json().catch(() => ({}));
-        const sitekey = data && data.human_check && data.human_check.sitekey;
-        if (sitekey) {
+        const check = data && data.human_check;
+        // The Cloudflare box (site key), or the home-made check (challenge).
+        if (check && (check.sitekey || (check.mode === 'home' && check.challenge))) {
             forgetPass();
             lastSessionError = HUMAN_CHECK_SKIPPED;
-            throw new HumanCheckRequired(sitekey);
+            throw new HumanCheckRequired(check);
         }
     }
     if (!response.ok) {

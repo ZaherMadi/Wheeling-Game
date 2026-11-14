@@ -109,6 +109,43 @@ button:focus-visible {
   opacity: 0.85;
 }
 
+/* Rules for automated players. Hidden from sight (but in the page) on phones
+   and during rides; on computers, a faint tiny line under the menus. */
+.bot-notice {
+  position: fixed;
+  width: 1px;
+  height: 1px;
+  overflow: hidden;
+  clip-path: inset(50%);
+  white-space: nowrap;
+  pointer-events: none;
+}
+
+@media (pointer: fine) {
+  body:has(.screen.active) .bot-notice {
+    left: 50%;
+    bottom: calc(4px + env(safe-area-inset-bottom, 0px));
+    width: min(92vw, 1100px);
+    height: auto;
+    overflow: visible;
+    clip-path: none;
+    white-space: normal;
+    transform: translateX(-50%);
+    z-index: 30001;
+    color: rgba(255, 255, 255, 0.3);
+    font: 600 8px/1.25 system-ui, sans-serif;
+    letter-spacing: 0.02em;
+    text-align: center;
+  }
+
+  /* Above the page's own p sizes (24px, 1rem !important on short screens). */
+  body:has(.screen.active) .bot-notice p {
+    margin: 0 !important;
+    font-size: 8px !important;
+    line-height: 1.25;
+  }
+}
+
 /* Human check before ranked runs (both versions): above every other screen. */
 #human-check-screen {
   z-index: 30000;
@@ -148,6 +185,72 @@ button:focus-visible {
 
 #human-check-screen #human-check-cancel {
   width: auto;
+}
+
+/* The rule, readable on computers, unseen on phones. */
+.human-check-warning {
+  max-width: 420px;
+  margin: 0 auto 16px;
+  color: #ff8a73;
+  font-size: 12px;
+  line-height: 1.35;
+  text-align: center;
+  opacity: 0.85;
+}
+
+@media (pointer: coarse) {
+  .human-check-warning {
+    position: fixed;
+    width: 1px;
+    height: 1px;
+    margin: 0;
+    overflow: hidden;
+    clip-path: inset(50%);
+  }
+}
+
+/* Home-made check: a big button to hold down; it fills up. */
+#human-check-screen .human-check-hold {
+  position: relative;
+  display: block;
+  width: 100%;
+  max-width: 420px;
+  min-height: 72px;
+  margin: 0 auto;
+  padding: 0 20px;
+  border: 2px solid rgba(246, 196, 22, 0.85);
+  border-radius: 12px;
+  background: rgba(20, 22, 28, 0.92);
+  color: #fff;
+  font: italic 700 clamp(16px, 4.4vw, 21px) 'Russo One', system-ui, sans-serif;
+  letter-spacing: 0.04em;
+  overflow: hidden;
+  cursor: pointer;
+  user-select: none;
+  -webkit-user-select: none;
+  touch-action: none;
+  -webkit-touch-callout: none;
+}
+
+#human-check-screen .human-check-hold[hidden] {
+  display: none;
+}
+
+.human-check-hold__fill {
+  position: absolute;
+  inset: 0;
+  background: linear-gradient(90deg, #f6c416, #ff7a1a);
+  transform: scaleX(0);
+  transform-origin: left center;
+  opacity: 0.55;
+}
+
+.human-check-hold__label {
+  position: relative;
+}
+
+.human-check-box[hidden] {
+  display: none;
 }
 
 .human-check-status {
