@@ -186,6 +186,12 @@ function speedMultiplier(kmh) {
     return 1.0 + 0.5 * Math.min(1.0, (kmh - 20) / 180);
 }
 const RAMP = { width: 4.4, length: 5.5 };
+// The sides of the road. Obstacles stopped short of them (8.5 m at most,
+// the bike goes to 9), so riding against a kerb dodged everything. Some now
+// sit right against the kerb, and after 2.5 s spent on a side one is put
+// ahead on it, about 2 s away: no more than ~5 s there without one.
+const EDGE = { zone: 7.2, kerb: 9.3, share: 0.12, after: 150, leadSeconds: 2.2, minLead: 90, maxLead: 255 };
+const edgeBox = new THREE.Box3();
 const TRICK_TYPES = ['superman', 'nohander', 'cancan'];
 const daytimeSky = new THREE.Color(0x87CEEB);
 const nighttimeSky = new THREE.Color(0x0a0a2e);
@@ -238,6 +244,8 @@ let state = {
     police: { phase: 'idle', lastSeen: -1e9, gaveUp: false },
     // Secret code: tricks only (no police, unranked, a tenth of the score).
     tricksOnly: false,
+    // Time spent against a side of the road, and the obstacle put there.
+    edge: { frames: 0, pending: null },
     // Bavette (frames left while held, and in all) and this run's plate.
     bavette: { left: 0, total: 0 },
     plate: { on: false, off: false },
@@ -916,7 +924,8 @@ function dropChunk(chunk) {
     else disposeObjectTree(chunk);
 }
 
-function spawnObstacle(zPos) {
+// side: -1 / 1 puts it against that kerb; otherwise now and then anyway.
+function spawnObstacle(zPos, side = 0) {
     const type = Math.random();
     let obs;
     if (v2) {
@@ -961,10 +970,20 @@ function spawnObstacle(zPos) {
         obs = new THREE.Mesh(geo, new THREE.MeshStandardMaterial({ color: 0xff4400 }));
         obs.position.set((Math.random() - 0.5) * 16, 0.5, zPos);
     }
+    if (!side && Math.random() < EDGE.share) side = Math.random() < 0.5 ? -1 : 1;
+    if (side) {
+        // Its outer edge where a bike hugging that side rides.
+        obs.updateMatrixWorld(true);
+        edgeBox.setFromObject(obs);
+        const outer = EDGE.kerb - Math.random() * 0.35;
+        obs.position.x += side > 0 ? outer - edgeBox.max.x : -outer - edgeBox.min.x;
+    }
     obs.castShadow = true;
     obs.updateMatrixWorld(true);
     scene.add(obs);
-    state.obstacles.push({ mesh: obs, box: new THREE.Box3().setFromObject(obs), active: true });
+    const record = { mesh: obs, box: new THREE.Box3().setFromObject(obs), active: true };
+    state.obstacles.push(record);
+    return record;
 }
 
 function createCheckpoint() {
@@ -1371,6 +1390,7 @@ function resetGame() {
     state.slow = { armed: false, frames: 0, policeFrames: 0 };
     state.police = { phase: 'idle', lastSeen: -1e9, gaveUp: false };
     state.tricksOnly = false;
+    state.edge = { frames: 0, pending: null };
     secretCode.step = 0;
     state.bavette = { left: 0, total: 0 };
     // The plate rides only on the V2 bike, once unlocked and switched on.
@@ -2104,6 +2124,26 @@ function updatePhases(frame) {
 function obstaclesAllowed() {
     if (state.tricksOnly) return false;
     return state.frame < JUMP.rampsFrom - 240 || state.frame >= JUMP.groundTricksFrom - 240;
+}
+
+// Riding against a side of the road: after EDGE.after frames there, an
+// obstacle against that kerb, ~2 s ahead; the next once it has gone by.
+// Leaving the side winds the count back twice as fast.
+function guardEdges() {
+    const edge = state.edge;
+    if (!state.isPlaying || !obstaclesAllowed()) {
+        edge.frames = 0;
+        return;
+    }
+    const x = bikeGroup.position.x;
+    edge.frames = Math.abs(x) >= EDGE.zone ? edge.frames + 1 : Math.max(0, edge.frames - 2);
+    if (edge.frames < EDGE.after) return;
+    const pending = edge.pending;
+    if (pending && pending.active && pending.mesh.position.z < bikeGroup.position.z) return;
+    const lead = Math.max(EDGE.minLead, Math.min(EDGE.maxLead, state.speed * 60 * EDGE.leadSeconds));
+    const z = bikeGroup.position.z - lead;
+    if (inQuietZone(z) || state.rampFreeZones.some((zone) => z <= zone.from && z >= zone.to)) return;
+    edge.pending = spawnObstacle(z, Math.sign(x));
 }
 
 // Tricks-only mode (secret code): ramps and ground tricks from the start.
@@ -3292,6 +3332,7 @@ function animate(timestamp = performance.now()) {
 
         // Only check collisions in linear mode
         if (GAME_SETTINGS.gameMode === 'linear') {
+            guardEdges();
             checkCollisions();
         }
 
