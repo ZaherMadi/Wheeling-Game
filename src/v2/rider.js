@@ -891,12 +891,12 @@ export function createRider({ scene }) {
 
     // Rider customisation: number, hoodie, helmet and bike colours.
     const luminance = (color) => 0.2126 * color.r + 0.7152 * color.g + 0.0722 * color.b;
-    function setLivery({ number = '51', hoodie = '#f6c416', helmet: helmetColor = '#0a0a0c', bike = '#f2c014' } = {}) {
+    function setLivery({ number = '51', hoodie = '#f6c416', helmet: helmetColor = '#0a0a0c', bike = '#f2c014', name = '' } = {}) {
         jersey.color.set(hoodie);
         jerseyAccent.set(hoodie);
         jerseyDark.color.copy(jerseyAccent).multiplyScalar(0.84);
         const ink = luminance(jerseyAccent) > 0.35 ? '#111' : '#f6c416';
-        const print = createJerseyTexture(String(number), hoodie, ink);
+        const print = createJerseyTexture(String(number), hoodie, ink, String(name || '').slice(0, 15));
         jerseyPrint.map.dispose();
         jerseyPrint.map = print;
         jerseyPrint.needsUpdate = true;

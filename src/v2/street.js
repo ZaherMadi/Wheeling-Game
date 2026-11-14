@@ -79,6 +79,11 @@ export function createStreetKit({ random, atlases, vegetation, cars }) {
     let currentSide = 1;
     // Parked cars of the block being built, in block coordinates.
     const parked = [];
+    // Bus shelters of the block (their ad panel), in block coordinates.
+    const shelters = [];
+    // Every other shelter is sponsored by 5HC (no draw from the block's
+    // random numbers: the streets stay as they were).
+    let sponsorTurn = 0;
     function setSide(side) {
         currentSide = side;
         towardsCamera = side;
@@ -244,7 +249,9 @@ export function createStreetKit({ random, atlases, vegetation, cars }) {
         props.block(x + 0.25, KERB + 0.45, z - 1.4, x + 0.65, KERB + 0.5, z + 1.0, 0x4b4f57);
         // Lit advertising panel at the end facing the rider.
         props.block(x - 0.75, KERB + 0.2, z + 2.0, x + 0.75, KERB + 2.4, z + 2.18, frame);
-        sink.both.printLit.wallX(x - 0.62, KERB + 0.35, x + 0.62, KERB + 2.25, z + 2.19, 1, 0xffffff, pick(prints.posters));
+        const sponsored = prints.sponsor && sponsorTurn++ % 2 === 0;
+        sink.both.printLit.wallX(x - 0.62, KERB + 0.35, x + 0.62, KERB + 2.25, z + 2.19, 1, 0xffffff, sponsored ? prints.sponsor : pick(prints.posters));
+        shelters.push({ x: x * currentSide, z: (z + 2.19) * currentSide, y: KERB + 1.3, side: currentSide, sponsored });
         sink.both.glow.wallX(x - 1.8, KERB - 0.6, x + 1.8, KERB + 3.2, z + 2.25, 1, 0xcfe0ff, [0.1, 0.1, 0.9, 0.9]);
         sink.lo.props.block(x - 0.85, KERB, z - 2.2, x + 0.85, top + 0.12, z + 2.2, 0x6a7a88);
         castShade(sink, 'box', x, z, 0.85, 2.2, 0.4, 2.6, 0.75);
@@ -365,7 +372,7 @@ export function createStreetKit({ random, atlases, vegetation, cars }) {
     return {
         paving, kerbZ, kerbX, asphalt, decal, shade, castShade, setEdge, setSide, lamp, bench, bin, bollards, hydrant, bikeRack, poleSign,
         trafficLight, busShelter, mupi, adColumn, planter, cafeTerrace, streetTree,
-        parked,
+        parked, shelters,
         parkedCar(sink, x, z) {
             const name = pick(Object.keys(cars));
             const model = cars[name];

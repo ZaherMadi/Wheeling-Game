@@ -52,7 +52,7 @@ const CONFIG = {
 };
 
 const FIXED_STEP = 1 / 60;
-const MAX_RANKED_FRAMES = 72000;
+const MAX_RANKED_FRAMES = 216000; // an hour (server: MAX_FRAMES)
 // Ramps and tricks. The server replays these rules to verify ranked runs:
 // keep them identical to 51GamesAPI/wheelie_replay.py.
 const JUMP = {
@@ -1167,7 +1167,7 @@ function resetGame() {
         p.mesh.material.dispose();
     });
     state.smokeParticles = [];
-    
+
     // Nettoyer les lignes de vitesse du mode libre
     if (state.freeMode.speedLines) {
         state.freeMode.speedLines.forEach(line => {
@@ -1182,7 +1182,7 @@ function resetGame() {
         roadCurveTimer: 0,
         speedLines: []
     };
-    
+
     bikeGroup.position.set(0, 0, 0);
     // Apply mode-specific rotation
     if (GAME_SETTINGS.gameMode === 'free') {
@@ -1254,6 +1254,8 @@ async function startGame() {
         resetGame();
         state.runToken = runToken;
         state.rankedRunUnavailable = GAME_SETTINGS.gameMode === 'linear' && !runToken;
+        state.sessionError = state.rankedRunUnavailable ? lastSessionError : null;
+        if (state.rankedRunUnavailable) lateSession(crashSequence);
         setRankingStatus('');
         completedRankedRun = null;
         state.isPlaying = true;
@@ -1286,6 +1288,9 @@ async function startGame() {
         }
         startAnimationLoop();
         setTimeout(() => showKeyHints(9), 300);
+        startPresence();
+        // Standing at the start: the 5HC intro on the bus shelter ahead.
+        if (v2) setTimeout(() => v2.startAd(), 400);
 
         if (isMobile() && !document.fullscreenElement) {
             document.documentElement.requestFullscreen().catch(err => {
@@ -1531,10 +1536,10 @@ function setTrick(active) {
 
 // What the takeoff speed allows, said as the bike leaves the ramp.
 function announceFlip(kmh) {
-    if (kmh >= FLIP.doubleKmh) toast('DOUBLE BACKFLIP POSSIBLE', 'Reste appuyé : double · lâche après un tour : simple', { discreet: true });
-    else if (kmh >= FLIP.kmh) toast('BACKFLIP', 'Reste appuyé jusqu’à l’atterrissage', { discreet: true });
-    else if (kmh >= FLIP.kmh - 10) toast('UN PEU JUSTE…', `Backflip à ${FLIP.kmh} km/h`, { discreet: true });
-    else toast('TROP LENT !', `Backflip à ${FLIP.kmh} km/h`, { discreet: true });
+    if (kmh >= FLIP.doubleKmh) toast('DOUBLE BACKFLIP POSSIBLE', 'Reste appuyé : double · lâche après un tour : simple', { discreet: true, float: true });
+    else if (kmh >= FLIP.kmh) toast('BACKFLIP', 'Reste appuyé jusqu’à l’atterrissage', { discreet: true, float: true });
+    else if (kmh >= FLIP.kmh - 10) toast('UN PEU JUSTE…', `Backflip à ${FLIP.kmh} km/h`, { discreet: true, float: true });
+    else toast('TROP LENT !', `Backflip à ${FLIP.kmh} km/h`, { discreet: true, float: true });
 }
 
 function landFlip(frame) {
@@ -1544,14 +1549,14 @@ function landFlip(frame) {
         const bonus = (jump.trickFrames > 0 ? FLIP.trickBonus : FLIP.bonus)[turns];
         state.score += bonus;
         const name = turns >= 2 ? 'DOUBLE BACKFLIP' : 'BACKFLIP';
-        toast(`+${bonus}`, jump.trickFrames > 0 ? `${name} + FIGURE !` : `${name} !`);
+        toast(`+${bonus}`, jump.trickFrames > 0 ? `${name} + FIGURE !` : `${name} !`, { float: true });
         audio.play('new_record', { volume: 0.45 });
         audio.play('landing', { volume: 0.5 });
     } else if (outcome === 'bad') {
         state.vulnerableUntil = frame + FLIP.badFrames;
         state.badLanding = 1.6;
         audio.play('skid', { volume: 0.45 });
-        toast('MAUVAISE CHUTE', 'Fragile 10 s : un obstacle = chute', { discreet: true });
+        toast('MAUVAISE CHUTE', 'Fragile 10 s : un obstacle = chute', { discreet: true, float: true });
     } else if (outcome === 'crash') {
         // Landed on its back.
         gameOver();
@@ -1565,7 +1570,7 @@ function land(trickFrames, difficulty) {
         state.score += bonus;
         const air = trickFrames * FIXED_STEP * JUMP.airRate * difficulty;
         state.boost.charges = Math.min(BOOST.maxCharges, state.boost.charges + 1);
-        toast(`+${Math.round(bonus + air)}`, 'FIGURE RÉUSSIE · BOOST +1 (B)');
+        toast(`+${Math.round(bonus + air)}`, 'FIGURE RÉUSSIE · BOOST +1 (B)', { float: true });
         audio.play('multiplier_up', { volume: 0.45, rate: 1.15 });
         speak('landing', { force: true });
     }
@@ -1613,8 +1618,8 @@ function fireBoostEffects() {
     audio.play('backfire', { volume: 0.55, delay: 0.12 });
 }
 
-function toast(title, text, { discreet = false } = {}) {
-    document.dispatchEvent(new CustomEvent('wheelie:toast', { detail: { title, text, discreet } }));
+function toast(title, text, { discreet = false, float = false } = {}) {
+    document.dispatchEvent(new CustomEvent('wheelie:toast', { detail: { title, text, discreet, float } }));
 }
 
 // Phases of a competitive run, each opened by an overhead motorway sign:
@@ -1774,7 +1779,9 @@ function announceTricks(frame) {
 }
 
 function recordRankedInput(flags, accelerationScale = 1) {
-    if (!state.runToken || state.runReplayOverflow) return;
+    // Recorded from the first frame even before the session arrives (it may
+    // come a few seconds late: see lateSession()).
+    if (state.runReplayOverflow || GAME_SETTINGS.gameMode !== 'linear') return;
     if (state.inputLog.length / 2 >= MAX_RANKED_FRAMES) {
         state.runReplayOverflow = true;
         return;
@@ -1896,6 +1903,7 @@ function updateSpeedLines(dt) {
 async function gameOver() {
     if (!state.isPlaying) return;
     speedLines?.hide();
+    unrankedReason = null;
     if (state.runToken && !state.runReplayOverflow && state.inputLog.length >= 120) {
         state.inputLog[state.inputLog.length - 2] |= 0x10;
         completedRankedRun = {
@@ -1904,6 +1912,12 @@ async function gameOver() {
         };
     } else {
         completedRankedRun = null;
+        if (GAME_SETTINGS.gameMode === 'linear') {
+            unrankedReason = state.runReplayOverflow ? 'partie de plus d’une heure'
+                : !state.runToken ? `pas de session de classement (${state.sessionError || lastSessionError || 'serveur injoignable au départ'})`
+                    : 'partie trop courte';
+            reportUnrankedRun(unrankedReason, Math.floor(state.score), state.gameTime);
+        }
     }
     state.runToken = null;
     // A fall in the first seconds gets laughed at.
@@ -1928,10 +1942,10 @@ async function gameOver() {
             title: 'MOTO RÉCUPÉRÉE', text: 'Elle t’attend dans le monde libre.', seconds: 6
         } }));
     }
-    
+
     // Récupérer le nickname
     const nickname = localStorage.getItem('wheelie_nickname');
-    
+
     // Récupérer le high score depuis l'API si on a un nickname, sinon depuis localStorage
     let highScore = state.highScore;
     if (nickname) {
@@ -1944,7 +1958,7 @@ async function gameOver() {
             localStorage.setItem(HIGH_SCORE_KEY, highScore);
         }
     }
-    
+
     // Mettre à jour le high score si le score actuel est meilleur
     if (currentScore > highScore) {
         highScore = currentScore;
@@ -1982,17 +1996,13 @@ async function gameOver() {
         setRankingStatus('');
     } else if (GAME_SETTINGS.gameMode === 'free') {
         setRankingStatus('Mode libre : le score n’est pas classé.');
-    } else if (state.rankedRunUnavailable) {
-        setRankingStatus('Score non classé : impossible de vérifier la session de jeu.');
-    } else if (state.runReplayOverflow) {
-        setRankingStatus('Score non classé : durée maximale de partie atteinte.');
     } else {
-        setRankingStatus('Score non classé : la partie n’a pas produit de replay valide.');
+        setRankingStatus(`Score non classé : ${unrankedReason || 'la partie n’a pas produit de replay valide'}.`);
     }
-    
+
     const mobileControls = document.getElementById('mobile-controls');
     if (mobileControls) mobileControls.style.display = 'none';
-    
+
     // Afficher la popup de pseudo tant qu'on n'a pas de pseudo
     if (!nickname) {
         // Afficher la popup de pseudo après un court délai
@@ -2428,7 +2438,7 @@ function animate(timestamp = performance.now()) {
             // Nouveau système de score basé sur le temps
             // Base : 1 point par seconde (60 points par minute)
             // Utiliser la variable kmh déjà déclarée plus haut
-            
+
             // Seulement donner des points si la vitesse dépasse 20 km/h (en mouvement)
             if (kmh > 20) {
                 let scoreIncrement = dt; // dt est en secondes, donc 1 point/seconde de base
@@ -2618,7 +2628,7 @@ function animate(timestamp = performance.now()) {
                 }
             }
         }
-        
+
         // Only check collisions in linear mode
         if (GAME_SETTINGS.gameMode === 'linear') {
             checkCollisions();
@@ -2674,7 +2684,7 @@ function updateCamera() {
         const kmh = speedKmh();
         const roamMode = v2 ? v2.roam.mode : 'bike';
         const target = v2 ? v2.roam.focus : bikeGroup.position;
-        
+
         // FOV dynamique basé sur la vitesse
         // V2: the view opens up with speed, much more past 90 km/h.
         const fast = Math.max(0, Math.min(1, (kmh - 90) / 60));
@@ -2689,7 +2699,7 @@ function updateCamera() {
         // Distance de caméra dynamique
         let distanceOffset = 12; // Distance de base
         let heightOffset = 6; // Hauteur de base
-        
+
         // À l'accélération : la moto "décolle" de la caméra
         if (state.keys.up || (GAME_SETTINGS.controlMode === 'analog' && analogData.y < -0.3)) {
             if (kmh > 100) {
@@ -2815,7 +2825,7 @@ function updateCamera() {
         // Sur mobile, réduire fortement les distances pour garder la moto visible
         // Priorité à la width pour éviter les bugs de user agent
         const isMobileDevice = (window.innerWidth < 768) || isMobile();
-        
+
         // Distance de base réduite sur mobile
         // The V2 rider is larger on screen: stand a little further back on phones.
         let baseDistance = isMobileDevice ? (IS_V2 ? 6.5 : 5) : 8;
@@ -3287,13 +3297,13 @@ function setupMobileControls() {
         mobileControls.style.display = 'none';
         return;
     }
-    
+
     // Mettre à jour l'emoji du bouton gaz selon le mode de jeu
     const gasEmoji = document.getElementById('gas-emoji');
     if (gasEmoji) {
         gasEmoji.innerText = GAME_SETTINGS.gameMode === 'free' ? '⚡' : '💨';
     }
-    
+
     if (GAME_SETTINGS.controlMode === 'arrows') {
         mobileControls.style.display = 'block';
         arrowControls.style.display = 'block';
@@ -3773,6 +3783,52 @@ document.getElementById('gameover-menu-btn')?.addEventListener('click', quitToMe
 
 // API Configuration
 const API_BASE_URL = 'https://51-games-api.vercel.app/api/ranking';
+let unrankedReason = null;
+
+// A run the game could not rank: the owner sees it on the sessions page.
+function reportUnrankedRun(reason, score, seconds) {
+    if (score < 30) return;
+    apiFetch(`${API_BASE_URL}/run-issues`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+            nickname: localStorage.getItem('wheelie_nickname') || undefined, score, reason: reason.slice(0, 160),
+            version: IS_V2 ? 'v2' : 'v1', difficulty: GAME_SETTINGS.difficulty, seconds: Math.round(seconds)
+        })
+    }, 8000).catch(() => {});
+}
+
+// Who is playing (sessions page): every 30 s during a run.
+let presenceTimer = null;
+const presenceId = (() => {
+    try {
+        let id = sessionStorage.getItem('wheelie_client_id');
+        if (!id) {
+            id = Array.from(crypto.getRandomValues(new Uint8Array(12)), (b) => b.toString(16).padStart(2, '0')).join('');
+            sessionStorage.setItem('wheelie_client_id', id);
+        }
+        return id;
+    } catch {
+        return `t${Date.now().toString(36)}${Math.random().toString(36).slice(2, 10)}`;
+    }
+})();
+function sendPresence() {
+    if (document.hidden) return;
+    const mode = !state.isPlaying ? 'menu' : GAME_SETTINGS.gameMode === 'free' ? 'free' : 'competitive';
+    apiFetch(`${API_BASE_URL}/presence`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+            client_id: presenceId, nickname: localStorage.getItem('wheelie_nickname') || undefined, mode,
+            version: IS_V2 ? 'v2' : 'v1', score: state.isPlaying && mode === 'competitive' ? Math.floor(state.score) : undefined
+        })
+    }, 6000).catch(() => {});
+}
+function startPresence() {
+    clearInterval(presenceTimer);
+    sendPresence();
+    presenceTimer = setInterval(sendPresence, 30000);
+}
 // The player's nickname spoken in some lines (see src/player-voice.js).
 // Created here, after the API address: it registers the stored clips at once.
 const playerVoice = createPlayerVoice({ apiBase: () => API_BASE_URL, audio, apiFetch });
@@ -3806,16 +3862,40 @@ async function createWheelieRun() {
     const response = await apiFetch(`${API_BASE_URL}/wheelie-sessions`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ difficulty: GAME_SETTINGS.difficulty, version: IS_V2 ? 'v2' : 'v1' })
+        body: JSON.stringify({ difficulty: GAME_SETTINGS.difficulty, version: IS_V2 ? 'v2' : 'v1', nickname: localStorage.getItem('wheelie_nickname') || undefined })
     });
 
     if (!response.ok) {
+        lastSessionError = response.status === 429 ? 'trop de parties lancées en peu de temps' : `serveur de classement en erreur (${response.status})`;
         throw new Error(`Impossible d’ouvrir une session classée (${response.status})`);
     }
 
     const data = await response.json();
     if (!data.run_token) throw new Error('L’API n’a pas fourni de jeton de partie');
+    lastSessionError = null;
     return data.run_token;
+}
+
+// No session at the start (slow network, server waking up): keep asking for
+// a while; the server accepts a session up to 30 s younger than the run.
+let lastSessionError = null;
+async function lateSession(sequence) {
+    for (let attempt = 0; attempt < 8; attempt++) {
+        await new Promise((resolve) => setTimeout(resolve, 3000));
+        if (sequence !== crashSequence || !state.isPlaying || state.runToken) return;
+        if (state.gameTime > 24) break;
+        try {
+            const token = await Promise.race([createWheelieRun(), new Promise((_, reject) => setTimeout(() => reject(new Error('timeout')), 6000))]);
+            if (sequence !== crashSequence || !state.isPlaying || state.gameTime > 26) return;
+            state.runToken = token;
+            state.rankedRunUnavailable = false;
+            state.sessionError = null;
+            return;
+        } catch {
+            if (!lastSessionError) lastSessionError = 'serveur de classement injoignable';
+        }
+    }
+    state.sessionError = lastSessionError || 'serveur de classement injoignable';
 }
 
 // A ranked session is opened ahead of the ride (the API can take a couple of
@@ -3850,7 +3930,8 @@ function encodeInputLog(inputLog) {
 
 async function submitCompletedRun(nickname) {
     if (!completedRankedRun) {
-        setRankingStatus('Score non classé : aucun replay vérifiable n’est disponible.');
+        // Keep the reason given at the game over (it used to be replaced here).
+        if (!unrankedReason) setRankingStatus('Score non classé : aucun replay vérifiable n’est disponible.');
         return false;
     }
 
@@ -3937,14 +4018,14 @@ async function flushPendingSubmission() {
 }
 
 // Fonction pour récupérer le classement depuis l'API
-async function fetchLeaderboardFromAPI() {
+async function fetchLeaderboardFromAPI(skip = 0, limit = 20) {
     try {
-        const response = await apiFetch(`${API_BASE_URL}/leaderboard/${GAME_NAME}`);
-        
+        const response = await apiFetch(`${API_BASE_URL}/leaderboard/${GAME_NAME}?skip=${skip}&limit=${limit}`);
+
         if (!response.ok) {
             throw new Error('Erreur lors de la récupération du classement');
         }
-        
+
         const data = await response.json();
         return data.leaderboard || [];
     } catch (error) {
@@ -3957,14 +4038,14 @@ async function fetchLeaderboardFromAPI() {
 async function getPlayerStats(nickname) {
     try {
         const response = await apiFetch(`${API_BASE_URL}/player/${encodeURIComponent(nickname)}`, {}, 4000);
-        
+
         if (!response.ok) {
             if (response.status === 404) {
                 return null; // Joueur non trouvé
             }
             throw new Error('Erreur lors de la récupération des stats');
         }
-        
+
         const data = await response.json();
         return data;
     } catch (error) {
@@ -3978,7 +4059,7 @@ function showNicknamePopup(score) {
     const popup = document.getElementById('nickname-popup');
     const popupScore = document.getElementById('popup-score');
     const nicknameInput = document.getElementById('nickname-input');
-    
+
     if (popup && popupScore && nicknameInput) {
         popupScore.innerText = score;
         nicknameInput.value = '';
@@ -3989,21 +4070,67 @@ function showNicknamePopup(score) {
 
 async function submitNickname() {
     const nicknameInput = document.getElementById('nickname-input');
-    const nickname = nicknameInput.value.trim();
-    
+    let nickname = nicknameInput.value.trim();
+
     if (nickname.length > 0) {
+        // "MAZ", "Maz" and "mAz" are one player: back under their own name.
+        const known = await Promise.race([getPlayerStats(nickname), new Promise((resolve) => setTimeout(() => resolve(null), 4000))]);
+        if (known && known.nickname) {
+            nickname = known.nickname;
+            welcome(`Bon retour parmi nous ${nickname} !`, 'Tu peux changer l’apparence de ton pseudo dans Paramètres › Son & voix.');
+        } else {
+            welcome(`Bienvenue ${nickname} !`, 'Ton pseudo est enregistré avec ce score.');
+        }
         // The nickname is kept whatever happens to this run's submission.
         await submitCompletedRun(nickname);
 
-        localStorage.setItem('wheelie_nickname', nickname);
-        
+        setNickname(nickname);
+
         // Afficher le pseudo dans le menu
         displayNickname();
-        
+
         // Fermer la popup
         closeNicknamePopup();
     }
 }
+
+function welcome(title, text) {
+    if (IS_V2) document.dispatchEvent(new CustomEvent('wheelie:notice', { detail: { title, text, seconds: 5, tone: 'welcome' } }));
+    else setRankingStatus(`${title} ${text}`);
+}
+
+function setNickname(nickname) {
+    localStorage.setItem('wheelie_nickname', nickname);
+    displayNickname();
+    document.dispatchEvent(new CustomEvent('wheelie:nickname', { detail: { nickname } }));
+}
+
+// Settings: the same nickname, written another way (case only).
+async function changeNicknameLook() {
+    const input = document.getElementById('nickname-look');
+    const result = document.getElementById('nickname-look-result');
+    const current = localStorage.getItem('wheelie_nickname');
+    const wanted = (input?.value || '').trim();
+    const say = (text) => { if (result) result.textContent = text; };
+    if (!current) return say('Termine une partie classée pour créer ton pseudo.');
+    if (!wanted) return say('Écris ton pseudo comme tu veux qu’il apparaisse.');
+    if (wanted.toLowerCase() !== current.toLowerCase()) return say(`Seules les majuscules et minuscules peuvent changer (${current}).`);
+    say('Enregistrement…');
+    try {
+        const response = await apiFetch(`${API_BASE_URL}/player-display`, {
+            method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ nickname: wanted })
+        }, 8000);
+        if (!response.ok && response.status !== 404) throw new Error(String(response.status));
+        setNickname(wanted);
+        say(`C’est fait : ${wanted}`);
+    } catch {
+        say('Le serveur ne répond pas, réessaie plus tard.');
+    }
+}
+document.getElementById('nickname-look-save')?.addEventListener('click', changeNicknameLook);
+document.getElementById('nickname-look')?.addEventListener('focus', (event) => {
+    if (!event.target.value) event.target.value = localStorage.getItem('wheelie_nickname') || '';
+});
 
 function closeNicknamePopup() {
     const popup = document.getElementById('nickname-popup');
@@ -4015,7 +4142,7 @@ function displayNickname() {
     const nickname = localStorage.getItem('wheelie_nickname');
     const nicknameDisplay = document.getElementById('nickname-display');
     const playerNickname = document.getElementById('player-nickname');
-    
+
     if (nickname && nicknameDisplay && playerNickname) {
         nicknameDisplay.innerText = nickname;
         playerNickname.style.display = 'block';
@@ -4025,10 +4152,10 @@ function displayNickname() {
 function updateLeaderboard(nickname, score) {
     // Récupérer le leaderboard actuel
     let leaderboard = JSON.parse(localStorage.getItem('wheelie_leaderboard') || '[]');
-    
+
     // Chercher si le joueur existe déjà
     const existingIndex = leaderboard.findIndex(entry => entry.nickname === nickname);
-    
+
     if (existingIndex !== -1) {
         // Mettre à jour le score seulement s'il est meilleur
         if (score > leaderboard[existingIndex].score) {
@@ -4038,13 +4165,13 @@ function updateLeaderboard(nickname, score) {
         // Ajouter le nouveau joueur
         leaderboard.push({ nickname, score });
     }
-    
+
     // Trier par score décroissant
     leaderboard.sort((a, b) => b.score - a.score);
-    
+
     // Garder seulement le top 10
     leaderboard = leaderboard.slice(0, 10);
-    
+
     // Sauvegarder
     localStorage.setItem('wheelie_leaderboard', JSON.stringify(leaderboard));
 }
@@ -4053,34 +4180,66 @@ async function showLeaderboard() {
     const startScreen = document.getElementById('start-screen');
     const leaderboardScreen = document.getElementById('leaderboard-screen');
     const leaderboardList = document.getElementById('leaderboard-list');
-    
+
     if (startScreen) startScreen.classList.remove('active');
     if (leaderboardScreen) leaderboardScreen.classList.add('active');
-    
+
     // Afficher un message de chargement
     leaderboardList.innerHTML = '<p style="color: #888;">Chargement...</p>';
-    
-    // Récupérer le classement depuis l'API
-    const leaderboard = await fetchLeaderboardFromAPI();
-    
-    if (leaderboard.length === 0) {
+    leaderboardPage = { shown: 0, loading: false, done: false, sequence: (leaderboardPage.sequence || 0) + 1 };
+    const rows = await fetchLeaderboardFromAPI(0, 20);
+    leaderboardList.innerHTML = '';
+    if (rows.length === 0) {
         leaderboardList.innerHTML = '<p style="color: #888;">Aucun score enregistré...</p>';
-    } else {
-        let html = '';
-        leaderboard.forEach((entry, index) => {
-            const rank = index + 1;
-            const medal = rank === 1 ? '🥇' : rank === 2 ? '🥈' : rank === 3 ? '🥉' : `${rank}.`;
-            html += `
-                <div class="leaderboard-entry">
-                    <div class="leaderboard-rank">${medal}</div>
-                    <div class="leaderboard-name">${entry.nickname}</div>
-                    <div class="leaderboard-score">${entry.best_score}</div>
-                </div>
-            `;
+        return;
+    }
+    appendLeaderboardRows(rows, 20);
+}
+
+// Rows are built as elements: nicknames are typed by players, never HTML.
+let leaderboardPage = { shown: 0, loading: false, done: true, sequence: 0 };
+function appendLeaderboardRows(rows, requested) {
+    const list = document.getElementById('leaderboard-list');
+    list.querySelector('.leaderboard-more')?.remove();
+    const mine = (localStorage.getItem('wheelie_nickname') || '').toLowerCase();
+    for (const entry of rows) {
+        const rank = ++leaderboardPage.shown;
+        const row = document.createElement('div');
+        row.className = 'leaderboard-entry';
+        if (mine && String(entry.nickname).toLowerCase() === mine) row.classList.add('is-me');
+        const cells = [rank === 1 ? '🥇' : rank === 2 ? '🥈' : rank === 3 ? '🥉' : `${rank}.`, entry.nickname, entry.best_score];
+        ['leaderboard-rank', 'leaderboard-name', 'leaderboard-score'].forEach((name, i) => {
+            const cell = document.createElement('div');
+            cell.className = name;
+            cell.textContent = String(cells[i]);
+            row.append(cell);
         });
-        leaderboardList.innerHTML = html;
+        list.append(row);
+    }
+    leaderboardPage.done = rows.length < requested;
+    if (!leaderboardPage.done) {
+        const more = document.createElement('p');
+        more.className = 'leaderboard-more';
+        more.style.cssText = 'color: #888; text-align: center; margin: 10px 0;';
+        more.textContent = 'Fais défiler pour voir la suite…';
+        list.append(more);
     }
 }
+
+async function loadMoreLeaderboard() {
+    if (leaderboardPage.loading || leaderboardPage.done) return;
+    leaderboardPage.loading = true;
+    const sequence = leaderboardPage.sequence;
+    const rows = await fetchLeaderboardFromAPI(leaderboardPage.shown, 10);
+    if (sequence !== leaderboardPage.sequence) return;
+    leaderboardPage.loading = false;
+    if (rows.length) appendLeaderboardRows(rows, 10);
+    else leaderboardPage.done = true;
+}
+document.getElementById('leaderboard-list')?.addEventListener('scroll', (event) => {
+    const list = event.currentTarget;
+    if (list.scrollTop + list.clientHeight >= list.scrollHeight - 30) loadMoreLeaderboard();
+});
 
 // Event Listeners pour le système de pseudo et classement
 document.getElementById('submit-nickname')?.addEventListener('click', submitNickname);

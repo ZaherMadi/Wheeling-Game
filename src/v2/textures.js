@@ -536,7 +536,7 @@ export function createSkylineTexture() {
     return toTexture(canvas);
 }
 
-export function createJerseyTexture(number = '51', color = '#f6c416', ink = '#111') {
+export function createJerseyTexture(number = '51', color = '#f6c416', ink = '#111', name = '') {
     const size = 256;
     const [canvas, ctx] = makeCanvas(size, size);
     // Hoodie fleece with a big number on the back, as on the 51Wheling logo.
@@ -547,14 +547,24 @@ export function createJerseyTexture(number = '51', color = '#f6c416', ink = '#11
         ctx.fillStyle = `rgba(${random() > 0.5 ? '255,240,180' : '120,80,0'},0.06)`;
         ctx.fillRect(random() * size, random() * size, 2, 2);
     }
-    ctx.font = 'italic 900 150px "Arial Black", Arial, sans-serif';
     ctx.textAlign = 'center';
     ctx.textBaseline = 'middle';
+    // Name across the shoulders, number below (football shirt style).
+    const numberY = name ? size / 2 + 26 : size / 2 + 8;
+    if (name) {
+        ctx.font = '900 34px "Arial Black", Arial, sans-serif';
+        ctx.lineWidth = 6;
+        ctx.strokeStyle = '#111';
+        ctx.strokeText(name, size / 2, 46, size * 0.86);
+        ctx.fillStyle = ink;
+        ctx.fillText(name, size / 2, 46, size * 0.86);
+    }
+    ctx.font = `italic 900 ${name ? 128 : 150}px "Arial Black", Arial, sans-serif`;
     ctx.lineWidth = 10;
     ctx.strokeStyle = '#111';
-    ctx.strokeText(number, size / 2, size / 2 + 8, size * 0.92);
+    ctx.strokeText(number, size / 2, numberY, size * 0.92);
     ctx.fillStyle = ink;
-    ctx.fillText(number, size / 2, size / 2 + 8, size * 0.92);
+    ctx.fillText(number, size / 2, numberY, size * 0.92);
     return toTexture(canvas, { anisotropy: 4 });
 }
 

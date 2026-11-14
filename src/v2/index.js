@@ -4,6 +4,7 @@
 import * as THREE from 'three';
 import { createWorld } from './world.js';
 import { ROAM_SCALE, createRider } from './rider.js';
+import { createAdScreen } from './adscreen.js';
 import { createFx } from './fx.js';
 import { loadLivery, mountLiveryPanel } from './livery.js';
 import { createFreeRoam } from './freeroam.js';
@@ -32,12 +33,41 @@ export function createRealisticVersion({ scene, renderer, camera, mobile, audio,
     const rider = createRider({ scene });
     const fx = createFx({ scene, mobile });
     const roam = createFreeRoam({ scene, world, rider, audio, onTurn, playerVoice });
-    rider.setLivery(loadLivery());
+    // The player's nickname is printed above the number.
+    const riderName = () => {
+        try {
+            return localStorage.getItem('wheelie_nickname') || '';
+        } catch {
+            return '';
+        }
+    };
+    rider.setLivery({ ...loadLivery(), name: riderName() });
     mountLiveryPanel(document.getElementById('rider-options'), (livery) => {
-        rider.setLivery(livery);
+        rider.setLivery({ ...livery, name: riderName() });
         // The menu is a still frame: show the new look at once.
         renderer.render(scene, camera);
     });
+    document.addEventListener('wheelie:nickname', () => {
+        rider.setLivery({ ...loadLivery(), name: riderName() });
+        renderer.render(scene, camera);
+    });
+
+    // The 5HC intro on the bus shelter in front of the start.
+    const adScreen = createAdScreen({ scene });
+    function startAd() {
+        const bike = rider.bikeGroup;
+        // Ahead of the bike: -z in races, either way in free roam.
+        const forward = Math.cos(bike.rotation.y) < 0 ? -1 : 1;
+        // Shelters on the rider's right face the rider coming towards them:
+        // right-hand ones (side 1) face +z, left-hand ones (side -1) face -z.
+        const side = forward < 0 ? 1 : -1;
+        const ahead = world.busShelters()
+            .filter((s) => s.side === side && (s.z - bike.position.z) * forward > 24 && (s.z - bike.position.z) * forward < 60)
+            .sort((a, b) => (a.z - b.z) * forward)[0];
+        // A shelter close enough to be seen from the start, or a screen on a post.
+        if (ahead) adScreen.show(ahead.x, ahead.y, ahead.z - forward * 0.03, -forward, false);
+        else adScreen.show(13.5 * side, 3.3, bike.position.z + forward * 24, -forward, true);
+    }
 
     const bikeVelocity = new THREE.Vector3();
     const lastPosition = new THREE.Vector3();
@@ -99,6 +129,7 @@ export function createRealisticVersion({ scene, renderer, camera, mobile, audio,
         if (dt > 0) adaptResolution();
         const bike = rider.bikeGroup;
         bike.visible = (snapshot.linear || roam.bikeVisible) && !snapshot.blink;
+        adScreen.update(roam.mode === 'bike' || snapshot.linear ? bike.position : roam.focus);
         if (dt > 0) {
             bikeVelocity.subVectors(bike.position, lastPosition).divideScalar(dt);
             bikeVelocity.y = 0;
@@ -208,7 +239,7 @@ export function createRealisticVersion({ scene, renderer, camera, mobile, audio,
     }
 
     return {
-        world, rider, fx, roam, frame, reset, setQuality, showroom,
+        world, rider, fx, roam, frame, reset, setQuality, showroom, startAd, adScreen,
         get resolutionScale() { return resolution.scale; },
         smoke: () => fx.smoke(rider.bikeGroup.position, bikeVelocity),
         spark: () => fx.spark(point.copy(rider.bikeGroup.position).setY(0.08), bikeVelocity, 2)

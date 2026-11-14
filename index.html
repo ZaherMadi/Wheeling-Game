@@ -1356,21 +1356,21 @@
   <!-- MODE SELECTION SCREEN -->
   <div id="mode-select-screen" class="screen">
     <h1 style="font-size: 28px; margin-bottom: 30px;">CHOISIS TON MODE</h1>
-    
+
     <div style="display: flex; flex-direction: column; gap: 20px; width: 90%; max-width: 350px;">
       <!-- Compétitif -->
       <button id="select-competitive" style="background: linear-gradient(135deg, #FF6B35 0%, #F7931E 100%); padding: 20px 25px; border-radius: 15px; border: 3px solid rgba(255,255,255,0.3); cursor: pointer; text-align: center; display: flex; flex-direction: column; align-items: center; justify-content: center;">
         <div style="font-size: 20px; font-weight: bold; color: #000; font-family: 'Russo One', sans-serif; margin-bottom: 6px;">🏆 COMPÉTITIF</div>
         <div style="font-size: 13px; color: #333; font-weight: normal;">Classement + Obstacles</div>
       </button>
-      
+
       <!-- Mode Libre -->
       <button id="select-freemode" style="background: linear-gradient(135deg, #4ECDC4 0%, #44A08D 100%); padding: 20px 25px; border-radius: 15px; border: 3px solid rgba(255,255,255,0.3); cursor: pointer; text-align: center; display: flex; flex-direction: column; align-items: center; justify-content: center;">
         <div style="font-size: 20px; font-weight: bold; color: #000; font-family: 'Russo One', sans-serif; margin-bottom: 6px;">🌟 MODE LIBRE</div>
         <div style="font-size: 13px; color: #333; font-weight: normal;">Chill + Fun</div>
       </button>
     </div>
-    
+
     <button id="back-from-mode-select" style="margin-top: 30px; background: #444; font-size: 16px; padding: 12px 25px;">← RETOUR</button>
   </div>
 
@@ -1431,6 +1431,12 @@
         <button id="perspective-self" class="setting-btn v2-only">🏍️ DE LUI (1ʳᵉ PERS.)</button>
         <p class="setting-desc v2-only">Voix du personnage</p>
         <div id="rider-voice-options" class="v2-only"></div>
+        <p class="setting-desc">Apparence de ton pseudo (majuscules / minuscules)</p>
+        <div class="nickname-look">
+          <input id="nickname-look" maxlength="15" autocomplete="off" placeholder="Ton pseudo" aria-label="Apparence du pseudo">
+          <button id="nickname-look-save" class="setting-btn" type="button">OK</button>
+        </div>
+        <p class="setting-desc" id="nickname-look-result" aria-live="polite"></p>
         <p class="setting-desc">Accélération auto après 3s + Wheeling avec joystick bas</p>
       </div>
       <button class="back-to-main-btn">← RETOUR</button>
@@ -1550,7 +1556,7 @@
       // Force reflow pour activer la transition
       void portraitWarning.offsetWidth;
       portraitWarning.style.opacity = '1';
-      
+
       // Cacher automatiquement après 1.5 secondes
       if (hideTimeout) clearTimeout(hideTimeout);
       hideTimeout = setTimeout(() => {

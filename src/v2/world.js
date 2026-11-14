@@ -8,7 +8,7 @@ import * as THREE from 'three';
 import { Batch, Sink, facadeMatrix, sideMatrix, transform } from './geometry.js';
 import { createFoliageTexture } from './citytextures.js';
 import {
-    createCurtainWallTextures, createDecalAtlas, createPavingTexture, createPrintAtlas, createShopAtlas,
+    createCurtainWallTextures, createDecalAtlas, createPavingTexture, createPrintAtlas, paintSponsor, createShopAtlas,
     createSignAtlas, createWallTextures, createWindowAtlas
 } from './cityatlas.js';
 import { createVegetation } from './vegetation.js';
@@ -140,6 +140,15 @@ export function createWorld({ scene, renderer, mobile }) {
     const shopAtlas = createShopAtlas(mobile);
     const signAtlas = createSignAtlas(mobile);
     const printAtlas = createPrintAtlas(mobile, anisotropy);
+    // The 5HC logo on the sponsored bus shelters, once it has loaded.
+    {
+        const logo = new Image();
+        logo.onload = () => {
+            paintSponsor(printAtlas.canvas.getContext('2d'), printAtlas.sponsorRect, logo);
+            printAtlas.map.needsUpdate = true;
+        };
+        logo.src = '/5hc-logo.webp';
+    }
     const decalAtlas = createDecalAtlas(mobile, anisotropy);
     const foliageTexture = createFoliageTexture(mobile, anisotropy);
 
@@ -592,13 +601,15 @@ export function createWorld({ scene, renderer, mobile }) {
         const sink = new Sink(KEYS);
         const crossingZ = theme.crossing ? Math.round(range(-22, 18)) : null;
         street.parked.length = 0;
+        street.shelters.length = 0;
         for (const side of [1, -1]) buildSide(sink, side, theme, crossingZ, index);
         const parked = street.parked.slice();
+        const shelters = street.shelters.slice();
         const { hi, lo } = sink.build();
         const toSpecs = (geometries) => Object.entries(geometries)
             .filter(([, geometry]) => geometry)
             .map(([key, geometry]) => ({ key, geometry, material: materials[key], renderOrder: RENDER_ORDER[key] || 0 }));
-        return { hi: toSpecs(hi), lo: toSpecs(lo), free: [], theme: theme.name, crossingZ, parked };
+        return { hi: toSpecs(hi), lo: toSpecs(lo), free: [], theme: theme.name, crossingZ, parked, shelters };
     }
 
     const variants = [];
@@ -701,6 +712,17 @@ export function createWorld({ scene, renderer, mobile }) {
     function releaseChunk(chunk) {
         active.delete(chunk);
         chunk.userData.variant.free.push(chunk);
+    }
+
+    // Bus shelter ad panels on screen, in world coordinates.
+    function busShelters() {
+        const out = [];
+        for (const chunk of active) {
+            for (const shelter of chunk.userData.variant.shelters || []) {
+                out.push({ ...shelter, z: chunk.position.z + shelter.z });
+            }
+        }
+        return out;
     }
 
     // Free roam ------------------------------------------------------------------
@@ -956,7 +978,7 @@ export function createWorld({ scene, renderer, mobile }) {
 
     return {
         acquireChunk, releaseChunk, createObstacle, update, setDusk, setAmbience, setQuality, reseed, sharedMaterials, sun,
-        crossings, parkedNear, takeParked, createCar, carModels: Object.keys(cars),
+        crossings, busShelters, parkedNear, takeParked, createCar, carModels: Object.keys(cars),
         ambiences: Object.keys(AMBIENCES),
         stats: () => variants.map((variant) => ({
             theme: variant.theme,

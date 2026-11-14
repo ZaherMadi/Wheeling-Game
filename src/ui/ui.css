@@ -2163,3 +2163,73 @@ body.v2 #ui-toast.is-discreet .ui-toast__title {
 body.v2 #ui-toast.is-discreet .ui-toast__text {
   font-size: 11px !important;
 }
+
+/* Nickname look (settings) */
+.nickname-look {
+  display: flex;
+  gap: 8px;
+  width: 100%;
+  max-width: 320px;
+  margin: 0 auto;
+}
+
+.nickname-look input {
+  flex: 1;
+  min-width: 0;
+  padding: 8px 12px;
+  font: 600 15px system-ui, sans-serif;
+  color: #fff;
+  background: rgba(255, 255, 255, 0.08);
+  border: 1px solid rgba(255, 255, 255, 0.2);
+  border-radius: 6px;
+}
+
+.nickname-look button {
+  margin: 0 !important;
+  flex: none;
+}
+
+.leaderboard-entry.is-me {
+  outline: 1px solid #f6c416;
+  border-radius: 6px;
+}
+
+/* Jump / trick / backflip scores: right in the game, no panel, deep shadow
+   (like the wheelie multipliers). Phase announcements keep their panel. */
+body.v2 #ui-toast.is-float {
+  background: none;
+  border: 0;
+  box-shadow: none;
+  padding: 0;
+}
+
+body.v2 #ui-toast.is-float .ui-toast__title {
+  font-size: 54px !important;
+  color: #ffe066;
+  -webkit-text-stroke: 1.5px rgba(20, 14, 0, 0.7);
+  text-shadow:
+    0 3px 0 #2b1d00,
+    0 6px 14px rgba(0, 0, 0, 0.75),
+    0 0 26px rgba(246, 196, 22, 0.55);
+}
+
+body.v2 #ui-toast.is-float .ui-toast__text {
+  font-size: 15px !important;
+  color: #fff;
+  background: none;
+  text-shadow: 0 2px 3px rgba(0, 0, 0, 0.95), 0 0 12px rgba(0, 0, 0, 0.7);
+}
+
+body.v2 #ui-toast.is-float.is-discreet {
+  padding: 0;
+}
+
+body.v2 #ui-toast.is-float.is-discreet .ui-toast__title {
+  font-size: 26px !important;
+}
+
+@media (orientation: landscape) and (max-height: 520px) {
+  body.v2 #ui-toast.is-float .ui-toast__title {
+    font-size: 38px !important;
+  }
+}

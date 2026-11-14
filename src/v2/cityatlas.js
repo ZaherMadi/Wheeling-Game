@@ -496,6 +496,34 @@ export function createSignAtlas(lowQuality) {
 
 // --- Prints: awnings, railings, shutters, road signs, posters, doors -------------
 // Used by one double-sided, alpha-tested material.
+export function paintSponsor(ctx, { x, y, w, h }, logo) {
+    const gradient = ctx.createLinearGradient(x, y, x, y + h);
+    gradient.addColorStop(0, '#0b0f18');
+    gradient.addColorStop(1, '#02030a');
+    ctx.fillStyle = gradient;
+    ctx.fillRect(x, y, w, h);
+    ctx.fillStyle = '#f6c416';
+    ctx.fillRect(x + w * 0.1, y + h * 0.2, w * 0.8, Math.max(1, h * 0.008));
+    ctx.textAlign = 'center';
+    ctx.textBaseline = 'middle';
+    ctx.fillStyle = '#e9edf3';
+    ctx.font = `700 ${Math.round(w * 0.085)}px Arial, sans-serif`;
+    ctx.fillText('SPONSORED BY', x + w / 2, y + h * 0.13, w * 0.9);
+    if (logo) {
+        const scale = (w * 0.94) / logo.width;
+        const lw = logo.width * scale;
+        const lh = logo.height * scale;
+        ctx.drawImage(logo, x + (w - lw) / 2, y + h * 0.52 - lh / 2, lw, lh);
+    } else {
+        ctx.fillStyle = '#f6c416';
+        ctx.font = `italic 900 ${Math.round(w * 0.32)}px "Arial Black", Arial, sans-serif`;
+        ctx.fillText('5HC', x + w / 2, y + h * 0.52, w * 0.9);
+    }
+    ctx.fillStyle = 'rgba(255,255,255,0.7)';
+    ctx.font = `600 ${Math.round(w * 0.065)}px Arial, sans-serif`;
+    ctx.fillText('sites · applications · design', x + w / 2, y + h * 0.88, w * 0.92);
+}
+
 export function createPrintAtlas(lowQuality, anisotropy) {
     const size = lowQuality ? 512 : 1024;
     const u = size / 8;
@@ -771,8 +799,14 @@ export function createPrintAtlas(lowQuality, anisotropy) {
         atlas.add('tactile', 4 * u, y, u, u);
     }
 
+    // Bus shelter poster "Sponsored by 5HC" (1u x 1.5u): the logo is painted
+    // in when its image has loaded (world.js, paintSponsor).
+    const sponsorRect = { x: 5 * u, y: 6 * u, w: u, h: 1.5 * u };
+    paintSponsor(ctx, sponsorRect, null);
+    atlas.add('sponsor', sponsorRect.x, sponsorRect.y, sponsorRect.w, sponsorRect.h, 1);
+
     const texture = toTexture(atlas.canvas, { anisotropy });
-    return { map: texture, cells: atlas.cells };
+    return { map: texture, cells: atlas.cells, canvas: atlas.canvas, sponsorRect };
 }
 
 // --- Road decals -------------------------------------------------------------------
