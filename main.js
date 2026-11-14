@@ -8,6 +8,7 @@ import { createAudioEngine } from './src/audio-engine.js';
 import { BIKE_RECOVERY_POINTS, addPoints, finePoints, releaseBike, syncPoints, totalPoints } from './src/v2/freeroam.js';
 import { createPlayerVoice } from './src/player-voice.js';
 import { renderTrophyRoom } from './src/trophy-room.js';
+import { HumanCheckRequired, forgetPass, runHumanCheck, storedPass } from './src/human-check.js';
 import { rewards } from './src/unlocks.js';
 import { createSpeedLines } from './src/v2/speedlines.js';
 import riderVoices from './src/rider-voices.json';
@@ -1486,17 +1487,48 @@ async function startGame() {
     audio.prepare();
     stopVoice();
     let runToken = null;
+    let humanCheckSkipped = false;
     if (GAME_SETTINGS.gameMode === 'linear') {
         // Say so if the ranking server is slow to answer.
         const notice = setTimeout(() => showConnecting(true), 350);
+        let check = null;
         try {
             runToken = await takeWheelieRun();
         } catch (error) {
-            console.error('Classement indisponible:', error);
-            logEvent('Session classée indisponible au départ', { error: String(error && error.message || error) });
+            if (error instanceof HumanCheckRequired) check = error;
+            else {
+                console.error('Classement indisponible:', error);
+                logEvent('Session classée indisponible au départ', { error: String(error && error.message || error) });
+            }
         } finally {
             clearTimeout(notice);
             showConnecting(false);
+        }
+        // First ranked run of the visit (or the pass expired): the human check.
+        if (check) {
+            const result = await runHumanCheck({
+                sitekey: check.sitekey, apiBase: API_BASE_URL, apiFetch,
+                onEvent: (event) => logEvent('Vérification anti-robot', { result: event })
+            });
+            if (result === 'cancel') {
+                startInProgress = false;
+                quitToMenu();
+                return;
+            }
+            if (result === 'passed') {
+                const notice = setTimeout(() => showConnecting(true), 350);
+                try {
+                    runToken = await Promise.race([createWheelieRun(),
+                        new Promise((_, reject) => setTimeout(() => reject(new Error('le serveur ne répond pas')), 6000))]);
+                } catch (error) {
+                    logEvent('Session classée indisponible après la vérification', { error: String(error && error.message || error) });
+                } finally {
+                    clearTimeout(notice);
+                    showConnecting(false);
+                }
+            } else {
+                humanCheckSkipped = true;
+            }
         }
     }
 
@@ -1504,7 +1536,7 @@ async function startGame() {
         resetGame();
         state.runToken = runToken;
         state.rankedRunUnavailable = GAME_SETTINGS.gameMode === 'linear' && !runToken;
-        state.sessionError = state.rankedRunUnavailable ? lastSessionError : null;
+        state.sessionError = humanCheckSkipped ? HUMAN_CHECK_SKIPPED : state.rankedRunUnavailable ? lastSessionError : null;
         if (state.rankedRunUnavailable) lateSession(crashSequence);
         setRankingStatus('');
         completedRankedRun = null;
@@ -2488,7 +2520,8 @@ async function gameOver(reason = 'crash') {
                 : !state.runToken ? `pas de session de classement (${state.sessionError || lastSessionError || 'serveur injoignable au départ'})`
                     : 'partie trop courte';
             reportUnrankedRun(unrankedReason, Math.floor(state.score), state.gameTime);
-            if (state.score >= 30) {
+            // Playing without the human check is a choice, not a fault.
+            if (state.score >= 30 && state.sessionError !== HUMAN_CHECK_SKIPPED) {
                 report('ranking.unranked', `Partie non classée : ${unrankedReason}`, {
                     level: state.score >= 300 ? 'error' : 'warning',
                     group: unrankedReason.replace(/\(\d+\)/g, '(n)'),
@@ -4629,9 +4662,22 @@ async function createWheelieRun() {
     const response = await apiFetch(`${API_BASE_URL}/wheelie-sessions`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ difficulty: GAME_SETTINGS.difficulty, version: IS_V2 ? 'v2' : 'v1', nickname: localStorage.getItem('wheelie_nickname') || undefined })
+        body: JSON.stringify({
+            difficulty: GAME_SETTINGS.difficulty, version: IS_V2 ? 'v2' : 'v1', nickname: localStorage.getItem('wheelie_nickname') || undefined,
+            human_pass: storedPass() || undefined
+        })
     });
 
+    if (response.status === 403) {
+        // No pass, or an expired one: the human check comes first.
+        const data = await response.json().catch(() => ({}));
+        const sitekey = data && data.human_check && data.human_check.sitekey;
+        if (sitekey) {
+            forgetPass();
+            lastSessionError = HUMAN_CHECK_SKIPPED;
+            throw new HumanCheckRequired(sitekey);
+        }
+    }
     if (!response.ok) {
         lastSessionError = response.status === 429 ? 'trop de parties lancées en peu de temps' : `serveur de classement en erreur (${response.status})`;
         if (response.status === 429) report('ranking.rate_limited', 'Session classée refusée : trop de parties', { once: true });
@@ -4648,7 +4694,10 @@ async function createWheelieRun() {
 // No session at the start (slow network, server waking up): keep asking for
 // a while; the server accepts a session up to 30 s younger than the run.
 let lastSessionError = null;
+// Why a run is unranked when the player did not do the human check.
+const HUMAN_CHECK_SKIPPED = 'vérification anti-robot non faite';
 async function lateSession(sequence) {
+    if (state.sessionError === HUMAN_CHECK_SKIPPED) return;
     for (let attempt = 0; attempt < 8; attempt++) {
         await new Promise((resolve) => setTimeout(resolve, 3000));
         if (sequence !== crashSequence || !state.isPlaying || state.runToken) return;
@@ -4660,7 +4709,12 @@ async function lateSession(sequence) {
             state.rankedRunUnavailable = false;
             state.sessionError = null;
             return;
-        } catch {
+        } catch (error) {
+            // The check cannot be shown during a ride: this one stays unranked.
+            if (error instanceof HumanCheckRequired) {
+                state.sessionError = HUMAN_CHECK_SKIPPED;
+                return;
+            }
             if (!lastSessionError) lastSessionError = 'serveur de classement injoignable';
         }
     }

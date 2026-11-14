@@ -171,6 +171,15 @@ function decorateLeaderboard() {
     }
 }
 
+function decorateHumanCheck() {
+    const screen = $('human-check-screen');
+    if (!screen) return;
+    screen.classList.add('ui-panel-screen');
+    screen.querySelector('h1')?.classList.add('ui-title');
+    button($('human-check-unranked'), { icon: 'play', label: 'JOUER SANS CLASSEMENT', variant: 'row' });
+    button($('human-check-cancel'), { icon: 'back', label: 'RETOUR', variant: 'ghost' });
+}
+
 function decorateGameOver() {
     const screen = $('game-over-screen');
     if (!screen) return;
@@ -500,7 +509,7 @@ export function installRacingUI() {
     document.body.classList.add('ui-racing');
     // A styling problem must never stop the game: each part fails alone.
     for (const decorate of [decorateMenu, decorateModeSelect, decorateRiderScreen, decorateSettings, decorateLeaderboard,
-        decorateGameOver, decorateNickname, decorateHud, decorateControls, installToasts, installPrompt, installSubtitles, installKeyHints, installNotices]) {
+        decorateHumanCheck, decorateGameOver, decorateNickname, decorateHud, decorateControls, installToasts, installPrompt, installSubtitles, installKeyHints, installNotices]) {
         try {
             decorate();
         } catch (error) {

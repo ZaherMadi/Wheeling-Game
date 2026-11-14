@@ -1544,6 +1544,16 @@
     <button id="back-from-trophies" type="button" style="margin-top: 12px; background: #444; font-size: 16px; padding: 12px 25px;">← RETOUR</button>
   </div>
 
+  <!-- HUMAN CHECK: the Cloudflare box before ranked runs, once per visit -->
+  <div id="human-check-screen" class="screen human-check">
+    <h1 class="human-check-title">VÉRIFICATION</h1>
+    <p class="human-check-text">Avant les parties classées, prouve que tu es humain : pas de robot ni d'agent IA au classement. Une seule fois par visite.</p>
+    <div id="human-check-box" class="human-check-box"></div>
+    <p id="human-check-status" class="human-check-status" role="status" aria-live="polite" hidden></p>
+    <button id="human-check-unranked" type="button" style="margin-top: 14px; background: #888; font-size: 16px; padding: 12px 25px;">JOUER SANS CLASSEMENT</button>
+    <button id="human-check-cancel" type="button" style="margin-top: 10px; background: #444; font-size: 16px; padding: 12px 25px;">← RETOUR</button>
+  </div>
+
   <script type="module" src="/main.js"></script>
 
   <!-- PWA Service Worker Registration -->

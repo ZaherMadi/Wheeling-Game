@@ -109,6 +109,55 @@ button:focus-visible {
   opacity: 0.85;
 }
 
+/* Human check before ranked runs (both versions): above every other screen. */
+#human-check-screen {
+  z-index: 30000;
+  background: rgba(6, 8, 14, 0.94);
+  overflow-y: auto;
+  padding: calc(16px + env(safe-area-inset-top, 0px)) 16px calc(20px + env(safe-area-inset-bottom, 0px));
+}
+
+.human-check-title {
+  margin: 0 0 10px;
+  font-size: clamp(24px, 7vw, 34px);
+  text-align: center;
+}
+
+.human-check-text {
+  max-width: 420px;
+  margin: 0 auto 18px;
+  color: #ddd;
+  font-size: clamp(14px, 3.8vw, 17px);
+  line-height: 1.4;
+  text-align: center;
+}
+
+/* The Cloudflare widget: flexible, so as wide as this box (65 px high). */
+.human-check-box {
+  display: block;
+  width: 100%;
+  max-width: 420px;
+  min-height: 65px;
+  margin: 0 auto;
+}
+
+#human-check-screen button {
+  width: 100%;
+  max-width: 420px;
+}
+
+#human-check-screen #human-check-cancel {
+  width: auto;
+}
+
+.human-check-status {
+  max-width: 420px;
+  margin: 12px auto 0;
+  color: #ffd700;
+  font-size: 15px;
+  text-align: center;
+}
+
 /* Trophy room (both versions). */
 #trophy-screen {
   justify-content: flex-start;
