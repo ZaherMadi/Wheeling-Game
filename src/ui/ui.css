@@ -2374,9 +2374,13 @@ body.v2 #ui-toast.is-float.is-discreet .ui-toast__title {
   }
 }
 
-/* Leaderboard with the podium: the 3D podium shows through #podium-stage,
-   beside the list on wide screens, above it in portrait, and on its own
-   tab (swipe) when the screen is too short for both. */
+/* Leaderboard with the podium. main.js wraps the list, its heading and
+   buttons in .lb-panel; the 3D podium shows through #podium-stage (drag on
+   it to turn around). Two looks (Paramètres › Qualité graphique):
+   - board-podium (default): podium beside the list on wide screens, a band
+     above it in portrait, tabs (and swipe) on short landscape phones;
+   - board-classic: the podium full screen first, then the old list slides
+     in from the left; swipe left (or ‹ PODIUM) to see the podium again. */
 body.v2 #leaderboard-screen.has-podium {
   display: grid;
   background: none;
@@ -2384,55 +2388,35 @@ body.v2 #leaderboard-screen.has-podium {
   align-items: stretch;
   justify-items: stretch;
   overflow: hidden;
-  column-gap: 18px;
-  row-gap: 0;
-  grid-template-columns: minmax(0, 1fr) minmax(340px, 36vw);
-  grid-template-rows: auto minmax(0, 1fr) auto auto auto;
-  grid-template-areas:
-    "stage head"
-    "stage list"
-    "stage pose"
-    "stage trophies"
-    "stage back";
-}
-
-body.v2 #leaderboard-screen.has-podium::before {
-  content: '';
-  grid-column: 2;
-  grid-row: 1 / -1;
-  margin: -8px -8px;
-  background: linear-gradient(180deg, rgba(6, 8, 14, 0.86), rgba(6, 8, 14, 0.93));
-  border: 1px solid rgba(255, 255, 255, 0.07);
-  border-radius: 14px;
-  box-shadow: 0 18px 48px rgba(0, 0, 0, 0.45);
+  gap: 16px;
 }
 
 body.v2 #leaderboard-screen.has-podium > * {
-  position: relative;
-  z-index: 1;
   min-width: 0;
-}
-
-body.v2 #leaderboard-screen.has-podium > .ui-heading { grid-area: head; }
-body.v2 #leaderboard-screen.has-podium > #leaderboard-list {
-  grid-area: list;
-  width: 100%;
-  max-height: none;
   min-height: 0;
-  margin: 4px 0 10px;
 }
-body.v2 #leaderboard-screen.has-podium > #pose-picker { grid-area: pose; }
-body.v2 #leaderboard-screen.has-podium > #trophies-btn { grid-area: trophies; justify-self: center; }
-body.v2 #leaderboard-screen.has-podium > #back-from-leaderboard { grid-area: back; justify-self: center; }
-body.v2 #leaderboard-screen.has-podium > #podium-stage { grid-area: stage; }
 
-body.v2 #leaderboard-screen:not(.has-podium) > :is(#pose-picker, #podium-stage, .podium-tabs) {
+body.v2 #leaderboard-screen:not(.has-podium) > :is(#podium-stage, .podium-tabs),
+body.v2 #leaderboard-screen:not(.has-podium) #list-to-podium {
   display: none !important;
 }
 
-.podium-stage {
+.lb-panel {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
   min-height: 0;
-  pointer-events: none;
+}
+
+.podium-stage {
+  position: relative;
+  min-height: 0;
+  touch-action: none;
+  cursor: grab;
+}
+
+.podium-stage:active {
+  cursor: grabbing;
 }
 
 .podium-caption {
@@ -2453,6 +2437,7 @@ body.v2 #leaderboard-screen:not(.has-podium) > :is(#pose-picker, #podium-stage, 
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
+  pointer-events: none;
   transform: translate(-50%, -12px);
   opacity: 0;
   transition: opacity 0.35s ease, transform 0.35s ease;
@@ -2463,118 +2448,119 @@ body.v2 #leaderboard-screen:not(.has-podium) > :is(#pose-picker, #podium-stage, 
   transform: translate(-50%, 0);
 }
 
+body.v2 :is(.podium-next, .podium-back) {
+  display: none;
+  margin: 0 !important;
+  padding: 8px 16px !important;
+  border-radius: 999px !important;
+  border: 1px solid rgba(246, 196, 22, 0.7) !important;
+  background: rgba(8, 9, 13, 0.85) !important;
+  color: #ffd34a !important;
+  font-family: var(--display);
+  font-size: 13px !important;
+  letter-spacing: 0.06em;
+  box-shadow: none !important;
+  width: auto !important;
+  min-height: 0 !important;
+  transform: none !important;
+}
+
 .podium-tabs {
   display: none;
 }
 
-/* The player's pose on the podium. */
-.pose-picker {
-  margin: 0 0 8px;
+/* --- Default: podium + list -------------------------------------------- */
+body.v2 #leaderboard-screen.board-podium {
+  grid-template-columns: minmax(0, 1fr) minmax(340px, 34vw);
+  grid-template-rows: minmax(0, 1fr);
+  grid-template-areas: "stage panel";
 }
 
-.pose-picker__title {
-  display: flex;
-  justify-content: space-between;
-  align-items: baseline;
-  gap: 8px;
-  margin: 0 2px 6px;
-  font-family: var(--display);
-  font-size: 12px;
-  letter-spacing: 0.08em;
-  color: var(--muted, #aab);
+body.v2 #leaderboard-screen.board-podium > #podium-stage { grid-area: stage; }
+body.v2 #leaderboard-screen.board-podium > .lb-panel {
+  grid-area: panel;
+  padding: 12px 12px 8px;
+  background: linear-gradient(180deg, rgba(6, 8, 14, 0.86), rgba(6, 8, 14, 0.93));
+  border: 1px solid rgba(255, 255, 255, 0.07);
+  border-radius: 14px;
+  box-shadow: 0 18px 48px rgba(0, 0, 0, 0.45);
 }
 
-.pose-picker__title b {
-  color: var(--y, #f6c416);
+body.v2 #leaderboard-screen.board-podium .lb-panel #leaderboard-list {
+  flex: 1 1 auto;
+  width: 100% !important;
+  max-height: none !important;
+  min-height: 0;
+  margin: 6px 0 4px;
 }
 
-.pose-picker__list {
-  display: flex;
-  gap: 6px;
-  overflow-x: auto;
-  padding-bottom: 4px;
-  scrollbar-width: thin;
-  scrollbar-color: rgba(246, 196, 22, 0.6) transparent;
+/* Compact rows: five players at a glance. */
+body.v2 #leaderboard-screen.board-podium .leaderboard-entry {
+  padding: 7px 12px;
+  margin-bottom: 4px;
 }
 
-body.v2 .pose-chip {
-  flex: 0 0 auto;
-  margin: 0 !important;
-  padding: 7px 11px !important;
-  border-radius: 999px !important;
-  border: 1px solid rgba(255, 255, 255, 0.14) !important;
-  background: rgba(30, 33, 40, 0.92) !important;
-  color: #e8e8ea !important;
-  font-family: var(--display);
-  font-size: 12px !important;
-  letter-spacing: 0.03em;
+body.v2 #leaderboard-screen.board-podium .leaderboard-rank { font-size: 15px; }
+body.v2 #leaderboard-screen.board-podium .leaderboard-name { font-size: 14px; }
+body.v2 #leaderboard-screen.board-podium .leaderboard-score { font-size: 16px; }
+
+body.v2 #leaderboard-screen.board-podium .lb-panel .ui-title {
+  font-size: clamp(20px, 2.6vw, 30px) !important;
+  margin-bottom: 4px !important;
+}
+
+body.v2 #leaderboard-screen.has-podium .lb-panel .ui-btn--row :is(.ui-btn__label, .ui-btn__text) {
+  font-size: 14px !important;
   white-space: nowrap;
-  box-shadow: none !important;
-  transform: none !important;
-  width: auto !important;
-  min-height: 0 !important;
 }
 
-body.v2 .pose-chip em {
-  font-style: normal;
-  color: var(--y, #f6c416);
-  margin-left: 6px;
+body.v2 #leaderboard-screen.has-podium .lb-panel .ui-btn--row .ui-icon {
+  width: 18px;
+  height: 18px;
 }
 
-body.v2 .pose-chip.is-chosen {
-  border-color: rgba(246, 196, 22, 0.9) !important;
-  background: rgba(246, 196, 22, 0.16) !important;
+body.v2 #leaderboard-screen.has-podium .lb-panel .ui-btn--row {
+  font-size: 14px !important;
+  width: 100% !important;
+  max-width: 460px;
+  padding: 9px 16px !important;
+  margin-top: 6px !important;
 }
 
-body.v2 .pose-chip.is-confirm {
-  border-color: #ff7a1a !important;
-  background: rgba(255, 122, 26, 0.22) !important;
+body.v2 #leaderboard-screen.has-podium .lb-panel #back-from-leaderboard {
+  margin-top: 6px !important;
 }
 
-.pose-picker__note {
-  margin: 4px 2px 0 !important;
-  min-height: 1em;
-  font-size: 12px !important;
-  color: #cfd2d8;
-}
-
-/* Portrait: the podium above, the list below. */
 @media (orientation: portrait) {
-  body.v2 #leaderboard-screen.has-podium {
+  body.v2 #leaderboard-screen.board-podium {
     grid-template-columns: minmax(0, 1fr);
-    grid-template-rows: minmax(160px, 36vh) auto minmax(0, 1fr) auto auto auto;
-    grid-template-areas: "stage" "head" "list" "pose" "trophies" "back";
+    grid-template-rows: minmax(130px, 26vh) minmax(0, 1fr);
+    grid-template-areas: "stage" "panel";
+    gap: 8px;
   }
 
-  body.v2 #leaderboard-screen.has-podium::before {
-    grid-column: 1;
-    grid-row: 2 / -1;
-  }
-
-  body.v2 #leaderboard-screen.has-podium > .ui-heading .ui-icon--hero {
+  body.v2 #leaderboard-screen.board-podium .lb-panel .ui-heading .ui-icon--hero {
     display: none;
   }
+
+  body.v2 #leaderboard-screen.board-podium .lb-panel .ui-heading p {
+    font-size: 11px !important;
+  }
 }
 
-/* Short landscape (phones): one at a time, tabs at the top, swipe. */
 @media (orientation: landscape) and (max-height: 520px) {
-  body.v2 #leaderboard-screen.has-podium {
+  body.v2 #leaderboard-screen.board-podium {
     grid-template-columns: minmax(0, 1fr);
-    grid-template-rows: auto minmax(0, 1fr) auto auto auto;
-    grid-template-areas: "tabs" "list" "pose" "trophies" "back";
+    grid-template-rows: auto minmax(0, 1fr);
+    grid-template-areas: "tabs" "panel";
+    gap: 6px;
   }
 
-  body.v2 #leaderboard-screen.has-podium::before {
-    grid-column: 1;
-    grid-row: 2 / -1;
-  }
-
-  body.v2 #leaderboard-screen.has-podium > .podium-tabs {
+  body.v2 #leaderboard-screen.board-podium > .podium-tabs {
     grid-area: tabs;
     display: flex;
     justify-self: center;
     gap: 4px;
-    margin-bottom: 8px;
     padding: 3px;
     border-radius: 999px;
     background: rgba(8, 9, 13, 0.82);
@@ -2602,25 +2588,227 @@ body.v2 .pose-chip.is-confirm {
     color: #111 !important;
   }
 
-  body.v2 #leaderboard-screen.has-podium > .ui-heading {
+  body.v2 #leaderboard-screen.board-podium .lb-panel .ui-heading {
     display: none;
   }
 
-  body.v2 #leaderboard-screen.has-podium.tab-list > #podium-stage {
+  body.v2 #leaderboard-screen.board-podium.tab-list > #podium-stage,
+  body.v2 #leaderboard-screen.board-podium.tab-podium > .lb-panel {
     display: none;
   }
 
-  body.v2 #leaderboard-screen.has-podium.tab-podium::before,
-  body.v2 #leaderboard-screen.has-podium.tab-podium > :is(#leaderboard-list, #pose-picker, #trophies-btn) {
+  body.v2 #leaderboard-screen.board-podium.tab-podium > #podium-stage {
+    grid-area: panel;
+  }
+}
+
+/* --- Classic: the podium full screen, then the old list over it --------- */
+body.v2 #leaderboard-screen.board-classic {
+  grid-template: minmax(0, 1fr) / minmax(0, 1fr);
+}
+
+body.v2 #leaderboard-screen.board-classic > :is(#podium-stage, .lb-panel) {
+  grid-area: 1 / 1;
+}
+
+body.v2 #leaderboard-screen.board-classic > .lb-panel {
+  position: relative;
+  z-index: 2;
+  justify-content: center;
+  margin: calc(-16px - var(--safe-t)) calc(-16px - var(--safe-r)) calc(-16px - var(--safe-b)) calc(-16px - var(--safe-l));
+  padding: calc(16px + var(--safe-t)) calc(16px + var(--safe-r)) calc(16px + var(--safe-b)) calc(16px + var(--safe-l));
+  background:
+    radial-gradient(120% 90% at 50% 45%, rgba(6, 8, 14, 0.55), rgba(6, 8, 14, 0.92)),
+    linear-gradient(180deg, rgba(6, 8, 14, 0.6), rgba(6, 8, 14, 0.9));
+  transform: translateX(-104%);
+  transition: transform 0.55s cubic-bezier(0.22, 0.8, 0.25, 1);
+}
+
+body.v2 #leaderboard-screen.board-classic.show-list > .lb-panel {
+  transform: translateX(0);
+}
+
+body.v2 #leaderboard-screen.board-classic.show-list > #podium-stage {
+  pointer-events: none;
+}
+
+body.v2 #leaderboard-screen.board-classic.show-podium #podium-to-list {
+  display: block;
+  position: absolute;
+  left: 50%;
+  bottom: calc(18px + var(--safe-b));
+  transform: translateX(-50%) !important;
+}
+
+body.v2 #leaderboard-screen.board-classic.show-list #list-to-podium {
+  display: block;
+  position: absolute;
+  left: calc(16px + var(--safe-l));
+  top: calc(14px + var(--safe-t));
+}
+
+/* --- The pose screen: the player on the podium, the poses --------------- */
+body.v2 #pose-screen {
+  display: grid;
+  background: none;
+  justify-content: stretch;
+  align-items: stretch;
+  overflow: hidden;
+  gap: 16px;
+  grid-template-columns: minmax(0, 1fr) minmax(320px, 34vw);
+  grid-template-areas: "stage panel";
+}
+
+body.v2 #pose-screen > * {
+  min-width: 0;
+  min-height: 0;
+}
+
+body.v2 #pose-screen > #pose-stage { grid-area: stage; }
+
+.pose-panel {
+  grid-area: panel;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  padding: 14px;
+  background: linear-gradient(180deg, rgba(6, 8, 14, 0.86), rgba(6, 8, 14, 0.93));
+  border: 1px solid rgba(255, 255, 255, 0.07);
+  border-radius: 14px;
+  overflow-y: auto;
+}
+
+body.v2 .pose-panel .ui-title {
+  font-size: clamp(20px, 2.6vw, 30px) !important;
+  text-align: center;
+}
+
+.pose-bubble {
+  position: relative;
+  max-width: 420px;
+  margin: 4px auto 14px !important;
+  padding: 12px 16px;
+  border-radius: 16px;
+  background: #fffaf0;
+  color: #15171c;
+  font-size: 15px !important;
+  font-weight: 600;
+  line-height: 1.35;
+  text-align: center;
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.35);
+}
+
+.pose-bubble::after {
+  content: '';
+  position: absolute;
+  left: 50%;
+  bottom: -9px;
+  width: 18px;
+  height: 18px;
+  background: #fffaf0;
+  transform: translateX(-50%) rotate(45deg);
+}
+
+.pose-picker {
+  width: 100%;
+  max-width: 460px;
+}
+
+.pose-picker__title {
+  display: flex;
+  justify-content: flex-end;
+  margin: 0 2px 8px;
+  font-family: var(--display);
+  font-size: 13px;
+  letter-spacing: 0.06em;
+  color: var(--muted, #aab);
+}
+
+.pose-picker__title b {
+  color: var(--y, #f6c416);
+}
+
+.pose-picker__list {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(150px, 1fr));
+  gap: 6px;
+}
+
+body.v2 .pose-chip {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 6px;
+  margin: 0 !important;
+  padding: 9px 12px !important;
+  border-radius: 10px !important;
+  border: 1px solid rgba(255, 255, 255, 0.14) !important;
+  background: rgba(30, 33, 40, 0.92) !important;
+  color: #e8e8ea !important;
+  font-family: var(--display);
+  font-size: 13px !important;
+  letter-spacing: 0.02em;
+  text-align: left;
+  box-shadow: none !important;
+  transform: none !important;
+  width: auto !important;
+  min-height: 0 !important;
+}
+
+body.v2 .pose-chip em {
+  font-style: normal;
+  color: var(--y, #f6c416);
+  white-space: nowrap;
+}
+
+body.v2 .pose-chip.is-chosen {
+  border-color: rgba(246, 196, 22, 0.9) !important;
+  background: rgba(246, 196, 22, 0.16) !important;
+}
+
+body.v2 .pose-chip.is-trying {
+  border-color: rgba(255, 255, 255, 0.55) !important;
+}
+
+body.v2 .pose-chip.is-confirm {
+  border-color: #ff7a1a !important;
+  background: rgba(255, 122, 26, 0.22) !important;
+}
+
+.pose-picker__note {
+  margin: 8px 2px 0 !important;
+  min-height: 1.2em;
+  font-size: 13px !important;
+  color: #cfd2d8;
+  text-align: center;
+}
+
+@media (orientation: portrait) {
+  body.v2 #pose-screen {
+    grid-template-columns: minmax(0, 1fr);
+    grid-template-rows: minmax(180px, 36vh) minmax(0, 1fr);
+    grid-template-areas: "stage" "panel";
+    gap: 8px;
+  }
+
+  .pose-panel {
+    justify-content: flex-start;
+  }
+
+  .pose-picker__list {
+    grid-template-columns: 1fr 1fr;
+  }
+}
+
+@media (orientation: landscape) and (max-height: 520px) {
+  .pose-bubble {
+    font-size: 13px !important;
+    padding: 8px 12px;
+    margin-bottom: 10px !important;
+  }
+
+  body.v2 .pose-panel .ui-title {
     display: none;
-  }
-
-  body.v2 #leaderboard-screen.has-podium.tab-podium > #podium-stage {
-    grid-row: 2 / 5;
-    grid-column: 1;
-  }
-
-  body.v2 #leaderboard-screen.has-podium.tab-podium > #back-from-leaderboard {
-    justify-self: start;
   }
 }

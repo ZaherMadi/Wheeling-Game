@@ -5395,13 +5395,20 @@ function updatePodium(rows) {
         previous = null;
     }
     const entries = podiumEntries(rows);
-    const events = v2.podium.setStandings(entries, Array.isArray(previous) ? previous : null);
+    const seen = Array.isArray(previous) ? previous : null;
+    const same = !!seen && seen.map((entry) => `${entry.key}:${entry.score}`).join('|') === entries.map((entry) => `${entry.key}:${entry.score}`).join('|');
+    // The classic look plays the arrival every time, the changes when any.
+    const events = v2.podium.setStandings(entries, boardStyle() === 'classic' && same ? null : seen);
     try {
         localStorage.setItem(PODIUM_SEEN_KEY, JSON.stringify(entries));
     } catch {
         // Not kept: the next visit plays it all again.
     }
     showPodiumCaption(events);
+    if (boardStyle() === 'classic') {
+        showBoardPage('podium');
+        scheduleBoardSlide();
+    }
 }
 
 function showPodiumCaption(events) {
@@ -5428,6 +5435,8 @@ function showPodiumCaption(events) {
 }
 
 async function refreshPodium() {
+    // The pose screen uses the podium too: no refresh meanwhile.
+    if (document.getElementById('pose-screen')?.classList.contains('active')) return;
     if (!document.getElementById('leaderboard-screen')?.classList.contains('active')) return closePodium();
     const rows = await fetchLeaderboardFromAPI(0, 3);
     let previous = [];
@@ -5449,12 +5458,91 @@ async function refreshPodium() {
     appendLeaderboardRows(fresh, 20);
 }
 
+// The leaderboard's look (Paramètres › Qualité graphique): 'podium' (the
+// podium beside / above the list, the default) or 'classic' (the podium
+// full screen first, then the old list slides in; swipe left, or ‹ PODIUM,
+// to see the podium again; every visit and every change plays it again).
+const BOARD_STYLE_KEY = 'wheelie_board_style';
+let boardSlideTimer = null;
+function boardStyle() {
+    return readSetting(BOARD_STYLE_KEY) === 'classic' ? 'classic' : 'podium';
+}
+function showBoardStyle() {
+    document.getElementById('board-podium')?.classList.toggle('active', boardStyle() === 'podium');
+    document.getElementById('board-classic')?.classList.toggle('active', boardStyle() === 'classic');
+}
+for (const [id, style] of [['board-podium', 'podium'], ['board-classic', 'classic']]) {
+    document.getElementById(id)?.addEventListener('click', () => {
+        try {
+            localStorage.setItem(BOARD_STYLE_KEY, style);
+        } catch {
+            // Not kept: this visit only.
+        }
+        showBoardStyle();
+    });
+}
+showBoardStyle();
+
+// The list, its heading and buttons in one panel (built once), so the
+// stage and the panel can sit side by side, stacked, or slide.
+function boardPanel() {
+    const screen = document.getElementById('leaderboard-screen');
+    let panel = screen.querySelector(':scope > .lb-panel');
+    if (panel) return panel;
+    panel = document.createElement('div');
+    panel.className = 'lb-panel';
+    const moving = [...screen.children].filter((child) => child.id !== 'podium-stage' && !child.classList.contains('podium-tabs'));
+    screen.prepend(panel);
+    panel.append(...moving);
+    // "Position sur le podium" right under the trophy room.
+    const trophies = document.getElementById('trophies-btn');
+    const pose = document.getElementById('pose-btn');
+    if (trophies && pose) trophies.after(pose);
+    return panel;
+}
+
+function showBoardPage(page) {
+    const screen = document.getElementById('leaderboard-screen');
+    screen.classList.toggle('show-podium', page === 'podium');
+    screen.classList.toggle('show-list', page === 'list');
+}
+
+// Classic look: once every figure is on its step (however slow the phone
+// plays it), a moment to look, then the list slides in.
+function scheduleBoardSlide() {
+    clearTimeout(boardSlideTimer);
+    if (!v2 || boardStyle() !== 'classic') return;
+    const started = performance.now();
+    let settledAt = null;
+    const check = () => {
+        const screen = document.getElementById('leaderboard-screen');
+        if (!screen.classList.contains('active') || !screen.classList.contains('board-classic') || !screen.classList.contains('show-podium')) return;
+        const now = performance.now();
+        if (v2.podium.remaining() > 0) settledAt = null;
+        else if (settledAt === null) settledAt = now;
+        if (settledAt !== null && now - settledAt >= 1400 && now - started >= 2800) {
+            showBoardPage('list');
+            return;
+        }
+        boardSlideTimer = setTimeout(check, 200);
+    };
+    boardSlideTimer = setTimeout(check, 200);
+}
+
 function openPodium() {
     const screen = document.getElementById('leaderboard-screen');
     if (!v2 || !screen) return;
+    boardPanel();
+    const style = boardStyle();
     screen.classList.add('has-podium');
-    if (!screen.classList.contains('tab-list')) screen.classList.add('tab-podium');
-    renderPosePicker();
+    screen.classList.toggle('board-podium', style === 'podium');
+    screen.classList.toggle('board-classic', style === 'classic');
+    if (style === 'classic') {
+        showBoardPage('podium');
+        scheduleBoardSlide();
+    } else if (!screen.classList.contains('tab-list')) {
+        screen.classList.add('tab-podium');
+    }
     v2.podiumView(true);
     clearInterval(podiumTimer);
     podiumTimer = setInterval(refreshPodium, 15000);
@@ -5464,6 +5552,7 @@ function closePodium() {
     clearInterval(podiumTimer);
     podiumTimer = null;
     clearTimeout(podiumCaptionTimer);
+    clearTimeout(boardSlideTimer);
     document.getElementById('podium-caption')?.classList.remove('is-shown');
     if (v2) v2.podiumView(false);
 }
@@ -5478,25 +5567,66 @@ function selectPodiumTab(tab) {
 }
 document.getElementById('podium-tab')?.addEventListener('click', () => selectPodiumTab('podium'));
 document.getElementById('list-tab')?.addEventListener('click', () => selectPodiumTab('list'));
-// Swipe between the two on short screens.
+document.getElementById('podium-to-list')?.addEventListener('click', () => {
+    clearTimeout(boardSlideTimer);
+    showBoardPage('list');
+});
+document.getElementById('list-to-podium')?.addEventListener('click', () => {
+    clearTimeout(boardSlideTimer);
+    showBoardPage('podium');
+});
+// Swipes (not on the podium itself, where the finger turns the camera):
+// short screens switch tabs; the classic look goes back to the podium
+// with a swipe to the left.
 {
     let startX = null;
     const screen = document.getElementById('leaderboard-screen');
     screen?.addEventListener('touchstart', (event) => {
-        startX = event.touches.length === 1 ? event.touches[0].clientX : null;
+        const onStage = event.target.closest?.('#podium-stage');
+        startX = event.touches.length === 1 && !onStage ? event.touches[0].clientX : null;
     }, { passive: true });
     screen?.addEventListener('touchend', (event) => {
         if (startX === null || !screen.classList.contains('has-podium')) return;
         const dx = event.changedTouches[0].clientX - startX;
         startX = null;
-        if (Math.abs(dx) < 60 || getComputedStyle(document.querySelector('.podium-tabs')).display === 'none') return;
+        if (Math.abs(dx) < 60) return;
+        if (screen.classList.contains('board-classic')) {
+            if (dx < 0 && screen.classList.contains('show-list')) {
+                clearTimeout(boardSlideTimer);
+                showBoardPage('podium');
+            }
+            return;
+        }
+        if (getComputedStyle(document.querySelector('.podium-tabs')).display === 'none') return;
         selectPodiumTab(dx < 0 ? 'list' : 'podium');
     }, { passive: true });
 }
 
-// The player's pose on the podium: try it (their figure in front of the
-// podium), buy it with cumulative points (a second tap confirms), choose it.
+// Position sur le podium: the player alone on the top step, trying the
+// poses (a second tap buys one with cumulative points), choosing one.
+function openPoseScreen() {
+    if (!v2) return;
+    clearTimeout(boardSlideTimer);
+    document.getElementById('leaderboard-screen')?.classList.remove('active');
+    document.getElementById('pose-screen')?.classList.add('active');
+    poseToConfirm = null;
+    v2.podiumView(true);
+    v2.podium.resetOrbit();
+    v2.podium.setSolo(true, v2.podiumLook(), v2.riderName() || 'TOI');
+    renderPosePicker();
+}
+
+function closePoseScreen() {
+    if (v2) v2.podium.setSolo(false);
+    v2?.podium.resetOrbit();
+    document.getElementById('pose-screen')?.classList.remove('active');
+    document.getElementById('leaderboard-screen')?.classList.add('active');
+}
+document.getElementById('pose-btn')?.addEventListener('click', openPoseScreen);
+document.getElementById('back-from-pose')?.addEventListener('click', closePoseScreen);
+
 let poseToConfirm = null;
+let poseTrying = null;
 function renderPosePicker(note = '') {
     const picker = document.getElementById('pose-picker');
     if (!picker || !v2) return;
@@ -5505,10 +5635,7 @@ function renderPosePicker(note = '') {
     picker.replaceChildren();
     const title = document.createElement('div');
     title.className = 'pose-picker__title';
-    title.innerHTML = '<span>TA POSE SUR LE PODIUM</span>';
-    const points = document.createElement('span');
-    points.innerHTML = `points : <b>${totalPoints()}</b>`;
-    title.append(points);
+    title.innerHTML = `<span>tes points cumulés : <b>${totalPoints()}</b></span>`;
     const list = document.createElement('div');
     list.className = 'pose-picker__list';
     for (const pose of POSES) {
@@ -5516,13 +5643,14 @@ function renderPosePicker(note = '') {
         chip.type = 'button';
         chip.className = 'pose-chip';
         chip.classList.toggle('is-chosen', pose.id === chosen);
+        chip.classList.toggle('is-trying', pose.id === poseTrying && pose.id !== chosen);
         chip.classList.toggle('is-confirm', pose.id === poseToConfirm);
-        chip.textContent = pose.id === poseToConfirm ? `ACHETER « ${pose.name} » ?` : pose.name;
-        if (pose.id !== poseToConfirm) {
-            const tag = document.createElement('em');
-            tag.textContent = owned.has(pose.id) ? (pose.id === chosen ? '✓' : '') : `${pose.price} pts`;
-            if (tag.textContent) chip.append(tag);
-        }
+        const label = document.createElement('span');
+        label.textContent = pose.id === poseToConfirm ? `ACHETER ?` : pose.name;
+        const tag = document.createElement('em');
+        tag.textContent = pose.id === poseToConfirm ? `${pose.price} pts`
+            : owned.has(pose.id) ? (pose.id === chosen ? '✓' : '') : `${pose.price} pts`;
+        chip.append(label, tag);
         chip.addEventListener('click', () => pickPose(pose));
         list.append(chip);
     }
@@ -5533,7 +5661,8 @@ function renderPosePicker(note = '') {
 }
 
 function pickPose(pose) {
-    v2.podium.preview({ ...v2.podiumLook(), pose: pose.id }, v2.riderName());
+    poseTrying = pose.id;
+    v2.podium.preview({ ...v2.podiumLook(), pose: pose.id }, v2.riderName() || 'TOI');
     if (ownedPoses().has(pose.id)) {
         poseToConfirm = null;
         choosePose(pose.id);
@@ -5542,16 +5671,17 @@ function pickPose(pose) {
     }
     if (poseToConfirm !== pose.id) {
         poseToConfirm = pose.id;
-        renderPosePicker(`Aperçu devant le podium. Touche encore pour l’acheter : ${pose.price} points cumulés.`);
+        renderPosePicker(`« ${pose.name} » : touche encore pour l’acheter (${pose.price} points cumulés).`);
         return;
     }
     poseToConfirm = null;
     const result = buyPose(pose.id);
     if (result === 'short') {
-        renderPosePicker(`Il te manque ${pose.price - totalPoints()} points cumulés pour cette pose.`);
+        renderPosePicker(`Il te manque ${pose.price - totalPoints()} points cumulés pour « ${pose.name} ».`);
         return;
     }
     audio.play('new_record', { volume: 0.4 });
+    v2.podium.celebrate(2.5);
     renderPosePicker('Pose achetée ! Les autres la verront dès ta prochaine partie classée.');
 }
 

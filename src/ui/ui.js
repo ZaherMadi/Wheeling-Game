@@ -163,6 +163,13 @@ function decorateLeaderboard() {
     list.classList.add('ui-board');
     button($('back-from-leaderboard'), { icon: 'back', label: 'RETOUR', variant: 'ghost' });
     button($('trophies-btn'), { icon: 'trophy', label: 'SALLE DES TROPHÉES', variant: 'row' });
+    button($('pose-btn'), { icon: 'user', label: 'POSITION SUR LE PODIUM', variant: 'row' });
+    const poseScreen = $('pose-screen');
+    if (poseScreen) {
+        poseScreen.classList.add('ui-panel-screen');
+        poseScreen.querySelector('h1')?.classList.add('ui-title');
+        button($('back-from-pose'), { icon: 'back', label: 'RETOUR', variant: 'ghost' });
+    }
     const room = $('trophy-screen');
     if (room) {
         room.classList.add('ui-panel-screen');

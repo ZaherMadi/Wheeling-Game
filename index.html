@@ -1464,6 +1464,12 @@
         <button id="quality-low" class="setting-btn">⚙️ BASSE</button>
         <p class="setting-desc">Haute: Meilleure qualité | Basse: Meilleures performances</p>
       </div>
+      <div class="settings-group v2-only">
+        <p class="setting-desc">Apparence du classement</p>
+        <button id="board-podium" class="setting-btn active">🏆 PODIUM + LISTE</button>
+        <button id="board-classic" class="setting-btn">📋 LISTE CLASSIQUE</button>
+        <p class="setting-desc">Liste classique : d’abord l’animation du podium, puis la liste. Glisse vers la gauche pour revoir le podium.</p>
+      </div>
       <button class="back-to-main-btn">← RETOUR</button>
     </div>
 
@@ -1541,15 +1547,28 @@
     </div>
     <button id="trophies-btn" type="button" style="margin-top: 10px; font-size: 16px; padding: 12px 25px;">🏅 SALLE DES TROPHÉES</button>
     <button id="back-from-leaderboard" style="margin-top: 15px; background: #444; font-size: 16px; padding: 12px 25px;">← RETOUR</button>
-    <!-- V2: the podium (3D, behind this transparent area), the player's pose,
-         and tabs when the screen is too short for both side by side. -->
-    <div id="pose-picker" class="pose-picker v2-only"></div>
+    <!-- V2: the podium (3D, behind this transparent area; drag to turn
+         around it), and tabs when the screen is too short for both. -->
+    <button id="pose-btn" type="button" class="v2-only" style="margin-top: 10px; font-size: 16px; padding: 12px 25px;">POSITION SUR LE PODIUM</button>
+    <button id="list-to-podium" type="button" class="v2-only podium-back">‹ PODIUM</button>
     <div id="podium-stage" class="podium-stage v2-only">
       <p id="podium-caption" class="podium-caption" role="status" aria-live="polite"></p>
+      <button id="podium-to-list" type="button" class="podium-next">VOIR LE CLASSEMENT ›</button>
     </div>
     <div class="podium-tabs v2-only" role="tablist" aria-label="Podium ou classement">
       <button type="button" id="podium-tab" role="tab" aria-selected="true">PODIUM</button>
       <button type="button" id="list-tab" role="tab" aria-selected="false">CLASSEMENT</button>
+    </div>
+  </div>
+
+  <!-- V2: the player's pose for the day they make the podium -->
+  <div id="pose-screen" class="screen v2-only">
+    <div id="pose-stage" class="podium-stage"></div>
+    <div class="pose-panel">
+      <h1 class="pose-title">POSITION SUR LE PODIUM</h1>
+      <p class="pose-bubble">Tu seras sur le podium un jour ! Alors pour te préparer pour ce grand jour, prépare ta pose !</p>
+      <div id="pose-picker" class="pose-picker"></div>
+      <button id="back-from-pose" type="button" style="margin-top: 10px; background: #444; font-size: 16px; padding: 12px 25px;">← RETOUR</button>
     </div>
   </div>
 

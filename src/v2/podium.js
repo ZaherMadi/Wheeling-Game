@@ -6,7 +6,6 @@
 // the one who drops out walks off.
 import * as THREE from 'three';
 import { mergeGeometries } from 'three/examples/jsm/utils/BufferGeometryUtils.js';
-import { createJerseyTexture } from './textures.js';
 import { HOOD_TRANSFORM, createHelmetTexture } from './rider.js';
 import { LIVERY_DEFAULT } from './livery.js';
 
@@ -49,7 +48,7 @@ function sharedParts() {
     const standard = (color, roughness, metalness = 0) => new THREE.MeshStandardMaterial({ color, roughness, metalness });
     shared = {
         torso: new THREE.LatheGeometry(profile, 20),
-        print: new THREE.LatheGeometry(printProfile, 12, Math.PI - 0.95, 1.9),
+        print: new THREE.LatheGeometry(printProfile, 16, Math.PI - 1.25, 2.5),
         hood: new THREE.SphereGeometry(1, 14, 10, 0, Math.PI * 2, 0, Math.PI * 0.55),
         sphere: new THREE.SphereGeometry(1, 16, 12),
         box: new THREE.BoxGeometry(1, 1, 1),
@@ -76,6 +75,39 @@ function sharedParts() {
         })
     };
     return shared;
+}
+
+// The back print of the podium figures: the name big across the upper back
+// (readable from the camera), the number under it. The print wraps 2.5 rad
+// of the torso and its rows are not evenly spread (lathe UVs), hence the
+// tall, narrow letters on the canvas.
+function createBackTexture(number, color, ink, name) {
+    const size = 512;
+    const canvas = document.createElement('canvas');
+    canvas.width = size;
+    canvas.height = size;
+    const ctx = canvas.getContext('2d');
+    ctx.fillStyle = color;
+    ctx.fillRect(0, 0, size, size);
+    ctx.textAlign = 'center';
+    ctx.textBaseline = 'middle';
+    ctx.lineJoin = 'round';
+    ctx.strokeStyle = '#111';
+    ctx.fillStyle = ink;
+    if (name) {
+        ctx.font = '900 150px "Arial Black", Arial, sans-serif';
+        ctx.lineWidth = 16;
+        ctx.strokeText(name, size / 2, 116, size * 0.92);
+        ctx.fillText(name, size / 2, 116, size * 0.92);
+    }
+    ctx.font = 'italic 900 250px "Arial Black", Arial, sans-serif';
+    ctx.lineWidth = 18;
+    ctx.strokeText(number, size / 2, name ? 362 : 300, size * 0.7);
+    ctx.fillText(number, size / 2, name ? 362 : 300, size * 0.7);
+    const texture = new THREE.CanvasTexture(canvas);
+    texture.colorSpace = THREE.SRGBColorSpace;
+    texture.anisotropy = 8;
+    return texture;
 }
 
 // The back of a shirt held up (the "maillot" pose): its outline, the
@@ -265,7 +297,7 @@ function createFigure(scene) {
         jerseyDark.color.set(value.hoodie).multiplyScalar(0.84);
         const ink = luminance(jersey.color) > 0.35 ? '#111' : '#f6c416';
         print.map?.dispose();
-        print.map = createJerseyTexture(String(value.number), value.hoodie, ink, String(name || '').slice(0, 15));
+        print.map = createBackTexture(String(value.number), value.hoodie, ink, String(name || '').slice(0, 15));
         print.needsUpdate = true;
         const shellColor = new THREE.Color(value.helmet);
         helmet.map?.dispose();
@@ -531,6 +563,7 @@ export function createPodium({ scene }) {
         const events = [];
         const before = new Map((previous || []).map((entry, rank) => [entry.key, rank]));
         const now = new Set(entries.map((entry) => entry.key));
+        lastEntries = entries;
         // Those who drop out walk off: they need a figure to do it.
         (previous || []).forEach((old) => {
             if (now.has(old.key)) return;
@@ -566,18 +599,44 @@ export function createPodium({ scene }) {
         return events.sort((a, b) => a.rank - b.rank);
     }
 
-    // The player's own figure in front of the podium, for a few seconds:
-    // trying a pose before buying it.
+    // The player's own figure, trying a pose: alone on the top step (the
+    // pose screen, "solo"), or beside the steps for a few seconds.
     let preview = null;
     let previewTime = 0;
+    let solo = false;
+    let lastEntries = [];
     function showPreview(look, name) {
         if (!preview) preview = { figure: createFigure(group) };
         preview.figure.setLook(look, name);
-        // Beside the steps, not in front of the labels.
-        preview.figure.root.position.set(2.65, 0.08, 1.5);
+        if (solo) {
+            preview.figure.root.position.copy(steps[0].top);
+            previewTime = Infinity;
+        } else {
+            // Beside the steps, not in front of the labels.
+            preview.figure.root.position.set(2.65, 0.08, 1.5);
+            previewTime = 6;
+        }
         preview.figure.root.rotation.y = Math.PI;
         preview.figure.root.visible = true;
-        previewTime = 6;
+    }
+    function setSolo(on, look, name) {
+        solo = on;
+        if (on) {
+            setLabels([{ name, score: '' }]);
+            showPreview(look, name);
+        } else {
+            previewTime = 0;
+            setLabels(lastEntries);
+        }
+    }
+    // Seconds until every figure has reached its step (0 when still).
+    function remaining() {
+        let longest = 0;
+        for (const entry of figures.values()) {
+            const left = entry.path.reduce((sum, move) => sum + Math.max(0, move.duration - move.t), 0);
+            longest = Math.max(longest, left);
+        }
+        return longest;
     }
 
     const step = new THREE.Vector3();
@@ -613,6 +672,8 @@ export function createPodium({ scene }) {
             root.rotation.y = entry.facing;
             entry.phase += dt * 11;
             entry.figure.animate(time + key.length, motion, entry.phase);
+            // The pose screen: only the player, on the top step.
+            if (solo) root.visible = false;
         }
         if (preview) {
             previewTime -= dt;
@@ -647,24 +708,47 @@ export function createPodium({ scene }) {
     }
 
     // The camera behind the figures, framing the podium in the free part of
-    // the screen (beside or above the leaderboard).
+    // the screen (beside or above the leaderboard). orbit: turned by the
+    // player's finger (all the way round to see their faces).
     const target = new THREE.Vector3();
+    let orbit = 0;
+    let orbitSpeed = 0;
+    let dragging = false;
+    function orbitBy(radians) {
+        orbit += radians;
+        orbitSpeed = radians;
+    }
+    function setDragging(on) {
+        dragging = on;
+    }
     function frame(camera, area) {
         const halfTan = Math.tan(THREE.MathUtils.degToRad(camera.fov) / 2);
         const halfV = Math.atan(halfTan * (area.y1 - area.y0) / area.height);
         const halfH = Math.atan(halfTan * camera.aspect * (area.x1 - area.x0) / area.width);
-        const distance = Math.max(5.2, 3.3 / Math.sin(Math.min(halfV, halfH)));
-        const sway = Math.sin(time * 0.25) * 0.18;
+        // Solo: closer, on the one figure.
+        const radius = solo ? 1.7 : 2.75;
+        const distance = Math.max(solo ? 3.4 : 4.6, radius / Math.sin(Math.min(halfV, halfH)));
+        // A little momentum after the finger leaves.
+        if (!dragging) {
+            orbit += orbitSpeed;
+            orbitSpeed *= 0.9;
+        }
+        const sway = Math.sin(time * 0.25) * 0.15 + orbit;
+        const focusX = solo ? steps[0].top.x : 0;
+        const focusY = solo ? steps[0].top.y + 0.95 : 1.5;
         camera.position.set(
-            group.position.x + Math.sin(sway) * distance,
-            group.position.y + 1.2 + distance * 0.2,
+            group.position.x + focusX + Math.sin(sway) * distance,
+            group.position.y + focusY - 0.15 + distance * 0.16,
             group.position.z + Math.cos(sway) * distance);
-        target.set(group.position.x, group.position.y + 1.45, group.position.z);
+        target.set(group.position.x + focusX, group.position.y + focusY, group.position.z);
         camera.lookAt(target);
         const centreX = (area.x0 + area.x1) / 2;
         const centreY = (area.y0 + area.y1) / 2;
         camera.setViewOffset(area.width, area.height, area.width / 2 - centreX, area.height / 2 - centreY, area.width, area.height);
     }
 
-    return { group, setStandings, update, place, frame, celebrate, preview: showPreview };
+    return {
+        group, setStandings, update, place, frame, celebrate, preview: showPreview, setSolo, remaining, orbitBy, setDragging,
+        resetOrbit: () => { orbit = 0; orbitSpeed = 0; }
+    };
 }

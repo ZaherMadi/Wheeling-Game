@@ -381,16 +381,26 @@ export function createRealisticVersion({ scene, renderer, camera, mobile, audio,
         camera.setViewOffset(area.width, area.height, area.width / 2 - centreX, area.height / 2 - centreY, area.width, area.height);
     }
 
+    // Turned by the finger outside the options panel; the slow turn
+    // resumes a few seconds after.
+    let showroomAngle = 0.9;
+    let showroomHeld = 0;
+    dragToTurn(document.getElementById('rider-screen'), (radians) => {
+        showroomAngle += radians;
+        showroomHeld = performance.now();
+    }, {
+        accept: (event) => !event.target.closest('.rider-panel, button, input'),
+        onStart: () => { showroomHeld = performance.now(); }
+    });
     function showroom(on) {
         if (on && showroomFrame === null) {
             mountPanel();
             rider.setLivery(riderLook());
             savedPosition.copy(camera.position);
             savedQuaternion.copy(camera.quaternion);
-            let angle = 0.9;
             const tick = () => {
-                angle += 0.0045;
-                frameShowroom(angle);
+                if (performance.now() - showroomHeld > 2500) showroomAngle += 0.0045;
+                frameShowroom(showroomAngle);
                 renderer.render(scene, camera);
                 showroomFrame = requestAnimationFrame(tick);
             };
@@ -412,7 +422,8 @@ export function createRealisticVersion({ scene, renderer, camera, mobile, audio,
     function stageArea() {
         const width = window.innerWidth;
         const height = window.innerHeight;
-        const stage = document.getElementById('podium-stage')?.getBoundingClientRect();
+        const poseOpen = document.getElementById('pose-screen')?.classList.contains('active');
+        const stage = document.getElementById(poseOpen ? 'pose-stage' : 'podium-stage')?.getBoundingClientRect();
         if (!stage || stage.width < 40 || stage.height < 40) return { width, height, x0: 0, x1: width, y0: 0, y1: height };
         return { width, height, x0: stage.left, x1: stage.right, y0: stage.top, y1: stage.bottom };
     }
@@ -444,6 +455,38 @@ export function createRealisticVersion({ scene, renderer, camera, mobile, audio,
             renderer.render(scene, camera);
         }
     }
+    // A finger (or the mouse) dragged sideways turns the camera: round the
+    // podium on its stages, round the rider on the rider screen.
+    function dragToTurn(element, onTurn, { accept = () => true, onStart = () => {}, onEnd = () => {} } = {}) {
+        if (!element) return;
+        let last = null;
+        element.addEventListener('pointerdown', (event) => {
+            if (!accept(event)) return;
+            last = event.clientX;
+            onStart();
+            element.setPointerCapture?.(event.pointerId);
+        });
+        element.addEventListener('pointermove', (event) => {
+            if (last === null) return;
+            onTurn((event.clientX - last) * -0.012);
+            last = event.clientX;
+        });
+        const end = () => {
+            if (last === null) return;
+            last = null;
+            onEnd();
+        };
+        element.addEventListener('pointerup', end);
+        element.addEventListener('pointercancel', end);
+    }
+    for (const id of ['podium-stage', 'pose-stage']) {
+        dragToTurn(document.getElementById(id), (radians) => podium.orbitBy(radians), {
+            accept: (event) => !event.target.closest('button'),
+            onStart: () => podium.setDragging(true),
+            onEnd: () => podium.setDragging(false)
+        });
+    }
+
     // The player's look as sent with ranked runs (the podium shows it).
     const podiumLook = () => {
         const livery = loadLivery();
