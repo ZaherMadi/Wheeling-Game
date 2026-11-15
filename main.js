@@ -120,9 +120,9 @@ const POLICE = {
 // bike drops back; hold it to the end and it goes over.
 const BAVETTE = {
     gentleAv: 0.02, fatalAv: 0.12, maxFrames: 45, minFrames: 4, releaseAv: -0.012,
-    // Points a second on the tail, on top of the wheelie's: 5 up to 50 km/h,
-    // rising to 20 at 150 km/h.
-    rateMin: 5.0, rateMax: 20.0, rateFromKmh: 50.0, rateToKmh: 150.0
+    // Points for each bavette saved (let go before it goes over), on top of
+    // the wheelie's: 5 up to 50 km/h, rising to 30 at 150 km/h, whole points.
+    bonusMin: 5.0, bonusMax: 30.0, bonusFromKmh: 50.0, bonusToKmh: 150.0
 };
 // A plate on the bike (V2, unlocked at 4000 points): enough bavette in one
 // run tears it off, +20 points once.
@@ -140,9 +140,9 @@ function bavetteFrames(angularVelocity, kmh) {
     return frames >= BAVETTE.minFrames ? frames : 0;
 }
 
-function bavetteRate(kmh) {
-    const span = (kmh - BAVETTE.rateFromKmh) / (BAVETTE.rateToKmh - BAVETTE.rateFromKmh);
-    return BAVETTE.rateMin + (BAVETTE.rateMax - BAVETTE.rateMin) * Math.max(0.0, Math.min(1.0, span));
+function bavetteBonus(kmh) {
+    const span = (kmh - BAVETTE.bonusFromKmh) / (BAVETTE.bonusToKmh - BAVETTE.bonusFromKmh);
+    return Math.floor(BAVETTE.bonusMin + (BAVETTE.bonusMax - BAVETTE.bonusMin) * Math.max(0.0, Math.min(1.0, span)));
 }
 
 function manualFlipRate(kmh) {
@@ -1404,6 +1404,7 @@ function resetGame() {
     state.tricksOnly = false;
     state.edge = { frames: 0, pending: null };
     state.turns = 0;
+    state.obstacleRamp = null;
     secretCode.step = 0;
     state.bavette = { left: 0, total: 0 };
     // The plate rides only on the V2 bike, once unlocked and switched on.
@@ -1941,23 +1942,37 @@ function landFlip(frame) {
 // Bavette ------------------------------------------------------------------
 function startBavette() {
     state.bavette.started = state.frame;
-    state.bavette.points = 0;
     // The tip once a run; after that the sparks and the grinding say it.
     if (state.bavette.tipped) return;
     state.bavette.tipped = true;
     toast('BAVETTE !', `Lâche le ${isMobile() ? 'WHEELIE' : 'wheeling'} avant qu’elle lâche`, { discreet: true, float: true });
 }
 
-function endBavette(saved) {
+// Saved: its points (5 to 30 with the speed) beside the score.
+function endBavette(saved, bonus = 0) {
+    if (!saved || !bonus) return;
     const held = state.frame - (state.bavette.started ?? state.frame);
-    // What the tail earned (5 to 20 points a second with the speed), lightly.
-    const points = Math.max(1, Math.round(state.bavette.points || 0));
-    if (saved && held >= 20) {
-        toast(`+${points} BELLE BAVETTE`, 'Rattrapée de justesse', { discreet: true, float: true });
-        audio.play('landing', { volume: 0.4 });
-    } else {
-        toast(`+${points}`, 'BAVETTE', { discreet: true, float: true });
+    scoreBonus(bonus, held >= 20 ? 'BELLE BAVETTE' : 'BAVETTE');
+    if (held >= 20) audio.play('landing', { volume: 0.4 });
+}
+
+// A bonus shown for a moment to the right of the score (top centre).
+function scoreBonus(points, label) {
+    const container = document.getElementById('score-container');
+    if (!container) return;
+    let bonus = document.getElementById('score-bonus');
+    if (!bonus) {
+        bonus = document.createElement('span');
+        bonus.id = 'score-bonus';
+        bonus.setAttribute('aria-hidden', 'true');
+        container.append(bonus);
     }
+    const tag = document.createElement('small');
+    tag.textContent = label;
+    bonus.replaceChildren(`+${points}`, tag);
+    bonus.classList.remove('is-shown');
+    void bonus.offsetWidth;
+    bonus.classList.add('is-shown');
 }
 
 function plateTornOff() {
@@ -2126,6 +2141,31 @@ function spawnGantry(phase, z) {
 }
 
 // Placed where the bike will be when the phase starts.
+// Phase 3's return of the obstacles: calm for the 2.6 s of its message and
+// about 2 s more (from the sign), then the density rises from a few to the
+// usual over about 8 s of road.
+const OBSTACLE_RETURN = { calmFrames: 300, rampFrames: 480, minDensity: 0.15 };
+
+function rampObstaclesFrom(from) {
+    const to = from - Math.max(160, state.speed * OBSTACLE_RETURN.rampFrames);
+    state.obstacleRamp = { from, to };
+    // Thin out those already placed there at full density.
+    state.obstacles = state.obstacles.filter((obs) => {
+        const oz = obs.mesh.position.z;
+        if (oz > from || oz < to || Math.random() < obstacleDensity(oz)) return true;
+        scene.remove(obs.mesh);
+        disposeObjectTree(obs.mesh);
+        return false;
+    });
+}
+
+// 1 = the usual number of obstacles at road position z (less while they come back).
+function obstacleDensity(z) {
+    const ramp = state.obstacleRamp;
+    if (!ramp || z > ramp.from || z <= ramp.to) return 1;
+    return OBSTACLE_RETURN.minDensity + (1 - OBSTACLE_RETURN.minDensity) * (ramp.from - z) / (ramp.from - ramp.to);
+}
+
 // Calm stretch after a sign: nothing in it, time to read the message.
 function quietAfter(z, frames) {
     const to = z - Math.max(60, state.speed * frames + 30);
@@ -2146,6 +2186,7 @@ function quietAfter(z, frames) {
         }
         return true;
     });
+    return to;
 }
 const inQuietZone = (z) => state.quietZones.some((zone) => z <= zone.from && z >= zone.to);
 
@@ -2175,7 +2216,10 @@ function updatePhases(frame) {
     if (frame === JUMP.groundTricksFrom - calm - lead) {
         const z = ahead(lead);
         spawnGantry(3, z);
-        quietAfter(z, calm);
+        // Obstacles come back: nothing while the message is up and a moment
+        // after it, then a few at first, up to the usual rhythm.
+        const to = quietAfter(z, OBSTACLE_RETURN.calmFrames);
+        rampObstaclesFrom(to);
     }
     state.quietZones = state.quietZones.filter((zone) => zone.to < bikeGroup.position.z + 40);
     for (const gantry of state.gantries) {
@@ -2220,6 +2264,8 @@ function guardEdges() {
     const lead = Math.max(EDGE.minLead, Math.min(EDGE.maxLead, state.speed * 60 * EDGE.leadSeconds));
     const z = bikeGroup.position.z - lead;
     if (inQuietZone(z) || state.rampFreeZones.some((zone) => z <= zone.from && z >= zone.to)) return;
+    // Not while the obstacles are only just coming back (phase 3).
+    if (obstacleDensity(z) < 0.6) return;
     edge.pending = spawnObstacle(z, Math.sign(x));
 }
 
@@ -3116,17 +3162,17 @@ function animate(timestamp = performance.now()) {
             if (grounded && bavette.left > 0) {
                 // Bavette: the tail on the road, held at the top.
                 bavette.total += 1;
-                const bavettePoints = bavetteRate(kmh) * FIXED_STEP;
-                state.score += bavettePoints;
-                bavette.points = (bavette.points || 0) + bavettePoints;
                 if (wheelieInput && !isBraking) {
                     bavette.left -= 1;
                     if (bavette.left === 0) gameOver('bavette');
                 } else {
+                    // Saved: the bavette's points (as the server counts them).
                     bavette.left = 0;
                     state.bike.angle = CONFIG.maxAngle;
                     state.bike.angularVelocity = BAVETTE.releaseAv;
-                    endBavette(true);
+                    const bonus = bavetteBonus(kmh);
+                    state.score += bonus;
+                    endBavette(true, bonus);
                 }
                 if (state.plate.on && bavette.total >= PLATE.wearFrames) {
                     state.plate.on = false;
@@ -3405,8 +3451,9 @@ function animate(timestamp = performance.now()) {
                     if (GAME_SETTINGS.difficulty === 'medium') spawnChance = 0.6;
                     if (GAME_SETTINGS.difficulty === 'hard') spawnChance = 0.9;
 
-                    if (Math.random() < spawnChance) {
-                        const z = newZ + Math.random() * 100;
+                    const z = newZ + Math.random() * 100;
+                    // Fewer while they come back (phase 3).
+                    if (Math.random() < spawnChance * obstacleDensity(z)) {
                         if (obstaclesAllowed() && !inQuietZone(z) && !state.rampFreeZones.some((zone) => z <= zone.from && z >= zone.to)) spawnObstacle(z);
                     }
                 }
