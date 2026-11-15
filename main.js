@@ -10,7 +10,9 @@ import { createPlayerVoice } from './src/player-voice.js';
 import { renderTrophyRoom } from './src/trophy-room.js';
 import { HumanCheckRequired, forgetPass, runHumanCheck, storedPass } from './src/human-check.js';
 import { POSES, buyPose, choosePose, chosenPose, ownedPoses } from './src/v2/poses.js';
-import { DRIFT_POINTS, GLIDER_POINTS, TRICKS_CODE_POINTS, rewards } from './src/unlocks.js';
+import { DRIFT_POINTS, rewards } from './src/unlocks.js';
+import { createAccount, deviceToken } from './src/account.js';
+import { createSecretBird } from './src/secret-bird.js';
 import { createSpeedLines } from './src/v2/speedlines.js';
 import riderVoices from './src/rider-voices.json';
 
@@ -70,7 +72,9 @@ const JUMP = {
     // 2100): it only checks nothing happens before.
     rampsFrom: 1500,
     groundTricksFrom: 2700,
-    spacing: 30, // frames between a landing and the next takeoff (server: TAKEOFF_SPACING_FRAMES)
+    // Frames between a landing and the next takeoff (server:
+    // TAKEOFF_SPACING_FRAMES). Short: a ramp right after a landing is jumped.
+    spacing: 2,
     groundTrickMaxAngle: 0.2,
     airRate: 8,
     groundRate: 3,
@@ -1734,6 +1738,24 @@ function resumeGame() {
 }
 
 // Leaves a run without a score (from the pause or the game-over screen).
+// Back on the bike, upright (V2): a run left mid-crash, mid-fall, on foot,
+// in a car or under the glider must not leave the rider lying on the road
+// behind the menu, the rider screen or the podium.
+function standRiderUp() {
+    if (!v2) return;
+    roamFall.active = false;
+    roamFall.skid = 0;
+    state.jump.airborne = false;
+    state.jump.visualY = 0;
+    state.trick.active = false;
+    state.skidding = false;
+    v2.roam.reset();
+    bikeGroup.rotation.set(0, GAME_SETTINGS.gameMode === 'free' ? bikeGroup.rotation.y : Math.PI, 0);
+    bikePivot.rotation.x = 0;
+    bikeGroup.position.y = 0;
+    v2.rider.reset();
+}
+
 function quitToMenu() {
     // Left on purpose: not a run cut short.
     clearLiveRun();
@@ -1744,6 +1766,7 @@ function quitToMenu() {
     audio.setPaused(false);
     audio.stopRun();
     completedRankedRun = null;
+    standRiderUp();
     document.querySelectorAll('.screen').forEach((screen) => screen.classList.remove('active'));
     const popup = document.getElementById('nickname-popup');
     if (popup) popup.style.display = 'none';
@@ -2257,6 +2280,8 @@ function updatePhases(frame) {
         spawnGantry(1, -45);
         quietAfter(-45, 150);
     }
+    // Tricks-only mode (secret code): no phases, no signs.
+    if (state.tricksOnly) return;
     // Sign 2 crossed 2 s before the ramps start (phase 2 sign at 23 s).
     if (frame === JUMP.rampsFrom - calm - lead) {
         const z = ahead(lead);
@@ -2345,8 +2370,8 @@ const SECRET_SEQUENCE = ['gas', 'brake', 'wheelie', 'tap', 'tap', 'tap'];
 function secretInput(kind) {
     if (!state.isPlaying || state.userPaused) return;
     const competitive = GAME_SETTINGS.gameMode === 'linear';
-    // Each one unlocked by cumulative points (the trophy room then tells it).
-    if (totalPoints() < (competitive ? TRICKS_CODE_POINTS : GLIDER_POINTS)) return;
+    // The codes work for whoever knows them; cumulative points only reveal
+    // them (the golden bird on the menu, the trophy room).
     if (competitive && (state.gameTime > 10 || state.tricksOnly)) return;
     if (!competitive && !(v2 && v2.roam.mode === 'bike' && !roamFall.active)) return;
     if (kind === SECRET_SEQUENCE[secretCode.step]) secretCode.step += 1;
@@ -2357,9 +2382,11 @@ function secretInput(kind) {
     else v2.roam.startGlide(bikeGroup);
 }
 
-// Presses of gas, brake and wheelie (keyboard or pads), once a frame.
+// Presses of gas, brake and wheelie (keyboard, pads, or the joystick pushed
+// up then pulled down), once a frame.
 function watchSecretKeys() {
-    const now = { up: !!state.keys.up, down: !!state.keys.down, space: !!state.keys.space };
+    const stick = GAME_SETTINGS.controlMode === 'analog' && analogData.active ? analogData.y : 0;
+    const now = { up: !!state.keys.up || stick < -0.3, down: !!state.keys.down || stick > 0.35, space: !!state.keys.space };
     const before = secretCode.prev;
     if (now.up && !before.up) secretInput('gas');
     if (now.down && !before.down) secretInput('brake');
@@ -2375,6 +2402,13 @@ function startTricksOnly() {
         obs.active = false;
         obs.mesh.visible = false;
     });
+    // No phases any more: the signs still ahead go too.
+    state.gantries = state.gantries.filter((gantry) => {
+        if (gantry.userData.announced) return true;
+        scene.remove(gantry);
+        return false;
+    });
+    state.quietZones = [];
     audio.play('new_record', { volume: 0.5 });
     toast('CODE SECRET', 'Mode figures : pas d’obstacles ni de police · non classé', { float: true });
     logEvent('Code secret : mode figures');
@@ -3102,7 +3136,8 @@ function animate(timestamp = performance.now()) {
             const frame = state.frame;
             const startKmh = state.speed * 50;
             const jump = state.jump;
-            const takeoff = jump.pending && !jump.airborne && startKmh > JUMP.minKmh &&
+            const offTheLip = jump.pending && !jump.airborne;
+            const takeoff = offTheLip && startKmh > JUMP.minKmh &&
                 frame >= rampsFrom() && frame - jump.lastLanding >= JUMP.spacing;
             jump.pending = false;
             if (takeoff) {
@@ -3110,7 +3145,14 @@ function animate(timestamp = performance.now()) {
                 jump.y = JUMP.rampHeight;
                 jump.vy = (10 + startKmh * 0.08) / 60;
                 jump.trickFrames = 0;
+                jump.hop = null;
                 audio.play('rev_blip', { volume: 0.45, rate: 1.15 });
+            } else if (offTheLip) {
+                // Too slow (or too soon) for a real jump: a little hop off
+                // the ramp all the same. Seen only: no flight, no tricks, no
+                // points (the server does not know it).
+                jump.hop = { y: JUMP.rampHeight, vy: 0.06 + Math.min(0.06, startKmh * 0.002) };
+                audio.play('rev_blip', { volume: 0.25, rate: 0.95 });
             }
             const trickAir = state.keys.trick && jump.airborne && frame >= rampsFrom();
             const trickGround = state.keys.trick && !jump.airborne && frame >= groundTricksFrom() &&
@@ -3426,7 +3468,16 @@ function animate(timestamp = performance.now()) {
                 state.trick.spin = state.trick.active ? state.trick.spin + dt * 7.5 : 0;
                 bikeGroup.rotation.z += state.trick.spin;
             }
-            jump.visualY = jump.airborne ? jump.y : rampHeightAt(bikeGroup.position.x, bikeGroup.position.z);
+            if (jump.hop) {
+                jump.hop.y += jump.hop.vy;
+                jump.hop.vy -= JUMP.gravity;
+                if (jump.hop.y <= 0 || jump.airborne) {
+                    if (!jump.airborne) audio.play('landing', { volume: 0.3 });
+                    jump.hop = null;
+                }
+            }
+            jump.visualY = jump.airborne ? jump.y
+                : Math.max(rampHeightAt(bikeGroup.position.x, bikeGroup.position.z), jump.hop ? jump.hop.y : 0);
             bikeGroup.position.y = jump.visualY;
             updateRamps();
             announceTricks(frame);
@@ -4565,9 +4616,9 @@ function updateVersionUI() {
     document.getElementById('version-v2')?.classList.toggle('active', IS_V2);
     document.getElementById('version-classic')?.classList.toggle('active', !IS_V2);
     const label = document.getElementById('version-label');
-    if (label) label.innerText = IS_V2 ? '51 Games - V2.0 Réaliste' : '51 Games - V1.0 Classique';
+    if (label) label.innerText = IS_V2 ? '51 Games - New Version (beta)' : '51 Games - V1.0 Classique';
     const board = document.getElementById('leaderboard-version');
-    if (board) board.innerText = IS_V2 ? 'VERSION 2 · RÉALISTE' : 'VERSION 1 · CLASSIQUE';
+    if (board) board.innerText = IS_V2 ? 'NEW VERSION (BETA)' : 'VERSION 1 · CLASSIQUE';
     // The rider's language only applies to the V2 voice.
     document.querySelectorAll('.v2-only').forEach((element) => {
         element.style.display = IS_V2 ? '' : 'none';
@@ -5003,19 +5054,38 @@ async function submitCompletedRun(nickname) {
 
 async function sendCompletedRun(nickname) {
     const run = completedRankedRun;
-    const body = JSON.stringify({
-        run_token: run.runToken, nickname, input_log: encodeInputLog(run.inputLog), flip_mode: run.flipMode, plate: run.plate,
-        // How the podium shows this player (V2).
-        look: v2 ? v2.podiumLook() : undefined
-    });
+    const inputLog = encodeInputLog(run.inputLog);
+    // How the podium shows this player (V2).
+    const look = v2 ? v2.podiumLook() : undefined;
+    let codeAsked = 0;
     setRankingStatus('Envoi du score…');
     for (let attempt = 1; attempt <= 3; attempt++) {
         try {
             const response = await apiFetch(`${API_BASE_URL}/wheelie-sessions/submit`, {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
-                body
+                body: JSON.stringify({
+                    run_token: run.runToken, nickname, input_log: inputLog, flip_mode: run.flipMode, plate: run.plate, look,
+                    // A protected nickname: this device's token (src/account.js).
+                    device_token: deviceToken(nickname)
+                })
             }, 10000);
+            if (response.status === 403) {
+                const refusal = await response.clone().json().catch(() => ({}));
+                if (refusal.account === 'code_required') {
+                    // The session is not used up: once the password is
+                    // given, the same run is sent again.
+                    if (codeAsked < 2 && await account.askCode('Ce pseudo est protégé par un mot de passe. Entre-le pour classer ce score (cet appareil sera reconnu ensuite).', nickname)) {
+                        codeAsked += 1;
+                        attempt -= 1;
+                        setRankingStatus('Envoi du score…');
+                        continue;
+                    }
+                    setRankingStatus('Score non classé : ce pseudo est protégé par un mot de passe.');
+                    completedRankedRun = null;
+                    return false;
+                }
+            }
             if (response.status === 409) {
                 // Already received on an earlier attempt.
                 setRankingStatus('Score classé.');
@@ -5095,6 +5165,7 @@ async function sendCheckpoint({ keepalive = false } = {}) {
             keepalive,
             body: JSON.stringify({
                 run_token: token, nickname: localStorage.getItem('wheelie_nickname') || undefined,
+                device_token: deviceToken(localStorage.getItem('wheelie_nickname')),
                 offset: from, chunk: encodeInputLog(state.inputLog.slice(from * 2, frames * 2)),
                 flip_mode: state.flipMode, plate: state.plate.on || state.plate.off,
                 look: v2 && from === 0 ? v2.podiumLook() : undefined
@@ -5247,7 +5318,7 @@ async function flushPendingSubmission() {
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({
                 run_token: entry.token, nickname: entry.nickname, input_log: entry.log,
-                flip_mode: entry.flipMode || 'auto', plate: !!entry.plate
+                flip_mode: entry.flipMode || 'auto', plate: !!entry.plate, device_token: deviceToken(entry.nickname)
             })
         }, 10000);
         if (response.ok || (response.status >= 400 && response.status < 500)) localStorage.removeItem(PENDING_KEY);
@@ -5321,6 +5392,14 @@ async function submitNickname() {
     if (nickname.length > 0) {
         // "MAZ", "Maz" and "mAz" are one player: back under their own name.
         const known = await Promise.race([getPlayerStats(nickname), new Promise((resolve) => setTimeout(() => resolve(null), 4000))]);
+        // A protected nickname this device does not know: its password first.
+        if (known && known.protected && !deviceToken(known.nickname)) {
+            const given = await account.askCode('Ce pseudo est protégé par un mot de passe. Si c’est le tien, entre-le (cet appareil sera reconnu ensuite).', known.nickname);
+            if (!given) {
+                nicknameNote('Ce pseudo est protégé : choisis-en un autre, ou entre son mot de passe.');
+                return;
+            }
+        }
         if (known && known.nickname) {
             nickname = known.nickname;
             welcome(`Bon retour parmi nous ${nickname} !`, 'Tu peux changer l’apparence de ton pseudo dans Paramètres › Son & voix.');
@@ -5338,6 +5417,19 @@ async function submitNickname() {
         // Fermer la popup
         closeNicknamePopup();
     }
+}
+
+function nicknameNote(text) {
+    const input = document.getElementById('nickname-input');
+    if (!input) return;
+    let note = document.getElementById('nickname-note');
+    if (!note) {
+        note = document.createElement('p');
+        note.id = 'nickname-note';
+        note.style.cssText = 'color:#ffb4b4;font-size:14px;margin:-8px 0 14px;';
+        input.after(note);
+    }
+    note.textContent = text;
 }
 
 function welcome(title, text) {
@@ -5365,8 +5457,10 @@ async function changeNicknameLook() {
     say('Enregistrement…');
     try {
         const response = await apiFetch(`${API_BASE_URL}/player-display`, {
-            method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ nickname: wanted })
+            method: 'POST', headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ nickname: wanted, device_token: deviceToken(current) })
         }, 8000);
+        if (response.status === 403) return say('Ton pseudo est protégé : entre ton mot de passe dans Mon compte (en haut à droite du menu).');
         if (!response.ok && response.status !== 404) throw new Error(String(response.status));
         setNickname(wanted);
         say(`C’est fait : ${wanted}`);
@@ -5391,11 +5485,46 @@ function displayNickname() {
     const nicknameDisplay = document.getElementById('nickname-display');
     const playerNickname = document.getElementById('player-nickname');
 
-    if (nickname && nicknameDisplay && playerNickname) {
-        nicknameDisplay.innerText = nickname;
+    // Always there: it opens the account (no nickname yet: "Mon compte").
+    if (nicknameDisplay && playerNickname) {
+        nicknameDisplay.innerText = nickname || 'Mon compte';
         playerNickname.style.display = 'block';
     }
+    account.refresh();
 }
+
+// The golden bird of the menu: tapped, the secret codes the player's points
+// have revealed (src/secret-bird.js).
+createSecretBird({ menu: document.getElementById('start-screen'), points: totalPoints, newVersion: IS_V2 });
+
+// Account: top right of the menu (the nickname). Protect it with a password
+// and an optional email; other devices then give the password once.
+const account = createAccount({
+    post: (path, payload) => apiFetch(`${API_BASE_URL}/account/${path}`, {
+        method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(payload)
+    }, 9000),
+    nickname: () => localStorage.getItem('wheelie_nickname'),
+    onStatus: (status) => {
+        const chip = document.getElementById('player-nickname');
+        chip?.classList.toggle('is-protected', !!status?.protected && !!status?.trusted);
+        chip?.classList.toggle('needs-code', !!status?.protected && !status?.trusted);
+    }
+});
+(() => {
+    const chip = document.getElementById('player-nickname');
+    if (!chip) return;
+    chip.setAttribute('role', 'button');
+    chip.setAttribute('tabindex', '0');
+    chip.setAttribute('aria-label', 'Mon compte');
+    chip.classList.add('account-chip');
+    chip.addEventListener('click', () => account.open());
+    chip.addEventListener('keydown', (event) => {
+        if (event.key === 'Enter' || event.key === ' ') {
+            event.preventDefault();
+            account.open();
+        }
+    });
+})();
 
 function updateLeaderboard(nickname, score) {
     // Récupérer le leaderboard actuel
@@ -5590,23 +5719,20 @@ for (const [id, style] of [['board-podium', 'podium'], ['board-classic', 'classi
 }
 showBoardStyle();
 
-// The day's leaderboard: the timer at the top right switches the list (and
-// the podium) to the scores since 5:50 this morning, French time.
+// The 24H leaderboard: the timer at the top right switches the list (and
+// the podium) to the scores of the day, which starts again at 6:00 GMT
+// (the server's daily.py).
 let boardPeriod = 'all';
-function untilReset() {
-    const paris = new Date(new Date().toLocaleString('en-US', { timeZone: 'Europe/Paris' }));
-    let minutes = 5 * 60 + 50 - (paris.getHours() * 60 + paris.getMinutes());
-    if (minutes <= 0) minutes += 24 * 60;
-    const hours = Math.floor(minutes / 60);
-    return hours ? `${hours} h ${String(minutes % 60).padStart(2, '0')}` : `${minutes} min`;
-}
 function showBoardPeriod() {
     const day = boardPeriod === 'day';
     const button = document.getElementById('daily-btn');
     button?.classList.toggle('active', day);
     button?.setAttribute('aria-pressed', String(day));
+    button?.setAttribute('aria-label', day ? 'Classement général' : 'Classement 24H');
+    const title = document.querySelector('#leaderboard-screen h1');
+    if (title) title.textContent = day ? 'CLASSEMENT 24H' : 'CLASSEMENT';
     const label = document.getElementById('leaderboard-version');
-    if (label) label.innerText = day ? `DU JOUR · REMISE À ZÉRO À 5H50 (DANS ${untilReset().toUpperCase()})` : (IS_V2 ? 'VERSION 2 · RÉALISTE' : 'VERSION 1 · CLASSIQUE');
+    if (label) label.innerText = day ? 'RÉINITIALISATION À 6:00 GMT' : (IS_V2 ? 'NEW VERSION (BETA)' : 'VERSION 1 · CLASSIQUE');
 }
 async function reloadBoard() {
     const list = document.getElementById('leaderboard-list');
@@ -5617,7 +5743,7 @@ async function reloadBoard() {
     if (!rows.length) {
         const empty = document.createElement('p');
         empty.style.color = '#888';
-        empty.textContent = boardPeriod === 'day' ? 'Personne n’a encore de score aujourd’hui : la première place est à prendre !' : 'Aucun score enregistré...';
+        empty.textContent = boardPeriod === 'day' ? 'Personne n’a encore de score sur ces 24H : la première place est à prendre !' : 'Aucun score enregistré...';
         list.append(empty);
     } else {
         appendLeaderboardRows(rows, 20);

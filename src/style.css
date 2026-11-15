@@ -135,6 +135,417 @@ button:focus-visible {
   color: #111 !important;
 }
 
+/* Account: the nickname at the top right of the menu opens it. */
+#player-nickname.account-chip {
+  cursor: pointer;
+  user-select: none;
+  -webkit-tap-highlight-color: transparent;
+}
+
+#player-nickname.account-chip::after {
+  content: '🔓';
+  margin-left: 6px;
+  font-size: 13px;
+  opacity: 0.75;
+}
+
+#player-nickname.account-chip.is-protected::after {
+  content: '🔒';
+  opacity: 1;
+}
+
+#player-nickname.account-chip.needs-code::after {
+  content: '🔑';
+  opacity: 1;
+}
+
+#player-nickname.account-chip:focus-visible {
+  outline: 2px solid #f6c416;
+  outline-offset: 3px;
+}
+
+.account-dialog {
+  position: fixed;
+  inset: 0;
+  z-index: 21000;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 16px;
+  box-sizing: border-box;
+  overflow-y: auto;
+  background: rgba(0, 0, 0, 0.78);
+}
+
+.account-dialog[hidden] {
+  display: none;
+}
+
+.account-card {
+  position: relative;
+  width: 100%;
+  max-width: 400px;
+  margin: auto;
+  padding: 26px 22px 20px;
+  box-sizing: border-box;
+  text-align: left;
+  color: #f2f2f0;
+  font-family: system-ui, -apple-system, 'Segoe UI', Roboto, sans-serif;
+  background: #121318;
+  border: 1px solid rgba(246, 196, 22, 0.6);
+  border-radius: 12px;
+  box-shadow: 0 18px 50px rgba(0, 0, 0, 0.6);
+}
+
+.account-card h2 {
+  margin: 0 0 4px !important;
+  font-family: 'Russo One', sans-serif;
+  font-size: 22px !important;
+  color: #f6c416;
+  text-align: left;
+}
+
+.account-close {
+  position: absolute;
+  top: 10px;
+  right: 10px;
+  width: 36px !important;
+  height: 36px;
+  min-height: 0 !important;
+  margin: 0 !important;
+  padding: 0 !important;
+  font-size: 18px !important;
+  line-height: 1;
+  color: #f2f2f0 !important;
+  background: rgba(255, 255, 255, 0.08) !important;
+  border: none !important;
+  border-radius: 50% !important;
+  box-shadow: none !important;
+  transform: none !important;
+}
+
+.account-name {
+  margin: 0 0 12px !important;
+  font-family: 'Russo One', sans-serif;
+  font-size: 15px !important;
+  color: #fff;
+}
+
+.account-text {
+  margin: 0 0 12px !important;
+  font-size: 14px !important;
+  line-height: 1.45;
+  color: #d8dbe0;
+}
+
+.account-text--muted {
+  color: #9aa0a8;
+}
+
+.account-form {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  margin: 0 0 10px;
+}
+
+.account-field {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  font-size: 13px;
+  color: #c9ccd2;
+}
+
+.account-field small {
+  color: #8d939b;
+  font-size: 12px;
+}
+
+/* 16px: Safari on iPhone does not zoom into the field. */
+.account-field input {
+  width: 100%;
+  box-sizing: border-box;
+  padding: 11px 12px;
+  font-size: 16px !important;
+  color: #111;
+  background: #f4f4f2;
+  border: 1px solid #555;
+  border-radius: 8px;
+}
+
+.account-field input:focus {
+  outline: 2px solid #f6c416;
+  outline-offset: 1px;
+}
+
+.account-show {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 13px;
+  color: #aeb3ba;
+}
+
+.account-btn {
+  width: 100% !important;
+  min-height: 44px;
+  margin: 0 0 8px !important;
+  padding: 11px 14px !important;
+  font-family: 'Russo One', sans-serif;
+  font-size: 14px !important;
+  color: #f2f2f0 !important;
+  background: #262830 !important;
+  border: 1px solid rgba(255, 255, 255, 0.14) !important;
+  border-radius: 8px !important;
+  box-shadow: none !important;
+  transform: none !important;
+}
+
+.account-btn--primary {
+  color: #111 !important;
+  background: #f6c416 !important;
+  border-color: #f6c416 !important;
+}
+
+.account-btn--quiet {
+  background: transparent !important;
+  color: #aeb3ba !important;
+}
+
+.account-btn:disabled {
+  opacity: 0.6;
+}
+
+.account-message {
+  min-height: 18px;
+  margin: 4px 0 0 !important;
+  font-size: 14px !important;
+  color: #d8dbe0;
+}
+
+.account-message[data-tone='bad'] {
+  color: #ff9b9b;
+}
+
+.account-message[data-tone='good'] {
+  color: #8fe3a2;
+}
+
+/* The golden bird: crosses the menu every 30 s, tapped for the secret codes. */
+.golden-bird {
+  position: absolute;
+  top: var(--bird-top, 10%);
+  left: 0;
+  z-index: 30;
+  display: none;
+  padding: 10px;
+  cursor: pointer;
+  opacity: 0.92;
+  filter: drop-shadow(0 0 6px rgba(246, 196, 22, 0.55));
+  -webkit-tap-highlight-color: transparent;
+}
+
+.golden-bird.is-flying {
+  display: block;
+  animation: bird-cross 11s linear forwards;
+}
+
+.golden-bird.is-leftward.is-flying {
+  animation-name: bird-cross-back;
+}
+
+.golden-bird svg {
+  display: block;
+  animation: bird-bob 1.3s ease-in-out infinite;
+}
+
+.golden-bird.is-leftward svg {
+  transform: scaleX(-1);
+  animation-name: bird-bob-back;
+}
+
+.golden-bird__wing--up {
+  animation: bird-wing 0.36s steps(1) infinite;
+}
+
+.golden-bird__wing--down {
+  animation: bird-wing 0.36s steps(1) infinite reverse;
+}
+
+.golden-bird:focus-visible {
+  outline: 2px solid #f6c416;
+  outline-offset: 2px;
+}
+
+@keyframes bird-cross {
+  from { transform: translateX(-70px); }
+  to { transform: translateX(calc(100vw + 20px)); }
+}
+
+@keyframes bird-cross-back {
+  from { transform: translateX(calc(100vw + 20px)); }
+  to { transform: translateX(-70px); }
+}
+
+@keyframes bird-bob {
+  0%, 100% { transform: translateY(0); }
+  50% { transform: translateY(-7px); }
+}
+
+@keyframes bird-bob-back {
+  0%, 100% { transform: scaleX(-1) translateY(0); }
+  50% { transform: scaleX(-1) translateY(-7px); }
+}
+
+@keyframes bird-wing {
+  0%, 49% { opacity: 1; }
+  50%, 100% { opacity: 0; }
+}
+
+/* Less motion asked for: the bird sits still for a while instead. */
+@media (prefers-reduced-motion: reduce) {
+  .golden-bird.is-flying,
+  .golden-bird.is-leftward.is-flying {
+    left: 14px;
+    animation: bird-perch 9s linear forwards;
+  }
+
+  .golden-bird svg,
+  .golden-bird__wing--up {
+    animation: none;
+  }
+
+  .golden-bird__wing--down {
+    animation: none;
+    opacity: 0;
+  }
+}
+
+@keyframes bird-perch {
+  0%, 100% { opacity: 0; }
+  10%, 90% { opacity: 0.92; }
+}
+
+/* The codes the bird tells. */
+.codes-card {
+  max-width: 460px;
+}
+
+.codes-list {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.code-card {
+  padding: 12px;
+  border-radius: 10px;
+  background: rgba(255, 255, 255, 0.05);
+  border: 1px solid rgba(246, 196, 22, 0.28);
+}
+
+.code-card.is-hidden {
+  border-color: rgba(255, 255, 255, 0.12);
+}
+
+.code-card__name {
+  margin: 0 0 2px;
+  font-family: 'Russo One', sans-serif;
+  font-size: 17px;
+  color: #f6c416;
+}
+
+.code-card.is-hidden .code-card__name {
+  color: #9aa0a8;
+}
+
+.code-card__where {
+  margin: 0 0 6px !important;
+  font-size: 12px !important;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  color: #9fd8ee;
+}
+
+.code-card__text {
+  margin: 0 0 10px !important;
+  font-size: 14px !important;
+  line-height: 1.45;
+  color: #d8dbe0;
+}
+
+.code-card.is-hidden .code-card__text {
+  margin: 0 !important;
+}
+
+.code-steps {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 6px;
+  margin: 0 0 10px;
+  padding: 0;
+  list-style: none;
+  counter-reset: step;
+}
+
+.code-step {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 3px;
+  padding: 8px 4px 6px;
+  border-radius: 8px;
+  text-align: center;
+  color: #f2f2f0;
+  background: #1c1e25;
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  counter-increment: step;
+  animation: code-step 4.8s linear infinite;
+  animation-delay: calc(var(--step) * 1.2s);
+}
+
+.code-step::before {
+  content: counter(step);
+  position: absolute;
+  top: 3px;
+  left: 6px;
+  font-size: 11px;
+  color: #8d939b;
+}
+
+.code-step b {
+  font-size: 12px;
+  line-height: 1.15;
+}
+
+.code-step small {
+  font-size: 10px;
+  line-height: 1.2;
+  color: #a4a9b1;
+}
+
+/* Each key lights up in its turn. */
+@keyframes code-step {
+  0%, 22% { border-color: #f6c416; background: rgba(246, 196, 22, 0.2); color: #ffe27a; }
+  25%, 100% { border-color: rgba(255, 255, 255, 0.12); background: #1c1e25; color: #f2f2f0; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .code-step {
+    animation: none;
+  }
+}
+
+.code-video {
+  display: block;
+  width: 100%;
+  aspect-ratio: 16 / 9;
+  border-radius: 8px;
+  background: #000;
+}
+
 /* Something unlocked: one small line, no box. */
 #gift-line {
   position: fixed;
@@ -436,6 +847,109 @@ button:focus-visible {
 
 .trophy-item.is-locked .trophy-item__label {
   color: rgba(255, 255, 255, 0.45);
+}
+
+/* A trophy is tapped for its story. */
+.trophy-item[role='button'] {
+  cursor: pointer;
+  padding: 4px 6px;
+  border-radius: 8px;
+  -webkit-tap-highlight-color: transparent;
+}
+
+.trophy-item[role='button']:focus-visible,
+.trophy-dot:focus-visible {
+  outline: 2px solid #f6c416;
+  outline-offset: 2px;
+}
+
+.trophy-item.is-shown {
+  background: rgba(246, 196, 22, 0.14);
+}
+
+.trophy-detail {
+  margin-top: 10px;
+  padding: 10px 12px;
+  border-radius: 8px;
+  background: rgba(255, 255, 255, 0.06);
+  text-align: center;
+}
+
+.trophy-detail__stage {
+  display: flex;
+  justify-content: center;
+  min-height: 150px;
+}
+
+.trophy-3d {
+  display: block;
+}
+
+.trophy-detail__text {
+  margin: 4px 0 0 !important;
+  font-size: 14px !important;
+  line-height: 1.45;
+  color: #fff;
+}
+
+.trophy-detail__small {
+  margin: 4px 0 0 !important;
+  font-size: 12px !important;
+  color: rgba(255, 255, 255, 0.55);
+}
+
+/* Two pages of trophies side by side: swipe, or the names above. */
+.trophy-swipe {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  min-width: 0;
+}
+
+.trophy-dots {
+  display: flex;
+  justify-content: center;
+  gap: 6px;
+}
+
+.trophy-dot {
+  padding: 6px 12px;
+  border-radius: 999px;
+  font-size: 12px;
+  letter-spacing: 0.04em;
+  color: rgba(255, 255, 255, 0.7);
+  background: rgba(10, 11, 14, 0.7);
+  border: 1px solid rgba(255, 255, 255, 0.16);
+  cursor: pointer;
+  -webkit-tap-highlight-color: transparent;
+}
+
+.trophy-dot.is-current {
+  color: #111;
+  background: #f6c416;
+  border-color: #f6c416;
+}
+
+.trophy-pages {
+  display: flex;
+  gap: 12px;
+  overflow-x: auto;
+  scroll-snap-type: x mandatory;
+  overscroll-behavior-x: contain;
+  scrollbar-width: none;
+  -webkit-overflow-scrolling: touch;
+}
+
+.trophy-pages::-webkit-scrollbar {
+  display: none;
+}
+
+.trophy-page {
+  flex: 0 0 100%;
+  box-sizing: border-box;
+  min-width: 0;
+  scroll-snap-align: start;
+  scroll-snap-stop: always;
 }
 
 .trophy-note {

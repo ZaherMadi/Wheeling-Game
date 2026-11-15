@@ -5,6 +5,15 @@
 // hope for nothing).
 import { CAR_NAMES, CAR_UNLOCKS } from './v2/cars.js';
 
+// The cadence: a reward every 2 000 points up to 20 000, then at 50 000,
+// 100 000, and every 100 000 up to 1 000 000. A new reward takes one of
+// these steps; a step with nothing in it is not shown (no "???").
+export const REWARD_STEPS = [
+    ...Array.from({ length: 10 }, (_, index) => (index + 1) * 2000),
+    50000,
+    ...Array.from({ length: 10 }, (_, index) => (index + 1) * 100000)
+];
+
 export const PLATE_POINTS = 4000;
 export const DRIFT_POINTS = 6000;
 export const ARAI_POINTS = 8000;
@@ -30,6 +39,10 @@ export function rewards() {
         { points: TRICKS_CODE_POINTS, name: 'Code du mode figures', kind: 'code', hint: '???',
             how: 'Dans les 10 premières secondes d’une partie compétitive : gaz, frein, wheeling, puis 3 touches sur le compteur (partie non classée)' }
     );
+    if (import.meta.env?.DEV) {
+        list.filter((reward) => reward.kind !== 'car' && !REWARD_STEPS.includes(reward.points))
+            .forEach((reward) => console.warn(`Récompense hors cadence : ${reward.name} à ${reward.points} pts`));
+    }
     return list.sort((a, b) => a.points - b.points);
 }
 
