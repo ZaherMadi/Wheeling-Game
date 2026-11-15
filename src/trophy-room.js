@@ -93,7 +93,10 @@ export function renderTrophyRoom(container, { trophies, points, nickname, error 
         row.append(element('span', 'trophy-unlock__points', `${reward.points.toLocaleString('fr-FR')} pts`));
         // Vehicles are known (the garage shows them); the rest stays secret.
         const name = open || reward.kind === 'car' ? reward.name : reward.hint;
-        row.append(element('span', 'trophy-unlock__name', name));
+        const label = element('span', 'trophy-unlock__name', name);
+        // Unlocked: how to use it.
+        if (open && reward.how) label.append(element('small', 'trophy-unlock__how', reward.how));
+        row.append(label);
         row.append(element('span', 'trophy-unlock__state', open ? '✓' : '🔒'));
         list.append(row);
     }

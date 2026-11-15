@@ -8,9 +8,10 @@ import { createAdScreen } from './adscreen.js';
 import { createFx } from './fx.js';
 import { loadLivery, mountLiveryPanel } from './livery.js';
 import { createFreeRoam, totalPoints } from './freeroam.js';
-import { PLATE_POINTS } from '../unlocks.js';
+import { ARAI_POINTS, PLATE_POINTS, SHOES_POINTS } from '../unlocks.js';
 import { createOfficer, decoratePoliceCar } from './police.js';
 import { createPodium } from './podium.js';
+import { createSkidMarks } from './skidmarks.js';
 import { chosenPose } from './poses.js';
 import { installRacingUI } from '../ui/ui.js';
 
@@ -36,6 +37,8 @@ export function createRealisticVersion({ scene, renderer, camera, mobile, audio,
     if (seed !== null) world.reseed(seed);
     const rider = createRider({ scene });
     const fx = createFx({ scene, mobile });
+    // Free roam drift: tyre marks on the road.
+    const skidmarks = createSkidMarks(scene, { max: mobile ? 450 : 700 });
     const roam = createFreeRoam({ scene, world, rider, audio, onTurn, playerVoice });
     // The player's nickname is printed above the number.
     const riderName = () => {
@@ -46,8 +49,14 @@ export function createRealisticVersion({ scene, renderer, camera, mobile, audio,
         }
     };
     // The plate only once unlocked (4000 points) and switched on.
+    // The Arai and the shoe colour only once unlocked.
+    const unlockedLook = (livery) => ({
+        helmetStyle: totalPoints() >= ARAI_POINTS && livery.helmetStyle === 'arai' ? 'arai' : 'classic',
+        shoes: totalPoints() >= SHOES_POINTS && livery.shoes ? livery.shoes : '#f2f2f0'
+    });
     const riderLook = (livery = loadLivery()) => ({
-        ...livery, name: riderName(), plate: !!livery.plate && totalPoints() >= PLATE_POINTS, plateText: livery.plateText || ''
+        ...livery, name: riderName(), plate: !!livery.plate && totalPoints() >= PLATE_POINTS, plateText: livery.plateText || '',
+        ...unlockedLook(livery)
     });
     rider.setLivery(riderLook());
     const mountPanel = () => mountLiveryPanel(document.getElementById('rider-options'), (livery) => {
@@ -479,18 +488,59 @@ export function createRealisticVersion({ scene, renderer, camera, mobile, audio,
         element.addEventListener('pointerup', end);
         element.addEventListener('pointercancel', end);
     }
-    for (const id of ['podium-stage', 'pose-stage']) {
-        dragToTurn(document.getElementById(id), (radians) => podium.orbitBy(radians), {
-            accept: (event) => !event.target.closest('button'),
-            onStart: () => podium.setDragging(true),
-            onEnd: () => podium.setDragging(false)
+    // The podium: one finger turns round it, two fingers pinch to come
+    // closer (the mouse wheel on a computer).
+    function podiumGestures(element) {
+        if (!element) return;
+        const fingers = new Map();
+        let lastSpread = null;
+        const spread = () => {
+            const [a, b] = [...fingers.values()];
+            return Math.hypot(a.x - b.x, a.y - b.y);
+        };
+        element.addEventListener('pointerdown', (event) => {
+            if (event.target.closest('button')) return;
+            fingers.set(event.pointerId, { x: event.clientX, y: event.clientY });
+            element.setPointerCapture?.(event.pointerId);
+            podium.setDragging(true);
+            lastSpread = fingers.size === 2 ? spread() : null;
         });
+        element.addEventListener('pointermove', (event) => {
+            const finger = fingers.get(event.pointerId);
+            if (!finger) return;
+            const dx = event.clientX - finger.x;
+            finger.x = event.clientX;
+            finger.y = event.clientY;
+            if (fingers.size === 2) {
+                const now = spread();
+                if (lastSpread) podium.zoomBy(now / lastSpread);
+                lastSpread = now;
+            } else if (fingers.size === 1) {
+                podium.orbitBy(dx * -0.012);
+            }
+        });
+        const end = (event) => {
+            if (!fingers.delete(event.pointerId)) return;
+            lastSpread = fingers.size === 2 ? spread() : null;
+            if (!fingers.size) podium.setDragging(false);
+        };
+        element.addEventListener('pointerup', end);
+        element.addEventListener('pointercancel', end);
+        element.addEventListener('wheel', (event) => {
+            event.preventDefault();
+            podium.zoomBy(Math.exp(-event.deltaY * 0.0015));
+        }, { passive: false });
     }
+    podiumGestures(document.getElementById('podium-stage'));
+    podiumGestures(document.getElementById('pose-stage'));
 
     // The player's look as sent with ranked runs (the podium shows it).
     const podiumLook = () => {
         const livery = loadLivery();
-        return { number: String(livery.number || '51'), hoodie: livery.hoodie, helmet: livery.helmet, bike: livery.bike, pose: chosenPose() };
+        return {
+            number: String(livery.number || '51'), hoodie: livery.hoodie, helmet: livery.helmet, bike: livery.bike, pose: chosenPose(),
+            ...unlockedLook(livery)
+        };
     };
 
     function setQuality(high) {
@@ -502,9 +552,11 @@ export function createRealisticVersion({ scene, renderer, camera, mobile, audio,
 
     return {
         world, rider, fx, roam, frame, reset, setQuality, showroom, startAd, adScreen, policeStop,
-        podium, podiumView, podiumLook, riderName,
+        podium, podiumView, podiumLook, riderName, skidmarks,
         get resolutionScale() { return resolution.scale; },
         smoke: () => fx.smoke(rider.bikeGroup.position, bikeVelocity),
+        // Tyre smoke where the rear wheel slides (drift).
+        smokeAt: (point, strength) => fx.tyreSmoke(point, bikeVelocity, strength),
         spark: () => fx.spark(point.copy(rider.bikeGroup.position).setY(0.08), bikeVelocity, 2)
     };
 }

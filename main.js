@@ -10,7 +10,7 @@ import { createPlayerVoice } from './src/player-voice.js';
 import { renderTrophyRoom } from './src/trophy-room.js';
 import { HumanCheckRequired, forgetPass, runHumanCheck, storedPass } from './src/human-check.js';
 import { POSES, buyPose, choosePose, chosenPose, ownedPoses } from './src/v2/poses.js';
-import { rewards } from './src/unlocks.js';
+import { DRIFT_POINTS, GLIDER_POINTS, TRICKS_CODE_POINTS, rewards } from './src/unlocks.js';
 import { createSpeedLines } from './src/v2/speedlines.js';
 import riderVoices from './src/rider-voices.json';
 
@@ -1125,7 +1125,9 @@ function init() {
 // Free roam bike (V2): world units are metres. Gas pulls harder the longer
 // it is held, up to a realistic top speed; the bike steers like a bike.
 const FREE_BIKE = { top: 38.9, boostTop: 52, brake: 11, coast: 1.3, drag: 0.0007, reverse: 1.6 };
-const freeRide = { speed: 0, hold: 0, gas: 0, steer: 0 };
+// travel: the direction it moves (differs from where it points while it
+// drifts); slip: the angle between them; drift: 0..1, for smoke and sound.
+const freeRide = { speed: 0, hold: 0, gas: 0, steer: 0, travel: undefined, slip: 0, drift: 0, drifting: false };
 
 // Free roam falls on the bike. Over 100 km/h into the front or the back of
 // a car: thrown over the bars. Into its side: a skid, and another car
@@ -1235,6 +1237,32 @@ function updateRoamFall(dt) {
     }
 }
 
+// Free roam drift (unlocked at DRIFT_POINTS). minSpeed in m/s (~25 km/h);
+// turn: the tail's extra swing (rad/s at full lock); grip / recover: how
+// fast the travel follows the heading sliding / gripping; maxSlip: the
+// widest angle between them; brake: share of the normal braking.
+const FREE_DRIFT = { minSpeed: 7, keepSpeed: 3, turn: 1.9, grip: 0.9, recover: 6, maxSlip: 1.15, brake: 0.28 };
+let driftSmokeTime = 0;
+const rearWheel = new THREE.Vector3();
+
+// Smoke from the rear tyre and its mark on the road while it slides; the
+// screech is the audio engine's (snapshot.drift).
+function driftEffects(dt, heading) {
+    if (!v2) return;
+    if (freeRide.drift < 0.25) {
+        v2.skidmarks.lift();
+        return;
+    }
+    const back = 0.72 * (v2.rider.worldScale || 1.1);
+    rearWheel.set(bikeGroup.position.x - Math.sin(heading) * back, 0, bikeGroup.position.z - Math.cos(heading) * back);
+    v2.skidmarks.add(rearWheel.x, rearWheel.z);
+    driftSmokeTime -= dt;
+    if (driftSmokeTime <= 0) {
+        v2.smokeAt(rearWheel, freeRide.drift);
+        driftSmokeTime = (isMobile() ? 0.09 : 0.05) / freeRide.drift;
+    }
+}
+
 function rideFreeBike(dt, roam) {
     if (roamFall.active) {
         updateRoamFall(dt);
@@ -1272,7 +1300,16 @@ function rideFreeBike(dt, roam) {
         freeRide.hold = Math.max(0, freeRide.hold - dt * 3);
     }
     if (boosting && v < top) v += 6 * dt;
-    if (brake > 0) {
+    // Drift (unlocked): brake + steer when going fast enough. The rear steps
+    // out: the bike turns faster than it travels and slides on.
+    // Once sliding, it goes on down to a lower speed (no sudden grip).
+    const drifting = totalPoints() >= DRIFT_POINTS && !roam.frozen && brake > 0.3 && Math.abs(steer) > 0.35
+        && v > (freeRide.drifting ? FREE_DRIFT.keepSpeed : FREE_DRIFT.minSpeed);
+    freeRide.drifting = drifting;
+    if (drifting) {
+        // The rear brake slows it a little; the gas holds the slide.
+        v = Math.max(0, v - FREE_BIKE.brake * FREE_DRIFT.brake * brake * (1 - gas * 0.8) * dt);
+    } else if (brake > 0) {
         // Stopped, brake still held for a moment: the bike is walked back.
         freeRide.stopped = v <= 0.2 ? (freeRide.stopped || 0) + dt : 0;
         if (v > 0.2) v = Math.max(0, v - FREE_BIKE.brake * brake * dt);
@@ -1290,9 +1327,21 @@ function rideFreeBike(dt, roam) {
     const pace = Math.min(1, Math.abs(v) / 25);
     const rate = (Math.abs(v) < 0.3 ? 1.1 : 2.3 - 1.4 * pace) * steer;
     bikeGroup.rotation.y -= rate * dt * (v < -0.05 ? -1 : 1);
+    // Sliding: the tail swings round on top of the steering.
+    if (drifting) bikeGroup.rotation.y -= steer * FREE_DRIFT.turn * dt;
     const heading = bikeGroup.rotation.y;
-    bikeGroup.position.x += Math.sin(heading) * v * dt;
-    bikeGroup.position.z += Math.cos(heading) * v * dt;
+    // The way the bike travels follows where it points: slowly while it
+    // slides, at once when the tyres grip.
+    if (freeRide.travel === undefined || Math.abs(v) < 0.3) freeRide.travel = heading;
+    let slip = Math.atan2(Math.sin(heading - freeRide.travel), Math.cos(heading - freeRide.travel));
+    slip -= slip * Math.min(1, (drifting ? FREE_DRIFT.grip : FREE_DRIFT.recover) * dt);
+    slip = Math.max(-FREE_DRIFT.maxSlip, Math.min(FREE_DRIFT.maxSlip, slip));
+    freeRide.travel = heading - slip;
+    freeRide.slip = slip;
+    freeRide.drift += ((drifting ? Math.min(1, 0.35 + Math.abs(slip) * 1.6) : 0) - freeRide.drift) * Math.min(1, dt * 8);
+    bikeGroup.position.x += Math.sin(freeRide.travel) * v * dt;
+    bikeGroup.position.z += Math.cos(freeRide.travel) * v * dt;
+    driftEffects(dt, heading);
     // Side streets open the way; traffic stops the bike dead.
     const hit = roam.clampBike(bikeGroup.position);
     if (hit) v = roamImpact(hit, v, roam);
@@ -1353,6 +1402,8 @@ function visualSnapshot() {
         airborne: !free && state.jump.airborne,
         trick: state.trick.active ? state.trick.type : null,
         bavette: !free && state.bavette.left > 0,
+        // Free roam drift: how much the rear slides (screech).
+        drift: freeBike ? freeRide.drift : 0,
         // Free roam: fallen off the bike (the rider is moved by the fall).
         fallen: free && roamFall.active,
         plateOn: !free && state.plate.on,
@@ -1405,6 +1456,11 @@ function resetGame() {
     state.edge = { frames: 0, pending: null };
     state.turns = 0;
     state.obstacleRamp = null;
+    // Free roam drift: start gripping, no marks left from before.
+    freeRide.travel = undefined;
+    freeRide.drift = 0;
+    freeRide.slip = 0;
+    if (v2) v2.skidmarks.clear();
     secretCode.step = 0;
     state.bavette = { left: 0, total: 0 };
     // The plate rides only on the V2 bike, once unlocked and switched on.
@@ -2048,6 +2104,9 @@ function changeStreet(sign) {
             groundChunks.push(chunk);
         }
         const street = v2.roam.afterTurn(bikeGroup);
+        // A new street: the old one's tyre marks go with it.
+        v2.skidmarks.clear();
+        freeRide.travel = undefined;
         const focus = v2.roam.focus;
         camera.position.set(focus.x, 6, focus.z + 12);
         toast(street.toUpperCase(), sign > 0 ? 'Tu as tourné à droite' : 'Tu as tourné à gauche');
@@ -2286,6 +2345,8 @@ const SECRET_SEQUENCE = ['gas', 'brake', 'wheelie', 'tap', 'tap', 'tap'];
 function secretInput(kind) {
     if (!state.isPlaying || state.userPaused) return;
     const competitive = GAME_SETTINGS.gameMode === 'linear';
+    // Each one unlocked by cumulative points (the trophy room then tells it).
+    if (totalPoints() < (competitive ? TRICKS_CODE_POINTS : GLIDER_POINTS)) return;
     if (competitive && (state.gameTime > 10 || state.tricksOnly)) return;
     if (!competitive && !(v2 && v2.roam.mode === 'bike' && !roamFall.active)) return;
     if (kind === SECRET_SEQUENCE[secretCode.step]) secretCode.step += 1;
@@ -5201,7 +5262,9 @@ async function flushPendingSubmission() {
 // Fonction pour récupérer le classement depuis l'API
 async function fetchLeaderboardFromAPI(skip = 0, limit = 20) {
     try {
-        const response = await apiFetch(`${API_BASE_URL}/leaderboard/${GAME_NAME}?skip=${skip}&limit=${limit}`);
+        // The day's leaderboard (since 5:50, French time) or of all time.
+        const period = boardPeriod === 'day' ? '&period=day' : '';
+        const response = await apiFetch(`${API_BASE_URL}/leaderboard/${GAME_NAME}?skip=${skip}&limit=${limit}${period}`);
 
         if (!response.ok) {
             throw new Error('Erreur lors de la récupération du classement');
@@ -5380,19 +5443,24 @@ async function showTrophyRoom() {
 }
 
 // Rewards crossed by the points of the run that just ended.
+// Something unlocked: a small line, no box, the surprise kept for the
+// trophy room ("à découvrir").
 function announceUnlocks(before, after) {
     const unlocked = rewards().filter((reward) => reward.points > before && reward.points <= after);
     if (!unlocked.length) return;
-    const names = unlocked.map((reward) => reward.name).join(' · ');
     setTimeout(() => {
-        if (IS_V2) {
-            document.dispatchEvent(new CustomEvent('wheelie:notice', { detail: {
-                title: 'DÉBLOQUÉ !', text: `${names} — voir la salle des trophées.`, seconds: 7
-            } }));
-        } else {
-            toast('DÉBLOQUÉ !', names);
+        let line = document.getElementById('gift-line');
+        if (!line) {
+            line = document.createElement('p');
+            line.id = 'gift-line';
+            line.setAttribute('role', 'status');
+            document.body.append(line);
         }
-        audio.play('new_record', { volume: 0.45 });
+        line.textContent = `🎁 ${unlocked.length > 1 ? `${unlocked.length} nouveautés` : 'Nouveau'} · à voir dans la salle des trophées`;
+        line.classList.remove('is-shown');
+        void line.offsetWidth;
+        line.classList.add('is-shown');
+        audio.play('new_record', { volume: 0.35 });
     }, 1600);
 }
 
@@ -5404,24 +5472,16 @@ async function showLeaderboard() {
     if (startScreen) startScreen.classList.remove('active');
     if (leaderboardScreen) leaderboardScreen.classList.add('active');
     openPodium();
-
-    // Afficher un message de chargement
-    leaderboardList.innerHTML = '<p style="color: #888;">Chargement...</p>';
-    leaderboardPage = { shown: 0, loading: false, done: false, sequence: (leaderboardPage.sequence || 0) + 1 };
-    const rows = await fetchLeaderboardFromAPI(0, 20);
-    leaderboardList.innerHTML = '';
-    if (rows.length === 0) {
-        leaderboardList.innerHTML = '<p style="color: #888;">Aucun score enregistré...</p>';
-        return;
-    }
-    appendLeaderboardRows(rows, 20);
-    updatePodium(rows);
+    showBoardPeriod();
+    if (leaderboardList) await reloadBoard();
 }
 
 // Podium (V2): the top three on a podium beside / above the list, played
 // from what this player saw last time (who climbed, who came in, a new
 // first with confetti), refreshed every 15 s while the screen is open.
 const PODIUM_SEEN_KEY = 'wheelie_podium_seen';
+// What was seen, for each leaderboard (all time, the day's).
+const podiumSeenKey = () => (boardPeriod === 'day' ? `${PODIUM_SEEN_KEY}_day` : PODIUM_SEEN_KEY);
 let podiumTimer = null;
 let podiumCaptionTimer = null;
 function podiumEntries(rows) {
@@ -5434,10 +5494,10 @@ function podiumEntries(rows) {
 }
 
 function updatePodium(rows) {
-    if (!v2 || !rows.length) return;
+    if (!v2) return;
     let previous = null;
     try {
-        previous = JSON.parse(localStorage.getItem(PODIUM_SEEN_KEY) || 'null');
+        previous = JSON.parse(localStorage.getItem(podiumSeenKey()) || 'null');
     } catch {
         previous = null;
     }
@@ -5447,7 +5507,7 @@ function updatePodium(rows) {
     // The classic look plays the arrival every time, the changes when any.
     const events = v2.podium.setStandings(entries, boardStyle() === 'classic' && same ? null : seen);
     try {
-        localStorage.setItem(PODIUM_SEEN_KEY, JSON.stringify(entries));
+        localStorage.setItem(podiumSeenKey(), JSON.stringify(entries));
     } catch {
         // Not kept: the next visit plays it all again.
     }
@@ -5488,7 +5548,7 @@ async function refreshPodium() {
     const rows = await fetchLeaderboardFromAPI(0, 3);
     let previous = [];
     try {
-        previous = JSON.parse(localStorage.getItem(PODIUM_SEEN_KEY) || '[]');
+        previous = JSON.parse(localStorage.getItem(podiumSeenKey()) || '[]');
     } catch {
         previous = [];
     }
@@ -5530,6 +5590,46 @@ for (const [id, style] of [['board-podium', 'podium'], ['board-classic', 'classi
 }
 showBoardStyle();
 
+// The day's leaderboard: the timer at the top right switches the list (and
+// the podium) to the scores since 5:50 this morning, French time.
+let boardPeriod = 'all';
+function untilReset() {
+    const paris = new Date(new Date().toLocaleString('en-US', { timeZone: 'Europe/Paris' }));
+    let minutes = 5 * 60 + 50 - (paris.getHours() * 60 + paris.getMinutes());
+    if (minutes <= 0) minutes += 24 * 60;
+    const hours = Math.floor(minutes / 60);
+    return hours ? `${hours} h ${String(minutes % 60).padStart(2, '0')}` : `${minutes} min`;
+}
+function showBoardPeriod() {
+    const day = boardPeriod === 'day';
+    const button = document.getElementById('daily-btn');
+    button?.classList.toggle('active', day);
+    button?.setAttribute('aria-pressed', String(day));
+    const label = document.getElementById('leaderboard-version');
+    if (label) label.innerText = day ? `DU JOUR · REMISE À ZÉRO À 5H50 (DANS ${untilReset().toUpperCase()})` : (IS_V2 ? 'VERSION 2 · RÉALISTE' : 'VERSION 1 · CLASSIQUE');
+}
+async function reloadBoard() {
+    const list = document.getElementById('leaderboard-list');
+    list.innerHTML = '<p style="color: #888;">Chargement...</p>';
+    leaderboardPage = { shown: 0, loading: false, done: false, sequence: (leaderboardPage.sequence || 0) + 1 };
+    const rows = await fetchLeaderboardFromAPI(0, 20);
+    list.innerHTML = '';
+    if (!rows.length) {
+        const empty = document.createElement('p');
+        empty.style.color = '#888';
+        empty.textContent = boardPeriod === 'day' ? 'Personne n’a encore de score aujourd’hui : la première place est à prendre !' : 'Aucun score enregistré...';
+        list.append(empty);
+    } else {
+        appendLeaderboardRows(rows, 20);
+    }
+    updatePodium(rows);
+}
+document.getElementById('daily-btn')?.addEventListener('click', () => {
+    boardPeriod = boardPeriod === 'day' ? 'all' : 'day';
+    showBoardPeriod();
+    reloadBoard();
+});
+
 // The list, its heading and buttons in one panel (built once), so the
 // stage and the panel can sit side by side, stacked, or slide.
 function boardPanel() {
@@ -5538,7 +5638,7 @@ function boardPanel() {
     if (panel) return panel;
     panel = document.createElement('div');
     panel.className = 'lb-panel';
-    const moving = [...screen.children].filter((child) => child.id !== 'podium-stage' && !child.classList.contains('podium-tabs'));
+    const moving = [...screen.children].filter((child) => child.id !== 'podium-stage' && child.id !== 'daily-btn' && !child.classList.contains('podium-tabs'));
     screen.prepend(panel);
     panel.append(...moving);
     // "Position sur le podium" right under the trophy room.

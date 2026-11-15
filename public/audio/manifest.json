@@ -745,6 +745,7 @@
     "plate_snap",
     "bike_fall",
     "bike_fall_fast",
+    "tire_screech",
     "start_1",
     "start_2",
     "wheelie_1",
@@ -1527,6 +1528,7 @@
     "st_cb_glider_ok_1": "1ad074ac3adcdb6465e938c0ab3ab7b4fea48cd87c1b167a30fdf7536e3d6696",
     "st_rider_will_sorry_1": "5891c72e5918cd13c44c894018ed9ae2fc93269b2900a72d839c40133bff957f",
     "st_rider_sorry_1": "fbe418d0fc8688e5b5899e984cfbed7339c39226e6bf8fce7badbdaad902d1e6",
-    "st_rider_victoire_sorry_1": "42a015664098e6f9184ab9c6fc8b4a4bd55d8730361c49b80fe6483ab7b7914a"
+    "st_rider_victoire_sorry_1": "42a015664098e6f9184ab9c6fc8b4a4bd55d8730361c49b80fe6483ab7b7914a",
+    "tire_screech": "963cb1a5e242e2aa058e2126666e9a09f5cb66da1c79c6e8fb99197d1a874d16"
   }
 }

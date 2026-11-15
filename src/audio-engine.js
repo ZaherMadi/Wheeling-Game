@@ -6,7 +6,7 @@ import { reportError } from './monitoring.js';
 const GEAR_TOP_KMH = [45, 80, 120, 165, 215, 300];
 const LOOP_IDS = [
     'engine_idle', 'engine_mid', 'engine_high', 'wind', 'tire_wet', 'city_ambience', 'scrape', 'footsteps',
-    'car_engine_petrol', 'car_engine_diesel', 'car_engine_sport', 'car_reverse', 'reverse_beeper'
+    'car_engine_petrol', 'car_engine_diesel', 'car_engine_sport', 'car_reverse', 'reverse_beeper', 'tire_screech'
 ];
 // Free roam cars: which engine each model has.
 const CAR_ENGINES = { hatch: 'car_engine_petrol', sedan: 'car_engine_petrol', van: 'car_engine_diesel', suv: 'car_engine_diesel', coupe: 'car_engine_sport' };
@@ -397,6 +397,9 @@ export function createAudioEngine({ effects, getManifest }) {
         setLoop('city_ambience', 0.16 - speedRatio * 0.09, 1);
         // The bavette grinding on the road; lighter when the wheelie just touches.
         setLoop('scrape', frame.bavette ? 0.8 : angleRatio > 0.93 && kmh > 10 ? 0.4 : 0, (frame.bavette ? 1.05 : 0.9) + speedRatio * 0.3);
+        // Free roam drift: the rear tyre screeching, louder the more it slides.
+        const drift = frame.drift || 0;
+        setLoop('tire_screech', drift * 0.75, 0.88 + drift * 0.18 + speedRatio * 0.12);
 
         // Events
         const throttleOn = throttle > 0.1;

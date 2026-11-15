@@ -1422,6 +1422,14 @@ body.v2 .ui-livery__label {
   text-transform: uppercase;
 }
 
+/* Longer names (unlocked rows): tighter, on two lines if needed. */
+body.v2 .ui-livery__label--long {
+  font-size: 10px;
+  letter-spacing: 0.03em;
+  line-height: 1.15;
+  white-space: normal;
+}
+
 body.v2 .ui-livery__number {
   width: 76px;
   padding: 8px 10px;
@@ -1997,6 +2005,11 @@ body.v2 .ui-garage__hint {
   body.v2 .ui-rider .ui-livery__label {
     width: 62px;
     font-size: 11px;
+  }
+
+  body.v2 .ui-rider .ui-livery__label--long {
+    width: 70px;
+    font-size: 9.5px;
   }
 
   body.v2 .ui-rider .ui-livery__swatches {

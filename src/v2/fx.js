@@ -143,6 +143,17 @@ export function createFx({ scene, mobile }) {
         );
     }
 
+    // Drift: thick white smoke off the sliding tyre, hanging in the air.
+    function tyreSmoke(point, bikeVelocity, strength = 1) {
+        for (let i = 0; i < 2; i++) {
+            soft.emit(
+                point.x + rand(-0.2, 0.2), 0.22, point.z + rand(-0.2, 0.2),
+                bikeVelocity.x * 0.25 + rand(-0.9, 0.9), rand(0.4, 1.3), bikeVelocity.z * 0.25 + rand(-0.9, 0.9),
+                { life: rand(1.4, 2.3), r: 0.9, g: 0.9, b: 0.92, alpha: 0.32 + 0.24 * strength, size: rand(0.7, 1.1), growth: 2.3, gravity: 0.35 }
+            );
+        }
+    }
+
     function spark(point, bikeVelocity, count = 1) {
         for (let i = 0; i < count; i++) {
             sparks.emit(
@@ -180,5 +191,5 @@ export function createFx({ scene, mobile }) {
         sprayDebt = 0;
     }
 
-    return { spray, smoke, spark, flame, update, clear };
+    return { spray, smoke, tyreSmoke, spark, flame, update, clear };
 }

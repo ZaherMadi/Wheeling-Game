@@ -94,6 +94,51 @@ export function createHelmetTexture(base = '#0a0a0c', accent = '#f2c014', number
     return texture;
 }
 
+// The Arai: a racing helmet's paint. A band over the crown, swept wings on
+// both sides, pinstripes, the number at the back (same UVs as above).
+export function createAraiTexture(base = '#f2f2f0', accent = '#e8282e', number = '51') {
+    const canvas = document.createElement('canvas');
+    canvas.width = 512;
+    canvas.height = 256;
+    const ctx = canvas.getContext('2d');
+    ctx.fillStyle = base;
+    ctx.fillRect(0, 0, 512, 256);
+    // Crown band from the front over the top to the back.
+    ctx.fillStyle = accent;
+    ctx.fillRect(0, 0, 512, 34);
+    // Wings sweeping back on each side (u 0 / 1 = left, 0.5 = right).
+    for (const centre of [0, 0.5, 1]) {
+        const x = centre * 512;
+        ctx.beginPath();
+        ctx.moveTo(x - 70, 140);
+        ctx.quadraticCurveTo(x, 60, x + 90, 44);
+        ctx.lineTo(x + 110, 64);
+        ctx.quadraticCurveTo(x + 10, 92, x - 40, 150);
+        ctx.closePath();
+        ctx.fill();
+    }
+    ctx.strokeStyle = '#111111';
+    ctx.lineWidth = 4;
+    ctx.beginPath();
+    ctx.moveTo(0, 40);
+    ctx.lineTo(512, 40);
+    ctx.stroke();
+    ctx.fillStyle = '#111111';
+    ctx.fillRect(0, 168, 512, 6);
+    ctx.font = '900 46px "Arial Black", Arial, sans-serif';
+    ctx.textAlign = 'center';
+    ctx.textBaseline = 'middle';
+    ctx.lineWidth = 6;
+    ctx.strokeStyle = base;
+    ctx.strokeText(number, 0.75 * 512, 100);
+    ctx.fillStyle = accent;
+    ctx.fillText(number, 0.75 * 512, 100);
+    const texture = new THREE.CanvasTexture(canvas);
+    texture.colorSpace = THREE.SRGBColorSpace;
+    texture.anisotropy = 4;
+    return texture;
+}
+
 // Number plate, French style: blue bands (F on the left, 06 on the right),
 // the player's text in the middle (8 characters at most).
 export function createPlateTexture(text = '51-WHEEL') {
@@ -164,7 +209,12 @@ export function createRider({ scene }) {
         iridescence: 1, iridescenceIOR: 1.6, iridescenceThicknessRange: [180, 680], envMapIntensity: 2.2
     });
     const glove = standard(0x0e0e10, 0.6);
+    // The shoes' colour can change (unlocked); the hoodie's cords stay white.
     const sneaker = standard(0xf2f2f0, 0.62);
+    const cords = standard(0xf2f2f0, 0.62);
+    // The Arai (unlocked): its paint and a shell coloured to match.
+    const arai = new THREE.MeshStandardMaterial({ map: createAraiTexture(), roughness: 0.1, metalness: 0.15 });
+    const araiShell = new THREE.MeshStandardMaterial({ color: 0xf2f2f0, roughness: 0.12, metalness: 0.2 });
     const sole = standard(0xd8d8d6, 0.75);
     const plate = standard(0xe9e9e4, 0.6);
     const tailLight = new THREE.MeshBasicMaterial({ color: 0xff2a1f });
@@ -172,7 +222,7 @@ export function createRider({ scene }) {
     const glowTexture = createGlowTexture();
     const materials = [
         paint, rubber, darkMetal, chrome, gold, seatMaterial, jersey, jerseyDark, jerseyPrint, pants, helmet, helmetShell, visor,
-        glove, sneaker, sole, plate, tailLight, headLight
+        glove, sneaker, cords, arai, araiShell, sole, plate, tailLight, headLight
     ];
 
     // --- Primitives -------------------------------------------------------
@@ -339,7 +389,7 @@ export function createRider({ scene }) {
     body.add(jerseyDark, new THREE.TorusGeometry(0.13, 0.035, 6, 16), transform(0, 0.6, -0.02, 1.05, 1, 0.9, Math.PI / 2 - 0.25));
     body.add(jerseyDark, new THREE.CylinderGeometry(0.165, 0.152, 0.07, 24), transform(0, 0.045, 0, 1.23, 1, 0.92));
     body.add(jerseyDark, box, transform(0, 0.17, 0.17, 0.26, 0.13, 0.03, 0.12));
-    for (const side of [-1, 1]) body.add(sneaker, tube, transform(side * 0.045, 0.47, 0.16, 0.007, 0.16, 0.007, 0.25));
+    for (const side of [-1, 1]) body.add(cords, tube, transform(side * 0.045, 0.47, 0.16, 0.007, 0.16, 0.007, 0.25));
     body.add(pants, tube, transform(0, 0.6, 0.01, 0.06, 0.1, 0.06));
     body.build(pelvis);
     torsoGeometry.dispose();
@@ -364,7 +414,27 @@ export function createRider({ scene }) {
     }
     headParts.add(helmetShell, box, transform(0, 0.2, -0.2, 0.17, 0.035, 0.07, 0.5));
     headParts.add(rubber, new THREE.TorusGeometry(0.15, 0.035, 8, 20), transform(0, -0.13, 0, 1.15, 1.25, 1, Math.PI / 2));
-    headParts.build(head);
+    const classicHead = new THREE.Group();
+    head.add(classicHead);
+    headParts.build(classicHead);
+    // The Arai: longer shell, a sharper chin bar, crown vents, a big rear
+    // spoiler and visor pods; the same tinted visor.
+    const araiHead = new THREE.Group();
+    araiHead.visible = false;
+    head.add(araiHead);
+    const araiParts = new Parts();
+    araiParts.add(arai, shell, transform(0, 0.065, -0.012, 0.219, 0.216, 0.252));
+    araiParts.add(araiShell, chin, transform(0, 0.045, 0.02, 0.226, 0.24, 0.262));
+    araiParts.add(araiShell, box, transform(0, -0.06, 0.225, 0.13, 0.05, 0.05, -0.35));
+    araiParts.add(visor, visorGeometry, transform(0, 0.064, 0.008, 0.233, 0.227, 0.262));
+    for (const side of [-1, 1]) {
+        araiParts.add(araiShell, tube, transform(side * 0.226, 0.078, 0.034, 0.038, 0.016, 0.038, 0, 0, Math.PI / 2));
+        araiParts.add(darkMetal, box, transform(side * 0.05, 0.27, 0.06, 0.04, 0.025, 0.07, -0.25));
+    }
+    araiParts.add(araiShell, box, transform(0, 0.22, -0.21, 0.21, 0.04, 0.1, 0.6));
+    araiParts.add(darkMetal, box, transform(0, 0.24, -0.2, 0.19, 0.012, 0.07, 0.6));
+    araiParts.add(rubber, new THREE.TorusGeometry(0.15, 0.035, 8, 20), transform(0, -0.13, 0, 1.15, 1.25, 1, Math.PI / 2));
+    araiParts.build(araiHead);
     for (const geometry of [shell, chin, visorGeometry]) geometry.dispose();
 
     const shoulders = [-1, 1].map((side) => {
@@ -1021,7 +1091,22 @@ export function createRider({ scene }) {
 
     // Rider customisation: number, hoodie, helmet and bike colours.
     const luminance = (color) => 0.2126 * color.r + 0.7152 * color.g + 0.0722 * color.b;
-    function setLivery({ number = '51', hoodie = '#f6c416', helmet: helmetColor = '#0a0a0c', bike = '#f2c014', name = '', plate: withPlate = false, plateText: text = '' } = {}) {
+    function setLivery({
+        number = '51', hoodie = '#f6c416', helmet: helmetColor = '#0a0a0c', bike = '#f2c014', name = '', plate: withPlate = false, plateText: text = '',
+        helmetStyle = 'classic', shoes = '#f2f2f0'
+    } = {}) {
+        sneaker.color.set(shoes);
+        const araiOn = helmetStyle === 'arai';
+        classicHead.visible = !araiOn;
+        araiHead.visible = araiOn;
+        if (araiOn) {
+            // The helmet colour paints the Arai's wings and crown band.
+            const base = luminance(new THREE.Color(helmetColor)) > 0.6 ? '#1a1b1f' : '#f2f2f0';
+            arai.map.dispose();
+            arai.map = createAraiTexture(base, helmetColor, String(number));
+            arai.needsUpdate = true;
+            araiShell.color.set(base);
+        }
         plateEnabled = !!withPlate;
         if (!loosePlate.active) plateMesh.visible = plateEnabled;
         if (text !== plateText) {

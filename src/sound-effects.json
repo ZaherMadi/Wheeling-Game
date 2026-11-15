@@ -202,5 +202,11 @@
     "text": "A motorcycle crashing at speed and sliding a long way on its side on asphalt: heavy impact, grinding metal, plastic parts breaking off, then the slide slowing down. No music, no voice.",
     "durationSeconds": 3.2,
     "loop": false
+  },
+  {
+    "id": "tire_screech",
+    "durationSeconds": 4,
+    "loop": true,
+    "text": "Continuous motorcycle rear tire screeching while drifting sideways on dry asphalt, steady high-pitched rubber squeal with a gritty scrubbing texture, constant intensity, seamless loop, close isolated sound effect, no engine, no impact, no speech, no music."
   }
 ]

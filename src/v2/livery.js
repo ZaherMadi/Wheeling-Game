@@ -2,15 +2,17 @@
 // helmet, hoodie, helmet and bike colours. Saved in this browser only.
 const KEY = 'wheelie_rider_livery';
 
-import { PLATE_POINTS, SHOP_POINTS } from '../unlocks.js';
+import { ARAI_POINTS, PLATE_POINTS, SHOES_POINTS } from '../unlocks.js';
 
-export const LIVERY_DEFAULT = { number: '51', hoodie: '#f6c416', helmet: '#0a0a0c', bike: '#f2c014', plate: true, plateText: '' };
-// Helmets of the shop (10 000 points): only the current one for now.
-const SHOP_HELMETS = [
-    { name: 'Casque actuel', price: 0 },
-    { name: 'À venir', price: 800 },
-    { name: 'À venir', price: 1400 },
-    { name: 'À venir', price: 2000 }
+export const LIVERY_DEFAULT = {
+    number: '51', hoodie: '#f6c416', helmet: '#0a0a0c', bike: '#f2c014', plate: true, plateText: '',
+    helmetStyle: 'classic', shoes: '#f2f2f0'
+};
+// Helmet shapes (the Arai from ARAI_POINTS).
+const HELMET_STYLES = [['classic', 'Classique'], ['arai', 'Arai']];
+const SHOE_COLORS = [
+    ['#f2f2f0', 'Blanc'], ['#1a1b1f', 'Noir'], ['#e8282e', 'Rouge'], ['#1f6fe0', 'Bleu'],
+    ['#f6c416', 'Jaune'], ['#17a35a', 'Vert'], ['#ff7a1a', 'Orange'], ['#ff6fb5', 'Rose']
 ];
 
 const PALETTES = {
@@ -150,21 +152,56 @@ export function mountLiveryPanel(container, onChange, { points = () => 0 } = {})
         container.append(row);
     }
 
-    // Helmet shop: secret until 10 000 points; only the concept for now.
-    if (earned >= SHOP_POINTS) {
-        const shop = document.createElement('div');
-        shop.className = 'ui-livery__shop';
-        shop.innerHTML = '<span class="ui-livery__label">Boutique</span>';
-        const list = document.createElement('div');
-        list.className = 'ui-livery__shop-list';
-        for (const item of SHOP_HELMETS) {
-            const entry = document.createElement('span');
-            entry.className = `ui-livery__shop-item ${item.price ? 'is-soon' : 'is-owned'}`;
-            entry.textContent = item.price ? `${item.name} · ${item.price} pts` : `${item.name} · équipé`;
-            list.append(entry);
+    // Helmet shape: secret until the Arai is unlocked.
+    if (earned >= ARAI_POINTS) {
+        const row = document.createElement('div');
+        row.className = 'ui-livery__row';
+        row.innerHTML = '<span class="ui-livery__label ui-livery__label--long">Modèle casque</span>';
+        const choices = document.createElement('div');
+        choices.className = 'ui-livery__swatches';
+        for (const [style, name] of HELMET_STYLES) {
+            const choice = document.createElement('button');
+            choice.type = 'button';
+            choice.className = 'ui-livery__toggle';
+            choice.textContent = name.toUpperCase();
+            choice.classList.toggle('active', (livery.helmetStyle || 'classic') === style);
+            choice.addEventListener('click', () => {
+                livery.helmetStyle = style;
+                choices.querySelectorAll('button').forEach((other) => other.classList.toggle('active', other === choice));
+                saveLivery(livery);
+                onChange(livery);
+            });
+            choices.append(choice);
         }
-        shop.append(list);
-        container.append(shop);
+        row.append(choices);
+        container.append(row);
+    }
+
+    // Shoe colours: secret until unlocked.
+    if (earned >= SHOES_POINTS) {
+        const row = document.createElement('div');
+        row.className = 'ui-livery__row';
+        row.innerHTML = '<span class="ui-livery__label ui-livery__label--long">Chaussures</span>';
+        const swatches = document.createElement('div');
+        swatches.className = 'ui-livery__swatches';
+        for (const [color, name] of SHOE_COLORS) {
+            const swatch = document.createElement('button');
+            swatch.type = 'button';
+            swatch.className = 'ui-swatch';
+            swatch.style.setProperty('--swatch', color);
+            swatch.title = name;
+            swatch.setAttribute('aria-label', `Chaussures ${name}`);
+            swatch.classList.toggle('active', (livery.shoes || '#f2f2f0') === color);
+            swatch.addEventListener('click', () => {
+                livery.shoes = color;
+                swatches.querySelectorAll('.ui-swatch').forEach((other) => other.classList.toggle('active', other === swatch));
+                saveLivery(livery);
+                onChange(livery);
+            });
+            swatches.append(swatch);
+        }
+        row.append(swatches);
+        container.append(row);
     }
 
     const reset = document.createElement('button');
@@ -172,7 +209,10 @@ export function mountLiveryPanel(container, onChange, { points = () => 0 } = {})
     reset.className = 'setting-btn';
     reset.textContent = 'LOOK 51WHELING';
     reset.addEventListener('click', () => {
-        Object.assign(livery, { ...LIVERY_DEFAULT, plate: livery.plate, plateText: livery.plateText });
+        Object.assign(livery, {
+            ...LIVERY_DEFAULT, plate: livery.plate, plateText: livery.plateText,
+            helmetStyle: livery.helmetStyle, shoes: livery.shoes
+        });
         saveLivery(livery);
         mountLiveryPanel(container, onChange, { points });
         onChange(livery);

@@ -6,7 +6,7 @@
 // the one who drops out walks off.
 import * as THREE from 'three';
 import { mergeGeometries } from 'three/examples/jsm/utils/BufferGeometryUtils.js';
-import { HOOD_TRANSFORM, createHelmetTexture } from './rider.js';
+import { HOOD_TRANSFORM, createAraiTexture, createHelmetTexture } from './rider.js';
 import { LIVERY_DEFAULT } from './livery.js';
 
 const UP = new THREE.Vector3(0, 1, 0);
@@ -200,7 +200,10 @@ function createFigure(scene) {
     const helmet = new THREE.MeshStandardMaterial({ roughness: 0.12, metalness: 0.2 });
     const shell = new THREE.MeshStandardMaterial({ color: 0x0a0a0c, roughness: 0.12, metalness: 0.2 });
     const shirtMaterial = new THREE.MeshStandardMaterial({ roughness: 0.9, side: THREE.DoubleSide, transparent: true, alphaTest: 0.4 });
-    const own = [jersey, jerseyDark, print, helmet, shell, shirtMaterial];
+    const sneaker = new THREE.MeshStandardMaterial({ color: 0xf2f2f0, roughness: 0.62 });
+    const arai = new THREE.MeshStandardMaterial({ roughness: 0.1, metalness: 0.15 });
+    const araiShell = new THREE.MeshStandardMaterial({ color: 0xf2f2f0, roughness: 0.12, metalness: 0.2 });
+    const own = [jersey, jerseyDark, print, helmet, shell, shirtMaterial, sneaker, arai, araiShell];
 
     const shoulderBall = (s) => [parts.sphere, matrixOf(s * 0.205, 0.445, 0, 0.082, 0.08, 0.08)];
     merged(pelvis, jersey, [[parts.torso, matrixOf(0, 0.02, 0, 1.22, 1, 0.9)], shoulderBall(1), shoulderBall(-1), [parts.hood, HOOD_TRANSFORM().clone()]]);
@@ -215,9 +218,24 @@ function createFigure(scene) {
     const head = new THREE.Group();
     head.position.set(0, 0.74, 0.03);
     pelvis.add(head);
-    merged(head, helmet, [[parts.shell, matrixOf(0, 0.06, -0.005, 0.215, 0.212, 0.238)]]);
-    merged(head, shell, [[parts.chin, matrixOf(0, 0.05, 0.012, 0.222, 0.235, 0.252)], [parts.box, matrixOf(0, 0.2, -0.2, 0.17, 0.035, 0.07, 0.5)]]);
-    merged(head, parts.visorMaterial, [[parts.visor, matrixOf(0, 0.062, 0.004, 0.229, 0.224, 0.254)]]);
+    const classicHead = new THREE.Group();
+    head.add(classicHead);
+    merged(classicHead, helmet, [[parts.shell, matrixOf(0, 0.06, -0.005, 0.215, 0.212, 0.238)]]);
+    merged(classicHead, shell, [[parts.chin, matrixOf(0, 0.05, 0.012, 0.222, 0.235, 0.252)], [parts.box, matrixOf(0, 0.2, -0.2, 0.17, 0.035, 0.07, 0.5)]]);
+    merged(classicHead, parts.visorMaterial, [[parts.visor, matrixOf(0, 0.062, 0.004, 0.229, 0.224, 0.254)]]);
+    // The Arai (as the rider's): longer shell, sharp chin, vents, big spoiler.
+    const araiHead = new THREE.Group();
+    araiHead.visible = false;
+    head.add(araiHead);
+    merged(araiHead, arai, [[parts.shell, matrixOf(0, 0.065, -0.012, 0.219, 0.216, 0.252)]]);
+    merged(araiHead, araiShell, [
+        [parts.chin, matrixOf(0, 0.045, 0.02, 0.226, 0.24, 0.262)],
+        [parts.box, matrixOf(0, -0.06, 0.225, 0.13, 0.05, 0.05, -0.35)],
+        [parts.box, matrixOf(0, 0.22, -0.21, 0.21, 0.04, 0.1, 0.6)],
+        [parts.tube, matrixOf(0.226, 0.078, 0.034, 0.038, 0.016, 0.038, 0, 0, Math.PI / 2)],
+        [parts.tube, matrixOf(-0.226, 0.078, 0.034, 0.038, 0.016, 0.038, 0, 0, Math.PI / 2)]
+    ]);
+    merged(araiHead, parts.visorMaterial, [[parts.visor, matrixOf(0, 0.064, 0.008, 0.233, 0.227, 0.262)]]);
     merged(head, parts.rubber, [[parts.neckRoll, matrixOf(0, -0.13, 0, 1.15, 1.25, 1, Math.PI / 2)]]);
 
     const limb = (upperGeometry, lowerGeometry, lengthA, lengthB, material) => {
@@ -239,7 +257,7 @@ function createFigure(scene) {
     pelvis.add(finger);
     const shoes = [0, 1].map(() => {
         const shoe = new THREE.Group();
-        const upper = new THREE.Mesh(parts.box, parts.sneaker);
+        const upper = new THREE.Mesh(parts.box, sneaker);
         upper.scale.set(0.11, 0.095, 0.25);
         upper.position.set(0, 0.025, 0.04);
         const sole = new THREE.Mesh(parts.box, parts.sole);
@@ -286,13 +304,24 @@ function createFigure(scene) {
     let lookKey = '';
     function setLook(next, name) {
         const value = { ...LIVERY_DEFAULT, ...(next || {}) };
-        const key = `${value.number}|${value.hoodie}|${value.helmet}|${name}`;
+        const key = `${value.number}|${value.hoodie}|${value.helmet}|${value.helmetStyle}|${value.shoes}|${name}`;
         if (key === lookKey) {
             look = value;
             return;
         }
         lookKey = key;
         look = value;
+        sneaker.color.set(value.shoes || '#f2f2f0');
+        const araiOn = value.helmetStyle === 'arai';
+        classicHead.visible = !araiOn;
+        araiHead.visible = araiOn;
+        if (araiOn) {
+            const base = luminance(new THREE.Color(value.helmet)) > 0.6 ? '#1a1b1f' : '#f2f2f0';
+            arai.map?.dispose();
+            arai.map = createAraiTexture(base, value.helmet, String(value.number));
+            arai.needsUpdate = true;
+            araiShell.color.set(base);
+        }
         jersey.color.set(value.hoodie);
         jerseyDark.color.set(value.hoodie).multiplyScalar(0.84);
         const ink = luminance(jersey.color) > 0.35 ? '#111' : '#f6c416';
@@ -714,9 +743,14 @@ export function createPodium({ scene }) {
     let orbit = 0;
     let orbitSpeed = 0;
     let dragging = false;
+    // Two fingers apart (or the mouse wheel): closer, to read the names.
+    let zoom = 1;
     function orbitBy(radians) {
         orbit += radians;
         orbitSpeed = radians;
+    }
+    function zoomBy(factor) {
+        zoom = Math.max(0.38, Math.min(1.5, zoom / factor));
     }
     function setDragging(on) {
         dragging = on;
@@ -727,7 +761,7 @@ export function createPodium({ scene }) {
         const halfH = Math.atan(halfTan * camera.aspect * (area.x1 - area.x0) / area.width);
         // Solo: closer, on the one figure.
         const radius = solo ? 1.7 : 2.75;
-        const distance = Math.max(solo ? 3.4 : 4.6, radius / Math.sin(Math.min(halfV, halfH)));
+        const distance = Math.max(solo ? 3.4 : 4.6, radius / Math.sin(Math.min(halfV, halfH))) * zoom;
         // A little momentum after the finger leaves.
         if (!dragging) {
             orbit += orbitSpeed;
@@ -735,7 +769,9 @@ export function createPodium({ scene }) {
         }
         const sway = Math.sin(time * 0.25) * 0.15 + orbit;
         const focusX = solo ? steps[0].top.x : 0;
-        const focusY = solo ? steps[0].top.y + 0.95 : 1.5;
+        // Zoomed in: aim up at the backs, where the names are.
+        const closer = Math.max(0, Math.min(1, (1 - zoom) / 0.62));
+        const focusY = (solo ? steps[0].top.y + 0.95 : 1.5) + closer * (solo ? 0.25 : 0.55);
         camera.position.set(
             group.position.x + focusX + Math.sin(sway) * distance,
             group.position.y + focusY - 0.15 + distance * 0.16,
@@ -748,7 +784,7 @@ export function createPodium({ scene }) {
     }
 
     return {
-        group, setStandings, update, place, frame, celebrate, preview: showPreview, setSolo, remaining, orbitBy, setDragging,
-        resetOrbit: () => { orbit = 0; orbitSpeed = 0; }
+        group, setStandings, update, place, frame, celebrate, preview: showPreview, setSolo, remaining, orbitBy, setDragging, zoomBy,
+        resetOrbit: () => { orbit = 0; orbitSpeed = 0; zoom = 1; }
     };
 }
