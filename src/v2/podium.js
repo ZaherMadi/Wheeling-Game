@@ -8,6 +8,7 @@ import * as THREE from 'three';
 import { mergeGeometries } from 'three/examples/jsm/utils/BufferGeometryUtils.js';
 import { HOOD_TRANSFORM, createAraiTexture, createHelmetTexture } from './rider.js';
 import { LIVERY_DEFAULT } from './livery.js';
+import { JERSEY_GRIP, createHeldJersey } from './held-jersey.js';
 
 const UP = new THREE.Vector3(0, 1, 0);
 const PELVIS_Y = 0.93;
@@ -64,7 +65,6 @@ function sharedParts() {
         legUpper: new THREE.CapsuleGeometry(0.088, 0.264, 4, 8),
         legLower: new THREE.CapsuleGeometry(0.088, 0.284, 4, 8),
         finger: new THREE.CapsuleGeometry(0.02, 0.07, 3, 6),
-        shirt: new THREE.PlaneGeometry(0.66, 0.6),
         pants: standard(0x16181d, 0.85),
         glove: standard(0x0e0e10, 0.6),
         sneaker: standard(0xf2f2f0, 0.62),
@@ -110,50 +110,9 @@ function createBackTexture(number, color, ink, name) {
     return texture;
 }
 
-// The back of a shirt held up (the "maillot" pose): its outline, the
-// colour, the name and the number, on a transparent canvas.
-function createShirtTexture(color, ink, number, name) {
-    const canvas = document.createElement('canvas');
-    canvas.width = 256;
-    canvas.height = 232;
-    const ctx = canvas.getContext('2d');
-    ctx.fillStyle = color;
-    ctx.strokeStyle = '#111';
-    ctx.lineWidth = 6;
-    ctx.beginPath();
-    ctx.moveTo(78, 8);
-    ctx.quadraticCurveTo(128, 30, 178, 8);
-    ctx.lineTo(250, 46);
-    ctx.lineTo(222, 96);
-    ctx.lineTo(196, 84);
-    ctx.lineTo(196, 226);
-    ctx.lineTo(60, 226);
-    ctx.lineTo(60, 84);
-    ctx.lineTo(34, 96);
-    ctx.lineTo(6, 46);
-    ctx.closePath();
-    ctx.fill();
-    ctx.stroke();
-    ctx.textAlign = 'center';
-    ctx.textBaseline = 'middle';
-    ctx.fillStyle = ink;
-    ctx.lineWidth = 5;
-    if (name) {
-        ctx.font = '900 24px "Arial Black", Arial, sans-serif';
-        ctx.strokeText(name, 128, 62, 124);
-        ctx.fillText(name, 128, 62, 124);
-    }
-    ctx.font = 'italic 900 96px "Arial Black", Arial, sans-serif';
-    ctx.lineWidth = 8;
-    ctx.strokeText(number, 128, 150, 128);
-    ctx.fillText(number, 128, 150, 128);
-    const texture = new THREE.CanvasTexture(canvas);
-    texture.colorSpace = THREE.SRGBColorSpace;
-    return texture;
-}
-
 // Hands (left, right) in pelvis space for a figure facing +z (its left is
 // +x), the elbows' bend, the head, for each pose. t: seconds, for life.
+// front: the figure turns to face the people (the others show their back).
 function poseOf(id, t) {
     const hip = (s) => ({ hand: [s * 0.235, 0.09, -0.02], pole: [s, 0, -0.45] });
     const sway = Math.sin(t * 2.1);
@@ -168,10 +127,22 @@ function poseOf(id, t) {
         case 'muscles': return {
             sides: [1, -1].map((s) => ({ hand: [s * (0.4 + Math.sin(t * 3) * 0.015), 0.8, -0.02], pole: [s, -0.5, 0] }))
         };
-        case 'maillot': return {
-            sides: [1, -1].map((s) => ({ hand: [s * 0.29, 1.08 + sway * 0.03, 0.12], pole: [s, -0.3, 0.2] })),
-            shirt: 1.36 + sway * 0.03
-        };
+        case 'maillot': {
+            // The jersey held by the shoulders in front of the chest, hanging
+            // down; every few seconds it is held out to the people below.
+            // Then the arms reach forwards and down and the top of the cloth
+            // leans out, the print turned to those looking up.
+            const out = Math.max(0, Math.sin(t * 1.2)) ** 2;
+            const grip = JERSEY_GRIP + out * 0.022;
+            const y = 0.43 - out * 0.1 + sway * 0.008;
+            const z = 0.3 + out * 0.2;
+            return {
+                sides: [1, -1].map((s) => ({ hand: [s * grip, y, z], pole: [s, -0.12, -0.3] })),
+                head: [0.22 + out * 0.12, Math.sin(t * 0.6) * 0.06, 0],
+                jersey: { y: y + 0.035, z: z - 0.025, grip, tilt: 0.08 + out * 0.3 },
+                front: true
+            };
+        }
         case 'numero1': return {
             sides: [hip(1), { hand: [-0.27, 1.2, 0.08], pole: [-1, -0.2, 0] }],
             finger: true, head: [-0.12, 0, 0]
@@ -199,11 +170,10 @@ function createFigure(scene) {
     const print = new THREE.MeshStandardMaterial({ roughness: 0.86 });
     const helmet = new THREE.MeshStandardMaterial({ roughness: 0.12, metalness: 0.2 });
     const shell = new THREE.MeshStandardMaterial({ color: 0x0a0a0c, roughness: 0.12, metalness: 0.2 });
-    const shirtMaterial = new THREE.MeshStandardMaterial({ roughness: 0.9, side: THREE.DoubleSide, transparent: true, alphaTest: 0.4 });
     const sneaker = new THREE.MeshStandardMaterial({ color: 0xf2f2f0, roughness: 0.62 });
     const arai = new THREE.MeshStandardMaterial({ roughness: 0.1, metalness: 0.15 });
     const araiShell = new THREE.MeshStandardMaterial({ color: 0xf2f2f0, roughness: 0.12, metalness: 0.2 });
-    const own = [jersey, jerseyDark, print, helmet, shell, shirtMaterial, sneaker, arai, araiShell];
+    const own = [jersey, jerseyDark, print, helmet, shell, sneaker, arai, araiShell];
 
     const shoulderBall = (s) => [parts.sphere, matrixOf(s * 0.205, 0.445, 0, 0.082, 0.08, 0.08)];
     merged(pelvis, jersey, [[parts.torso, matrixOf(0, 0.02, 0, 1.22, 1, 0.9)], shoulderBall(1), shoulderBall(-1), [parts.hood, HOOD_TRANSFORM().clone()]]);
@@ -267,9 +237,9 @@ function createFigure(scene) {
         pelvis.add(shoe);
         return shoe;
     });
-    const shirt = new THREE.Mesh(parts.shirt, shirtMaterial);
-    shirt.rotation.y = Math.PI;
-    pelvis.add(shirt);
+    // The jersey of the "maillot" pose (held-jersey.js).
+    const held = createHeldJersey();
+    pelvis.add(held.mesh);
 
     // Two-bone IK, pelvis space (as the rider's).
     const from = new THREE.Vector3();
@@ -333,9 +303,7 @@ function createFigure(scene) {
         helmet.map = createHelmetTexture(value.helmet, luminance(shellColor) > 0.45 ? '#111111' : '#f2c014', String(value.number));
         helmet.needsUpdate = true;
         shell.color.set(value.helmet);
-        shirtMaterial.map?.dispose();
-        shirtMaterial.map = createShirtTexture(value.hoodie, ink, String(value.number), String(name || '').slice(0, 12));
-        shirtMaterial.needsUpdate = true;
+        held.setPrint(value.hoodie, ink, String(value.number), String(name || '').slice(0, 12));
     }
 
     // Body: 'stand' (the pose), 'run' or 'air'. phase: running cycle.
@@ -344,9 +312,9 @@ function createFigure(scene) {
         const breathing = motion === 'stand' ? Math.sin(t * 2) * 0.006 : 0;
         pelvis.position.y = PELVIS_Y + breathing + (motion === 'run' ? Math.abs(Math.sin(phase)) * 0.04 : 0);
         head.rotation.set(...(motion === 'stand' && pose.head ? pose.head : [0, 0, 0]));
-        const showShirt = motion === 'stand' && pose.shirt !== undefined;
-        shirt.visible = showShirt;
-        if (showShirt) shirt.position.set(0, pose.shirt, 0.12);
+        const holding = motion === 'stand' && !!pose.jersey;
+        held.mesh.visible = holding;
+        if (holding) held.update(t, 0, pose.jersey.y, pose.jersey.z, pose.jersey.grip, pose.jersey.tilt);
         finger.visible = false;
         for (let i = 0; i < 2; i++) {
             const s = i === 0 ? 1 : -1;
@@ -384,10 +352,16 @@ function createFigure(scene) {
             material.map?.dispose();
             material.dispose();
         });
+        held.dispose();
         scene.remove(root);
     }
 
-    return { root, setLook, animate, dispose, get look() { return look; } };
+    return {
+        root, setLook, animate, dispose,
+        get look() { return look; },
+        // Standing, this pose faces the people (0) or shows its back (pi).
+        get facing() { return poseOf(look?.pose, 0).front ? 0 : Math.PI; }
+    };
 }
 
 // The label on each step's front: laurel, the place, the name and score.
@@ -645,7 +619,8 @@ export function createPodium({ scene }) {
             preview.figure.root.position.set(2.65, 0.08, 1.5);
             previewTime = 6;
         }
-        preview.figure.root.rotation.y = Math.PI;
+        if (preview.facing === undefined) preview.facing = preview.figure.facing;
+        preview.figure.root.rotation.y = preview.facing;
         preview.figure.root.visible = true;
     }
     function setSolo(on, look, name) {
@@ -697,7 +672,7 @@ export function createPodium({ scene }) {
                 spare.push(entry.figure);
                 continue;
             }
-            if (motion === 'stand') entry.facing += (Math.PI - entry.facing) * Math.min(1, dt * 6);
+            if (motion === 'stand') entry.facing += (entry.figure.facing - entry.facing) * Math.min(1, dt * 6);
             root.rotation.y = entry.facing;
             entry.phase += dt * 11;
             entry.figure.animate(time + key.length, motion, entry.phase);
@@ -707,7 +682,12 @@ export function createPodium({ scene }) {
         if (preview) {
             previewTime -= dt;
             preview.figure.root.visible = previewTime > 0;
-            if (previewTime > 0) preview.figure.animate(time, 'stand', 0);
+            if (previewTime > 0) {
+                // Turns round when the pose tried faces the other way.
+                preview.facing += (preview.figure.facing - preview.facing) * Math.min(1, dt * 6);
+                preview.figure.root.rotation.y = preview.facing;
+                preview.figure.animate(time, 'stand', 0);
+            }
         }
         // Confetti
         confettiTime = Math.max(0, confettiTime - dt);
