@@ -275,9 +275,10 @@ let state = {
     // Time spent against a side of the road, and the obstacle put there.
     edge: { frames: 0, pending: null },
     // Bavette (frames left while held, and in all) and this run's plate.
-    // Shield (src/shield.js): carried or not, the frame from which the next
-    // one may appear, and the frames the one just used still covers.
-    shield: { on: false, nextAt: 0, graceUntil: -1, told: false },
+    // Shields (src/shield.js): how many are carried (up to SHIELD.max), the
+    // frame from which the next one may appear, and the frames the one just
+    // used still covers.
+    shield: { count: 0, nextAt: 0, graceUntil: -1, told: false },
     // armed: back down since the last one; savedAt: the frame it was saved.
     bavette: { left: 0, total: 0, armed: true, savedAt: -1e9 },
     plate: { on: false, off: false },
@@ -1486,8 +1487,8 @@ function resetGame() {
     if (v2) v2.skidmarks.clear();
     secretCode.step = 0;
     state.bavette = { left: 0, total: 0, armed: true, savedAt: -1e9 };
-    state.shield = { on: false, nextAt: 0, graceUntil: -1, told: false };
-    showShield(false);
+    state.shield = { count: 0, nextAt: 0, graceUntil: -1, told: false };
+    showShields();
     // The plate rides only on the V2 bike, once unlocked and switched on.
     state.plate = { on: IS_V2 && GAME_SETTINGS.gameMode === 'linear' && plateEquipped(), off: false };
     state.flipMode = GAME_SETTINGS.flipMode;
@@ -1780,8 +1781,8 @@ function standRiderUp() {
 function quitToMenu() {
     // Left on purpose: not a run cut short.
     clearLiveRun();
-    state.shield.on = false;
-    showShield(false);
+    state.shield.count = 0;
+    showShields();
     state.userPaused = false;
     state.isPlaying = false;
     crashSequence++;
@@ -1865,9 +1866,9 @@ function checkCollisions() {
             // would produce a replay the server refuses.
             const fragile = state.frame - 1 < state.vulnerableUntil;
             knockObstacle(obs);
-            if (state.shield.on || state.frame < state.shield.graceUntil) {
-                // The shield takes it (and whatever is touched with it).
-                if (state.shield.on) breakShield();
+            if (state.frame < state.shield.graceUntil || state.shield.count > 0) {
+                // A shield takes it (and whatever is touched with it).
+                if (state.frame >= state.shield.graceUntil) breakShield();
                 obs.active = false;
                 continue;
             }
@@ -1954,10 +1955,11 @@ function createRampMesh() {
 }
 
 // Shields: now and then a ramp carries one, in a bubble on the way of its
-// jump; the jump picks it up, and it takes one obstacle (src/shield.js).
+// jump; the jump picks it up, and it takes one obstacle (src/shield.js). Up
+// to SHIELD.max are carried at once.
 function maybeShield(ramp) {
     const shield = state.shield;
-    if (state.tricksOnly || shield.on || state.frame < shield.nextAt) return;
+    if (state.tricksOnly || shield.count >= SHIELD.max || state.frame < shield.nextAt) return;
     if (state.ramps.some((other) => other.shield && !other.shield.userData.taken)) return;
     if (Math.random() >= SHIELD.chance) return;
     shield.nextAt = state.frame + SHIELD.gapFrames;
@@ -1967,28 +1969,35 @@ function maybeShield(ramp) {
     ramp.mesh.add(ramp.shield);
 }
 
-// The mark beside the score, and the bubble around the bike.
-function showShield(on) {
-    if (shields) shields.carry(on);
+// The mark beside the score (with their number from two), and the bubbles
+// around the bike.
+function showShields() {
+    const count = state.shield.count;
+    if (shields) shields.carry(count);
     const container = document.getElementById('score-container');
     let mark = document.getElementById('score-shield');
-    if (!mark && on && container) {
+    if (!mark && count > 0 && container) {
         mark = document.createElement('span');
         mark.id = 'score-shield';
         mark.setAttribute('role', 'img');
         mark.setAttribute('aria-label', 'Bouclier');
-        mark.innerHTML = '<svg viewBox="0 0 24 28" aria-hidden="true"><path d="M2 3.5 Q12 0.5 22 3.5 V13 Q21.5 22 12 27 Q2.5 22 2 13 Z" fill="#1f6bff" stroke="#e8eef8" stroke-width="2"/><path d="M12 7.5 13.6 12 18 13.5 13.6 15 12 19.5 10.4 15 6 13.5 10.4 12 Z" fill="#ffc928"/></svg>';
+        mark.innerHTML = '<svg viewBox="0 0 24 28" aria-hidden="true"><path d="M2 3.5 Q12 0.5 22 3.5 V13 Q21.5 22 12 27 Q2.5 22 2 13 Z" fill="#1f6bff" stroke="#e8eef8" stroke-width="2"/><path d="M12 7.5 13.6 12 18 13.5 13.6 15 12 19.5 10.4 15 6 13.5 10.4 12 Z" fill="#ffc928"/></svg><b></b>';
         container.append(mark);
     }
-    if (mark) mark.classList.toggle('is-on', on);
+    if (!mark) return;
+    mark.classList.toggle('is-on', count > 0);
+    mark.setAttribute('aria-label', count > 1 ? `${count} boucliers` : 'Bouclier');
+    mark.querySelector('b').textContent = count > 1 ? `×${count}` : '';
 }
 
 function takeShield(pickup) {
     shields.take(pickup);
-    state.shield.on = true;
-    showShield(true);
+    state.shield.count = Math.min(SHIELD.max, state.shield.count + 1);
+    showShields();
     audio.play('multiplier_up', { volume: 0.6 });
-    if (!state.shield.told) {
+    if (state.shield.count > 1) {
+        toast(`BOUCLIER ×${state.shield.count}`, 'Le maximum', { discreet: true, float: true });
+    } else if (!state.shield.told) {
         state.shield.told = true;
         toast('BOUCLIER', 'Il encaisse 1 obstacle', { discreet: true, float: true });
     }
@@ -1996,15 +2005,14 @@ function takeShield(pickup) {
 
 function breakShield() {
     const shield = state.shield;
-    shield.on = false;
+    shield.count -= 1;
     shield.graceUntil = state.frame + SHIELD.grace;
     shield.nextAt = Math.max(shield.nextAt, state.frame + SHIELD.afterBreakFrames);
-    if (shields) shields.burst();
-    const mark = document.getElementById('score-shield');
-    if (mark) mark.classList.remove('is-on');
+    if (shields) shields.burst(shield.count);
+    showShields();
     audio.play('plate_snap', { volume: 0.8 });
     audio.play('whoosh', { volume: 0.45, rate: 0.8 });
-    toast('BOUCLIER BRISÉ', 'Obstacle encaissé', { discreet: true, float: true });
+    toast('BOUCLIER BRISÉ', shield.count > 0 ? 'Obstacle encaissé · il en reste 1' : 'Obstacle encaissé', { discreet: true, float: true });
 }
 
 function spawnRamp(z) {
@@ -2782,8 +2790,8 @@ async function gameOver(reason = 'crash') {
     clearLiveRun();
     speedLines?.hide();
     hidePoliceWarning();
-    state.shield.on = false;
-    showShield(false);
+    state.shield.count = 0;
+    showShields();
     showDefeatReason(reason);
     unrankedReason = null;
     const tricksOnly = state.tricksOnly && GAME_SETTINGS.gameMode === 'linear';

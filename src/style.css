@@ -617,6 +617,19 @@ button:focus-visible {
   height: 100%;
 }
 
+/* How many, from two. */
+#score-shield b {
+  position: absolute;
+  right: -7px;
+  bottom: -5px;
+  font-family: var(--display, 'Russo One'), sans-serif;
+  font-size: 12px;
+  font-style: italic;
+  line-height: 1;
+  color: #fff;
+  text-shadow: 0 1px 3px rgba(0, 0, 0, 0.9), 0 0 6px rgba(40, 110, 255, 0.9);
+}
+
 #score-shield.is-on {
   opacity: 1;
   transform: translateY(-50%) scale(1);

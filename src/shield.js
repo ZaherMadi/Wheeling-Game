@@ -1,10 +1,13 @@
 // Shields (competitive): now and then a ramp carries one, in a bubble
 // floating on the way of its jump. Taking the jump picks it up; it then takes
-// one obstacle for the rider (the bubble around the bike bursts).
+// one obstacle for the rider (the bubble around the bike bursts). Up to
+// SHIELD.max are carried at once: one bubble around the bike for each.
 // Seen only: the server replay knows nothing of obstacles.
 import * as THREE from 'three';
 
 export const SHIELD = {
+    // Carried at once at most; none appears while that many are carried.
+    max: 2,
     // Chance that a ramp carries one, once `gapFrames` have gone by since
     // the last one appeared (and `afterBreakFrames` since one was used).
     chance: 0.35,
@@ -132,14 +135,18 @@ export function createShields(scene) {
         return group;
     }
 
-    // Around the bike while it is carried.
-    const aura = new THREE.Mesh(parts.sphere, bubbleMaterial(0x7fd0ff));
-    aura.renderOrder = 4;
-    aura.visible = false;
-    aura.frustumCulled = false;
-    scene.add(aura);
-    const auraState = { on: false, grow: 0, burst: 0 };
+    // Around the bike while carried: one bubble for each shield, the second
+    // outside the first.
     const AURA_SIZE = new THREE.Vector3(1.55, 1.55, 2.35);
+    const auras = [];
+    for (let i = 0; i < SHIELD.max; i++) {
+        const mesh = new THREE.Mesh(parts.sphere, bubbleMaterial(i ? 0xb6f0ff : 0x7fd0ff));
+        mesh.renderOrder = 4 + i;
+        mesh.visible = false;
+        mesh.frustumCulled = false;
+        scene.add(mesh);
+        auras.push({ mesh, size: 1 + i * 0.2, on: false, grow: 0, burst: 0 });
+    }
 
     return {
         pickup,
@@ -148,16 +155,22 @@ export function createShields(scene) {
             group.userData.taken = true;
             group.userData.pop = 0.0001;
         },
-        carry(on) {
-            auraState.on = on;
-            auraState.burst = 0;
-            if (on) auraState.grow = 0;
-            else aura.visible = false;
+        // `count` shields carried: that many bubbles around the bike.
+        carry(count) {
+            auras.forEach((aura, i) => {
+                const on = i < count;
+                if (on && !aura.on) aura.grow = 0;
+                // Left alone while it bursts.
+                if (!on && !aura.burst) aura.mesh.visible = false;
+                aura.on = on;
+            });
         },
-        // The shield took a hit: the bubble around the bike bursts.
-        burst() {
-            auraState.on = false;
-            auraState.burst = 0.0001;
+        // A shield took a hit: the outer bubble bursts, `remaining` stay.
+        burst(remaining) {
+            const aura = auras[remaining];
+            if (!aura) return;
+            aura.on = false;
+            aura.burst = 0.0001;
         },
         update(dt, time, bike) {
             parts.bubble.uniforms.uTime.value = time;
@@ -186,23 +199,27 @@ export function createShields(scene) {
                     data.bubble.scale.setScalar(1.12 + bob * 0.025);
                 }
             }
-            const material = aura.material;
-            material.uniforms.uTime.value = time;
-            if (auraState.on) {
-                auraState.grow = Math.min(1, auraState.grow + dt / 0.3);
-                const eased = 1 - (1 - auraState.grow) ** 3;
-                aura.visible = true;
-                aura.scale.copy(AURA_SIZE).multiplyScalar(0.3 + 0.7 * eased);
-                material.uniforms.uOpacity.value = 0.75 * eased;
-            } else if (auraState.burst > 0) {
-                auraState.burst += dt;
-                const t = Math.min(1, auraState.burst / 0.35);
-                aura.visible = t < 1;
-                aura.scale.copy(AURA_SIZE).multiplyScalar(1 + t * 0.9);
-                material.uniforms.uOpacity.value = 0.9 * (1 - t);
-                if (t >= 1) auraState.burst = 0;
+            for (const aura of auras) {
+                const { mesh } = aura;
+                const material = mesh.material;
+                material.uniforms.uTime.value = time;
+                if (aura.on) {
+                    aura.burst = 0;
+                    aura.grow = Math.min(1, aura.grow + dt / 0.3);
+                    const eased = 1 - (1 - aura.grow) ** 3;
+                    mesh.visible = true;
+                    mesh.scale.copy(AURA_SIZE).multiplyScalar(aura.size * (0.3 + 0.7 * eased));
+                    material.uniforms.uOpacity.value = 0.75 * eased;
+                } else if (aura.burst > 0) {
+                    aura.burst += dt;
+                    const t = Math.min(1, aura.burst / 0.35);
+                    mesh.visible = t < 1;
+                    mesh.scale.copy(AURA_SIZE).multiplyScalar(aura.size * (1 + t * 0.9));
+                    material.uniforms.uOpacity.value = 0.9 * (1 - t);
+                    if (t >= 1) aura.burst = 0;
+                }
+                if (mesh.visible && bike) mesh.position.set(bike.x, bike.y + 1.1, bike.z);
             }
-            if (aura.visible && bike) aura.position.set(bike.x, bike.y + 1.1, bike.z);
         }
     };
 }
