@@ -120,10 +120,21 @@ const POLICE = {
 // Bavette (mirrored by wheelie_replay.py): a wheelie going over the top no
 // longer ends the run at once. The tail scrapes the road, held at the top,
 // for up to bavetteFrames() frames: fewer when the wheelie came up abruptly
-// (none from fatalAv) or fast. Let go of the wheelie (or brake) and the
-// bike drops back; hold it to the end and it goes over.
+// (none from fatalAv) or fast.
+// The throttle tips the bike backwards up there (rules 2: it used to be a
+// points loop, throttle held and the wheelie tapped):
+// - on the tail, the throttle keeps it down like the wheelie button does:
+//   only letting go of both (or the brake) saves it;
+// - after it, until the bike is back under rearmAngle, the throttle alone
+//   lifts the bike like the wheelie does, and going over the top again is
+//   a fall (no second bavette);
+// - the points recharge: a bavette pays in full only rechargeFrames after
+//   the one before (in proportion sooner).
+// Sent with the run (server: RULES); games loaded before play rules 1.
+const RULES = 2;
 const BAVETTE = {
     gentleAv: 0.02, fatalAv: 0.12, maxFrames: 45, minFrames: 4, releaseAv: -0.012,
+    rearmAngle: 1.2, rechargeFrames: 300,
     // Points for each bavette saved (let go before it goes over), on top of
     // the wheelie's: 5 up to 50 km/h, rising to 30 at 150 km/h, whole points.
     bonusMin: 5.0, bonusMax: 30.0, bonusFromKmh: 50.0, bonusToKmh: 150.0
@@ -263,7 +274,8 @@ let state = {
     // Time spent against a side of the road, and the obstacle put there.
     edge: { frames: 0, pending: null },
     // Bavette (frames left while held, and in all) and this run's plate.
-    bavette: { left: 0, total: 0 },
+    // armed: back down since the last one; savedAt: the frame it was saved.
+    bavette: { left: 0, total: 0, armed: true, savedAt: -1e9 },
     plate: { on: false, off: false },
     // Backflip mode of this run (the setting when it started).
     flipMode: 'auto',
@@ -1466,7 +1478,7 @@ function resetGame() {
     freeRide.slip = 0;
     if (v2) v2.skidmarks.clear();
     secretCode.step = 0;
-    state.bavette = { left: 0, total: 0 };
+    state.bavette = { left: 0, total: 0, armed: true, savedAt: -1e9 };
     // The plate rides only on the V2 bike, once unlocked and switched on.
     state.plate = { on: IS_V2 && GAME_SETTINGS.gameMode === 'linear' && plateEquipped(), off: false };
     state.flipMode = GAME_SETTINGS.flipMode;
@@ -2024,10 +2036,11 @@ function startBavette() {
     // The tip once a run; after that the sparks and the grinding say it.
     if (state.bavette.tipped) return;
     state.bavette.tipped = true;
-    toast('BAVETTE !', `Lâche le ${isMobile() ? 'WHEELIE' : 'wheeling'} avant qu’elle lâche`, { discreet: true, float: true });
+    toast('BAVETTE !', 'Coupe les gaz, laisse-la redescendre', { discreet: true, float: true });
 }
 
-// Saved: its points (5 to 30 with the speed) beside the score.
+// Saved: its points (5 to 30 with the speed, less right after another one)
+// beside the score.
 function endBavette(saved, bonus = 0) {
     if (!saved || !bonus) return;
     const held = state.frame - (state.bavette.started ?? state.frame);
@@ -2549,7 +2562,8 @@ const DEFEAT_REASONS = {
     fragileHit: ['OBSTACLE APRÈS UNE MAUVAISE RÉCEPTION', 'Juste après un saut mal reçu, un obstacle fait tomber.'],
     trickLanding: ['ATTERRISSAGE EN FIGURE', 'Relâche FIGURE avant de toucher le sol.'],
     flip: ['BACKFLIP RATÉ', 'Atterri sur le dos : garde le wheeling jusqu’au bout du saut.'],
-    bavette: ['BAVETTE LÂCHÉE', 'Resté appuyé trop longtemps sur la bavette : la moto est passée par-dessus.']
+    bavette: ['BAVETTE LÂCHÉE', 'Gaz ou wheeling gardés trop longtemps sur la bavette : la moto est passée par-dessus.'],
+    earlyGas: ['GAZ REMIS TROP TÔT', 'Après une bavette, laisse la moto redescendre avant de remettre les gaz.']
 };
 
 function showDefeatReason(reason) {
@@ -2727,7 +2741,7 @@ async function gameOver(reason = 'crash') {
     audio.stopRun();
     if (reason === 'slow') audio.play('police_siren', { volume: 0.7 });
     else audio.play('collision', { volume: 0.85 });
-    const crashKind = reason === 'loop' || reason === 'flip' || reason === 'bavette' || state.bike.angle > CONFIG.maxAngle ||
+    const crashKind = reason === 'loop' || reason === 'flip' || reason === 'bavette' || reason === 'earlyGas' || state.bike.angle > CONFIG.maxAngle ||
         GAME_SETTINGS.gameMode === 'free' ? 'loop' : 'hit';
     // Then the bike itself going down, harder the faster it was going.
     if (reason !== 'slow') {
@@ -3236,7 +3250,10 @@ function animate(timestamp = performance.now()) {
             bikeGroup.rotation.z = state.bike.lateralVelocity * leanFactor;
 
             let lift = 0;
-            if (wheelieInput && isAccelerating) {
+            const bavette = state.bavette;
+            // Just out of a bavette (not back down yet), the throttle alone
+            // lifts the bike.
+            if ((wheelieInput || !bavette.armed) && isAccelerating) {
                 if (kmh > 110) lift = CONFIG.wheelieLiftFast;
                 else if (kmh > 0) lift = CONFIG.wheelieLift;
                 else lift = CONFIG.wheelieLift * 0.5;
@@ -3261,19 +3278,22 @@ function animate(timestamp = performance.now()) {
                 const brakePower = CONFIG.brakeForce * brakeEfficiency;
                 state.speed = Math.max(0, state.speed - brakePower);
             }
-            const bavette = state.bavette;
             if (grounded && bavette.left > 0) {
-                // Bavette: the tail on the road, held at the top.
+                // Bavette: the tail on the road, held at the top by the
+                // wheelie button or the throttle.
                 bavette.total += 1;
-                if (wheelieInput && !isBraking) {
+                if ((wheelieInput || isAccelerating) && !isBraking) {
                     bavette.left -= 1;
                     if (bavette.left === 0) gameOver('bavette');
                 } else {
-                    // Saved: the bavette's points (as the server counts them).
+                    // Saved: the bavette's points, as far as they recharged
+                    // (as the server counts them).
                     bavette.left = 0;
                     state.bike.angle = CONFIG.maxAngle;
                     state.bike.angularVelocity = BAVETTE.releaseAv;
-                    const bonus = bavetteBonus(kmh);
+                    const recharged = Math.min(1.0, (frame - bavette.savedAt) / BAVETTE.rechargeFrames);
+                    const bonus = Math.floor(bavetteBonus(kmh) * recharged);
+                    bavette.savedAt = frame;
                     state.score += bonus;
                     endBavette(true, bonus);
                 }
@@ -3293,12 +3313,14 @@ function animate(timestamp = performance.now()) {
                     state.bike.angularVelocity = 0;
                 }
                 if (state.bike.angle > CONFIG.maxAngle) {
-                    bavette.left = bavetteFrames(state.bike.angularVelocity, kmh);
+                    // Over again before coming back down: no second chance.
+                    bavette.left = bavette.armed ? bavetteFrames(state.bike.angularVelocity, kmh) : 0;
                     if (bavette.left === 0) {
-                        gameOver('loop');
+                        gameOver(bavette.armed ? 'loop' : 'earlyGas');
                     } else {
                         state.bike.angle = CONFIG.maxAngle;
                         state.bike.angularVelocity = 0;
+                        bavette.armed = false;
                         startBavette(bavette.left);
                     }
                 }
@@ -3312,6 +3334,7 @@ function animate(timestamp = performance.now()) {
             if (state.bike.angle > CONFIG.maxAngle) {
                 gameOver('loop');
             }
+            if (state.bike.angle < BAVETTE.rearmAngle) bavette.armed = true;
             // In the air the nose follows the flight: up off the lip, down to land.
             const airPitch = jump.airborne ? Math.max(-0.45, Math.min(0.5, jump.vy * 3.2)) : 0;
             if (jump.flipActive && jump.airborne) {
@@ -5065,7 +5088,7 @@ async function sendCompletedRun(nickname) {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify({
-                    run_token: run.runToken, nickname, input_log: inputLog, flip_mode: run.flipMode, plate: run.plate, look,
+                    run_token: run.runToken, nickname, input_log: inputLog, flip_mode: run.flipMode, plate: run.plate, rules: RULES, look,
                     // A protected nickname: this device's token (src/account.js).
                     device_token: deviceToken(nickname)
                 })
@@ -5123,7 +5146,7 @@ async function sendCompletedRun(nickname) {
                 });
                 // Keep it: sent again at the next start (the session lasts 30 min).
                 savePendingSubmission({
-                    token: run.runToken, nickname, log: encodeInputLog(run.inputLog), at: Date.now(), flipMode: run.flipMode, plate: run.plate
+                    token: run.runToken, nickname, log: encodeInputLog(run.inputLog), at: Date.now(), flipMode: run.flipMode, plate: run.plate, rules: RULES
                 });
                 setRankingStatus('Score en attente : il sera envoyé dès que le serveur répond (' + error.message + ').');
                 return false;
@@ -5167,7 +5190,7 @@ async function sendCheckpoint({ keepalive = false } = {}) {
                 run_token: token, nickname: localStorage.getItem('wheelie_nickname') || undefined,
                 device_token: deviceToken(localStorage.getItem('wheelie_nickname')),
                 offset: from, chunk: encodeInputLog(state.inputLog.slice(from * 2, frames * 2)),
-                flip_mode: state.flipMode, plate: state.plate.on || state.plate.off,
+                flip_mode: state.flipMode, plate: state.plate.on || state.plate.off, rules: RULES,
                 look: v2 && from === 0 ? v2.podiumLook() : undefined
             })
         }, 8000);
@@ -5318,7 +5341,9 @@ async function flushPendingSubmission() {
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({
                 run_token: entry.token, nickname: entry.nickname, input_log: entry.log,
-                flip_mode: entry.flipMode || 'auto', plate: !!entry.plate, device_token: deviceToken(entry.nickname)
+                flip_mode: entry.flipMode || 'auto', plate: !!entry.plate, device_token: deviceToken(entry.nickname),
+                // A run kept by the game as it was before the rules changed.
+                rules: entry.rules || 1
             })
         }, 10000);
         if (response.ok || (response.status >= 400 && response.status < 500)) localStorage.removeItem(PENDING_KEY);
