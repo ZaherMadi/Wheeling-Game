@@ -78,7 +78,8 @@ const JUMP = {
     spacing: 2,
     groundTrickMaxAngle: 0.2,
     airRate: 8,
-    groundRate: 3,
+    // Tricks on the ground: 5 points a second up to 50 km/h, 15 from 150.
+    groundMin: 5.0, groundMax: 15.0, groundFromKmh: 50.0, groundToKmh: 150.0,
     landingRate: 12
 };
 const TAKEOFF_FLAG = 0x20;
@@ -131,10 +132,19 @@ const POLICE = {
 //   a fall (no second bavette);
 // - the points recharge: a bavette pays in full only rechargeFrames after
 //   the one before (in proportion sooner).
-// Sent with the run (server: RULES); games loaded before play rules 1.
-const RULES = 2;
+// Rules 3: the stick and the bavette go together again. The gas button
+// (or key) is full throttle, the stick half at most; only full throttle
+// tips the bike over up there. The tail drags (drag off the speed each
+// frame it scrapes) and holds longer; the bike shakes before it lets go.
+// Sent with the run (server: RULES); games loaded before play rules 1 or 2.
+const RULES = 3;
+// The stick's throttle, of the gas button's.
+const STICK_THROTTLE = 0.5;
 const BAVETTE = {
-    gentleAv: 0.02, fatalAv: 0.12, maxFrames: 45, minFrames: 4, releaseAv: -0.012,
+    gentleAv: 0.02, fatalAv: 0.12, maxFrames: 110, minFrames: 4, releaseAv: -0.012,
+    drag: 0.0015,
+    // The bike shakes for the last frames of the hold (seen only).
+    shakeFrames: 45,
     rearmAngle: 1.2, rechargeFrames: 300,
     // Points for each bavette saved (let go before it goes over), on top of
     // the wheelie's: 5 up to 50 km/h, rising to 30 at 150 km/h, whole points.
@@ -1374,8 +1384,22 @@ function rideFreeBike(dt, roam) {
     return Math.abs(v) / 60;
 }
 
-function badLandingWobble() {
-    return state.badLanding > 0 ? Math.sin(state.gameTime * 19) * 0.32 * Math.min(1, state.badLanding / 0.6) : 0;
+// Seen only: the bike shakes after a bad landing (while it is fragile), and
+// at the end of a bavette, just before it lets go. Nothing in the ride
+// depends on it (it used to roll wide and blink: hard to ride).
+function bikeTremble() {
+    let shake = 0;
+    if (state.badLanding > 0) shake += Math.min(1, state.badLanding / 2.5) * 0.05;
+    const left = state.bavette.left;
+    if (left > 0 && left <= BAVETTE.shakeFrames) shake += 0.015 + (1 - left / BAVETTE.shakeFrames) * 0.07;
+    if (!shake) return 0;
+    const t = state.gameTime;
+    return (Math.sin(t * 47) + Math.sin(t * 31 + 1.3) * 0.6) * shake;
+}
+
+function groundTrickRate(kmh) {
+    const span = (kmh - JUMP.groundFromKmh) / (JUMP.groundToKmh - JUMP.groundFromKmh);
+    return JUMP.groundMin + (JUMP.groundMax - JUMP.groundMin) * Math.max(0.0, Math.min(1.0, span));
 }
 
 // Speed shown and heard. Free roam (V2) is life size: metres per second.
@@ -1416,10 +1440,8 @@ function visualSnapshot() {
         boosting: free ? !!(v2 && v2.roam.boostState().active) : state.boost.frames > 0,
         vehicle: free && v2 ? (v2.roam.mode === 'walk' ? 'foot' : v2.roam.mode) : 'bike',
         footSpeed: free && v2 ? v2.roam.footSpeed : 0,
-        wobble: free ? 0 : badLandingWobble(),
-        // Fragile after a bad landing: the bike blinks (faster at first).
-        blink: !free && state.frame < state.vulnerableUntil &&
-            Math.floor(state.frame / (state.vulnerableUntil - state.frame > 360 ? 4 : 8)) % 2 === 0,
+        wobble: free ? 0 : bikeTremble(),
+        blink: false,
         carModel: free && v2 ? v2.roam.carModel : null,
         reversing: free && v2 ? v2.roam.reversing : false,
         airborne: !free && state.jump.airborne,
@@ -1440,6 +1462,7 @@ function renderScene(dt, snapshot = visualSnapshot()) {
     updateCamera();
     if (dt > 0) updateKnockedObstacles(dt);
     if (shields && dt > 0) shields.update(dt, performance.now() / 1000, bikeGroup.position);
+    updateRampArrows();
     if (v2) v2.frame(dt, snapshot);
     renderer.render(scene, camera);
 }
@@ -1969,6 +1992,20 @@ function maybeShield(ramp) {
     ramp.mesh.add(ramp.shield);
 }
 
+const SHIELD_ICON = '<svg viewBox="0 0 24 28" aria-hidden="true"><path d="M2 3.5 Q12 0.5 22 3.5 V13 Q21.5 22 12 27 Q2.5 22 2 13 Z" fill="#1f6bff" stroke="#e8eef8" stroke-width="2"/><path d="M12 7.5 13.6 12 18 13.5 13.6 15 12 19.5 10.4 15 6 13.5 10.4 12 Z" fill="#ffc928"/></svg>';
+
+// A shield took a hit: beside the score, it cracks in two and falls apart.
+function showShieldBreak() {
+    const container = document.getElementById('score-container');
+    if (!container) return;
+    const broken = document.createElement('span');
+    broken.className = 'score-shield-break';
+    broken.setAttribute('aria-hidden', 'true');
+    broken.innerHTML = `<i class="half half--left">${SHIELD_ICON}</i><i class="half half--right">${SHIELD_ICON}</i><i class="flash"></i>`;
+    container.append(broken);
+    setTimeout(() => broken.remove(), 950);
+}
+
 // The mark beside the score (with their number from two), and the bubbles
 // around the bike.
 function showShields() {
@@ -1981,7 +2018,7 @@ function showShields() {
         mark.id = 'score-shield';
         mark.setAttribute('role', 'img');
         mark.setAttribute('aria-label', 'Bouclier');
-        mark.innerHTML = '<svg viewBox="0 0 24 28" aria-hidden="true"><path d="M2 3.5 Q12 0.5 22 3.5 V13 Q21.5 22 12 27 Q2.5 22 2 13 Z" fill="#1f6bff" stroke="#e8eef8" stroke-width="2"/><path d="M12 7.5 13.6 12 18 13.5 13.6 15 12 19.5 10.4 15 6 13.5 10.4 12 Z" fill="#ffc928"/></svg><b></b>';
+        mark.innerHTML = `${SHIELD_ICON}<b></b>`;
         container.append(mark);
     }
     if (!mark) return;
@@ -2010,19 +2047,78 @@ function breakShield() {
     shield.nextAt = Math.max(shield.nextAt, state.frame + SHIELD.afterBreakFrames);
     if (shields) shields.burst(shield.count);
     showShields();
+    showShieldBreak();
     audio.play('plate_snap', { volume: 0.8 });
     audio.play('whoosh', { volume: 0.45, rate: 0.8 });
     toast('BOUCLIER BRISÉ', shield.count > 0 ? 'Obstacle encaissé · il en reste 1' : 'Obstacle encaissé', { discreet: true, float: true });
 }
 
+// Arrows up both edges of the ramps, lit one after the other from the
+// bottom to the lip: seen from far, they say "take me".
+const RAMP_ARROWS = 5;
+let rampArrows = null;
+function rampArrowParts() {
+    if (rampArrows) return rampArrows;
+    const slope = Math.hypot(RAMP.length, JUMP.rampHeight);
+    const up = JUMP.rampHeight / slope;
+    const along = RAMP.length / slope;
+    const geometries = [];
+    for (let i = 0; i < RAMP_ARROWS; i++) {
+        const positions = [];
+        // A chevron lying on the deck, s metres up the slope from its foot.
+        const point = (x, s) => positions.push(x, s * up + 0.03, RAMP.length / 2 - s * along);
+        const s0 = slope * (0.12 + i * 0.17);
+        for (const side of [-1, 1]) {
+            const cx = side * (RAMP.width / 2 - 0.34);
+            const half = 0.24;
+            const rise = 0.3;
+            const thick = 0.17;
+            for (const arm of [-1, 1]) {
+                const outer = [cx + arm * half, s0];
+                const tip = [cx, s0 + rise];
+                const tipIn = [cx, s0 + rise - thick];
+                const inner = [cx + arm * half, s0 - thick];
+                for (const [x, s] of [outer, tip, tipIn, outer, tipIn, inner]) point(x, s);
+            }
+        }
+        const geometry = new THREE.BufferGeometry();
+        geometry.setAttribute('position', new THREE.Float32BufferAttribute(positions, 3));
+        geometry.userData.shared = true;
+        geometries.push(geometry);
+    }
+    const materials = geometries.map(() => {
+        const material = new THREE.MeshBasicMaterial({ color: 0x5a4a10, side: THREE.DoubleSide, toneMapped: false });
+        sharedMaterials.add(material);
+        return material;
+    });
+    rampArrows = { geometries, materials, dim: new THREE.Color(0x6b5a14), lit: new THREE.Color(0xfff2a0) };
+    return rampArrows;
+}
+
+// The light running up the arrows (all the ramps together).
+function updateRampArrows() {
+    if (!rampArrows || !state.ramps.length) return;
+    const head = (performance.now() / 1000 * 7) % (RAMP_ARROWS + 2.5);
+    rampArrows.materials.forEach((material, i) => {
+        material.color.lerpColors(rampArrows.dim, rampArrows.lit, Math.max(0, 1 - Math.abs(head - i) * 0.8));
+    });
+}
+
 function spawnRamp(z) {
     const x = (Math.random() - 0.5) * 12;
     const mesh = createRampMesh();
+    // A little wider than it was (5 to 10 %, each its own): seen from further.
+    const wider = 1.05 + Math.random() * 0.05;
+    mesh.scale.x = wider;
     mesh.position.set(x, 0, z);
+    const arrows = rampArrowParts();
+    arrows.geometries.forEach((geometry, i) => mesh.add(new THREE.Mesh(geometry, arrows.materials[i])));
     scene.add(mesh);
-    const ramp = { mesh, x, z, front: z + RAMP.length / 2, lip: z - RAMP.length / 2, launched: false };
+    const ramp = { mesh, x, z, half: RAMP.width / 2 * wider, front: z + RAMP.length / 2, lip: z - RAMP.length / 2, launched: false };
     state.ramps.push(ramp);
     maybeShield(ramp);
+    // Not stretched with its ramp.
+    if (ramp.shield) ramp.shield.scale.x = SHIELD.size / wider;
     // Clear the run-up and the landing zone of obstacles.
     const zone = { from: z + 25, to: z - 280 };
     state.rampFreeZones.push(zone);
@@ -2038,7 +2134,7 @@ function spawnRamp(z) {
 }
 
 function rampAt(x, z) {
-    return state.ramps.find((ramp) => Math.abs(x - ramp.x) < RAMP.width / 2 && z <= ramp.front && z >= ramp.lip - 0.5);
+    return state.ramps.find((ramp) => Math.abs(x - ramp.x) < ramp.half && z <= ramp.front && z >= ramp.lip - 0.5);
 }
 
 // Height of the deck under the bike (visual only).
@@ -2051,7 +2147,7 @@ function rampHeightAt(x, z) {
 function updateRamps() {
     const { x, z } = bikeGroup.position;
     for (const ramp of state.ramps) {
-        if (ramp.launched || Math.abs(x - ramp.x) >= RAMP.width / 2) continue;
+        if (ramp.launched || Math.abs(x - ramp.x) >= ramp.half) continue;
         // Crossed the lip this frame: the takeoff happens on the next one.
         if (z <= ramp.lip && z + state.speed > ramp.lip) {
             ramp.launched = true;
@@ -2065,7 +2161,7 @@ function updateRamps() {
         const pickup = ramp.shield;
         if (!pickup || pickup.userData.taken || !ramp.launched || !state.jump.airborne) continue;
         const past = ramp.lip - SHIELD.ahead - z;
-        if (past >= -1.5 && past < 12 && Math.abs(x - ramp.x) < RAMP.width / 2 + 1.2) takeShield(pickup);
+        if (past >= -1.5 && past < 12 && Math.abs(x - ramp.x) < ramp.half + 1.2) takeShield(pickup);
     }
     state.ramps = state.ramps.filter((ramp) => {
         if (ramp.z > z + 60) {
@@ -2107,7 +2203,7 @@ function landFlip(frame) {
         audio.play('landing', { volume: 0.5 });
     } else if (outcome === 'bad') {
         state.vulnerableUntil = frame + FLIP.badFrames;
-        state.badLanding = 1.6;
+        state.badLanding = FLIP.badFrames / 60;
         audio.play('skid', { volume: 0.45 });
         // The bike slams down: sparks under it.
         if (v2) for (let i = 0; i < 3; i++) v2.spark();
@@ -2124,7 +2220,7 @@ function startBavette() {
     // The tip once a run; after that the sparks and the grinding say it.
     if (state.bavette.tipped) return;
     state.bavette.tipped = true;
-    toast('BAVETTE !', 'Coupe les gaz, laisse-la redescendre', { discreet: true, float: true });
+    toast('BAVETTE !', `Lâche ${isMobile() ? 'WHEELIE' : 'le wheeling'} avant qu’elle lâche · pas de GAZ à fond`, { discreet: true, float: true });
 }
 
 // Saved: its points (5 to 30 with the speed, less right after another one)
@@ -2650,8 +2746,8 @@ const DEFEAT_REASONS = {
     fragileHit: ['OBSTACLE APRÈS UNE MAUVAISE RÉCEPTION', 'Juste après un saut mal reçu, un obstacle fait tomber.'],
     trickLanding: ['ATTERRISSAGE EN FIGURE', 'Relâche FIGURE avant de toucher le sol.'],
     flip: ['BACKFLIP RATÉ', 'Atterri sur le dos : garde le wheeling jusqu’au bout du saut.'],
-    bavette: ['BAVETTE LÂCHÉE', 'Gaz ou wheeling gardés trop longtemps sur la bavette : la moto est passée par-dessus.'],
-    earlyGas: ['GAZ REMIS TROP TÔT', 'Après une bavette, laisse la moto redescendre avant de remettre les gaz.']
+    bavette: ['BAVETTE LÂCHÉE', 'Bavette tenue trop longtemps (ou GAZ à fond dessus) : la moto est passée par-dessus.'],
+    earlyGas: ['TROP TÔT', 'Après une bavette, laisse la moto redescendre avant de la relever ou de remettre GAZ à fond.']
 };
 
 function showDefeatReason(reason) {
@@ -3229,11 +3325,15 @@ function animate(timestamp = performance.now()) {
                 if (state.keys.left) state.bike.lateralVelocity -= CONFIG.lateralAccel;
                 if (state.keys.right) state.bike.lateralVelocity += CONFIG.lateralAccel;
             }
+            // The gas button (or key) is full throttle. The stick alone is
+            // half at most, and the automatic throttle just under full: they
+            // keep the speed up without tipping the bike over on a bavette.
+            // Driven with the exact value that is recorded (one byte), so the
+            // server replay sees the same throttle as the game.
             let accelerationScale = 1;
-            if (GAME_SETTINGS.controlMode === 'analog' && analogData.active && analogData.y < -0.1) {
-                // Driven with the exact value that is recorded (one byte), so the
-                // server replay sees the same throttle as the game.
-                accelerationScale = Math.round(Math.min(1, Math.abs(analogData.y) * 1.5) * 255) / 255;
+            if (!state.keys.up && GAME_SETTINGS.controlMode === 'analog' && analogData.active) {
+                if (GAME_SETTINGS.autoRace) accelerationScale = 254 / 255;
+                else if (analogData.y < -0.1) accelerationScale = Math.round(Math.min(1, Math.abs(analogData.y) * 1.5) * STICK_THROTTLE * 255) / 255;
             }
             // Ramp takeoff and tricks, decided on the speed at the start of
             // the frame exactly as the server does.
@@ -3341,9 +3441,11 @@ function animate(timestamp = performance.now()) {
 
             let lift = 0;
             const bavette = state.bavette;
-            // Just out of a bavette (not back down yet), the throttle alone
+            // Full throttle (the gas button) tips the bike over up there.
+            const fullThrottle = isAccelerating && accelerationScale === 1;
+            // Just out of a bavette (not back down yet), full throttle alone
             // lifts the bike.
-            if ((wheelieInput || !bavette.armed) && isAccelerating) {
+            if ((wheelieInput || (!bavette.armed && fullThrottle)) && isAccelerating) {
                 if (kmh > 110) lift = CONFIG.wheelieLiftFast;
                 else if (kmh > 0) lift = CONFIG.wheelieLift;
                 else lift = CONFIG.wheelieLift * 0.5;
@@ -3368,11 +3470,13 @@ function animate(timestamp = performance.now()) {
                 const brakePower = CONFIG.brakeForce * brakeEfficiency;
                 state.speed = Math.max(0, state.speed - brakePower);
             }
-            if (grounded && bavette.left > 0) {
+            const scraping = grounded && bavette.left > 0;
+            if (scraping) {
                 // Bavette: the tail on the road, held at the top by the
-                // wheelie button or the throttle.
+                // wheelie button or full throttle. It drags.
                 bavette.total += 1;
-                if ((wheelieInput || isAccelerating) && !isBraking) {
+                state.speed = Math.max(0, state.speed - BAVETTE.drag);
+                if ((wheelieInput || fullThrottle) && !isBraking) {
                     bavette.left -= 1;
                     if (bavette.left === 0) gameOver('bavette');
                 } else {
@@ -3436,11 +3540,9 @@ function animate(timestamp = performance.now()) {
                 if (v2) v2.rider.setFlip(0);
                 bikePivot.rotation.x = -state.bike.angle - airPitch;
             }
-            // Bad landing: the bike slides left and right for a moment.
-            if (state.badLanding > 0) {
-                state.badLanding = Math.max(0, state.badLanding - dt);
-                bikeGroup.rotation.z += badLandingWobble();
-            }
+            // Bad landing, or a bavette about to let go: the bike shakes.
+            if (state.badLanding > 0) state.badLanding = Math.max(0, state.badLanding - dt);
+            bikeGroup.rotation.z += bikeTremble();
             if (isAccelerating) {
                 let accel = CONFIG.baseAcceleration;
                 if (kmh > 130) accel *= 0.15;
@@ -3449,7 +3551,9 @@ function animate(timestamp = performance.now()) {
                 else if (kmh > 80) accel *= 0.7;
                 else if (kmh > 60) accel *= 0.85;
                 accel *= accelerationScale;
-                if (state.speed < CONFIG.maxSpeed) state.speed += accel;
+                // While the tail scrapes, the stick's throttle does not push
+                // the bike (it only keeps it from coasting): it slows down.
+                if (state.speed < CONFIG.maxSpeed && !(scraping && !fullThrottle)) state.speed += accel;
             } else if (grounded && !isBraking) {
                 if (state.speed > CONFIG.minSpeed) state.speed -= CONFIG.deceleration;
             }
@@ -3538,7 +3642,7 @@ function animate(timestamp = performance.now()) {
                 state.score += JUMP.airRate * FIXED_STEP * trickDifficulty;
                 jump.trickFrames += 1;
             } else if (trickGround) {
-                state.score += JUMP.groundRate * FIXED_STEP * trickDifficulty;
+                state.score += groundTrickRate(startKmh) * FIXED_STEP;
             }
             if (jump.airborne) {
                 if (jump.flipActive && manualFlips) {
@@ -6209,6 +6313,7 @@ if (import.meta.env.DEV) {
     window.__wheelie = {
         state, renderer, scene, camera, audio, CONFIG, playerVoice, gameOver, setIdleIn(seconds) { idleTime = 0; nextIdleAt = seconds; },
         spawnRamp, spawnObstacle, SHIELD, get bikeGroup() { return bikeGroup; },
+        get analogData() { return analogData; }, GAME_SETTINGS,
         get v2() { return v2; },
         // Free roam fall at `kmh` (skidding: the side-impact kind).
         fallTest(kmh, skidding = false) { startRoamFall(kmh / 3.6, skidding, v2.roam); },

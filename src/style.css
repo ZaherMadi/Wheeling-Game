@@ -617,6 +617,68 @@ button:focus-visible {
   height: 100%;
 }
 
+/* A shield just used: it cracks in two beside the score, the halves fall. */
+.score-shield-break {
+  position: absolute;
+  right: calc(100% + 10px);
+  top: 50%;
+  width: 26px;
+  height: 30px;
+  margin-top: -15px;
+  pointer-events: none;
+}
+
+.score-shield-break .half {
+  position: absolute;
+  inset: 0;
+  filter: drop-shadow(0 0 6px rgba(120, 190, 255, 0.9));
+}
+
+.score-shield-break .half svg {
+  display: block;
+  width: 100%;
+  height: 100%;
+}
+
+.score-shield-break .half--left {
+  clip-path: polygon(0 0, 58% 0, 42% 30%, 62% 55%, 44% 100%, 0 100%);
+  animation: shield-half-left 0.9s cubic-bezier(0.3, 0, 0.7, 1) forwards;
+}
+
+.score-shield-break .half--right {
+  clip-path: polygon(58% 0, 100% 0, 100% 100%, 44% 100%, 62% 55%, 42% 30%);
+  animation: shield-half-right 0.9s cubic-bezier(0.3, 0, 0.7, 1) forwards;
+}
+
+.score-shield-break .flash {
+  position: absolute;
+  left: 50%;
+  top: 50%;
+  width: 46px;
+  height: 46px;
+  margin: -23px 0 0 -23px;
+  border-radius: 50%;
+  background: radial-gradient(circle, rgba(255, 255, 255, 0.95), rgba(140, 200, 255, 0.5) 45%, transparent 70%);
+  animation: shield-flash 0.4s ease-out forwards;
+}
+
+@keyframes shield-half-left {
+  0% { transform: none; opacity: 1; }
+  18% { transform: translate(-3px, -2px) rotate(-8deg) scale(1.25); opacity: 1; }
+  100% { transform: translate(-22px, 34px) rotate(-70deg) scale(0.9); opacity: 0; }
+}
+
+@keyframes shield-half-right {
+  0% { transform: none; opacity: 1; }
+  18% { transform: translate(3px, -2px) rotate(8deg) scale(1.25); opacity: 1; }
+  100% { transform: translate(22px, 38px) rotate(75deg) scale(0.9); opacity: 0; }
+}
+
+@keyframes shield-flash {
+  0% { transform: scale(0.3); opacity: 1; }
+  100% { transform: scale(1.7); opacity: 0; }
+}
+
 /* How many, from two. */
 #score-shield b {
   position: absolute;
