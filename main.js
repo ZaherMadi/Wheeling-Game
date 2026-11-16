@@ -13,6 +13,7 @@ import { POSES, buyPose, choosePose, chosenPose, ownedPoses } from './src/v2/pos
 import { DRIFT_POINTS, rewards } from './src/unlocks.js';
 import { createAccount, deviceToken } from './src/account.js';
 import { createSecretBird } from './src/secret-bird.js';
+import { SHIELD, createShields } from './src/shield.js';
 import { createSpeedLines } from './src/v2/speedlines.js';
 import riderVoices from './src/rider-voices.json';
 
@@ -274,6 +275,9 @@ let state = {
     // Time spent against a side of the road, and the obstacle put there.
     edge: { frames: 0, pending: null },
     // Bavette (frames left while held, and in all) and this run's plate.
+    // Shield (src/shield.js): carried or not, the frame from which the next
+    // one may appear, and the frames the one just used still covers.
+    shield: { on: false, nextAt: 0, graceUntil: -1, told: false },
     // armed: back down since the last one; savedAt: the frame it was saved.
     bavette: { left: 0, total: 0, armed: true, savedAt: -1e9 },
     plate: { on: false, off: false },
@@ -303,6 +307,8 @@ let state = {
 };
 
 const scene = new THREE.Scene();
+// Shields (src/shield.js), built with the first one.
+let shields = null;
 scene.background = new THREE.Color(0x87CEEB);
 
 const camera = new THREE.PerspectiveCamera(60, window.innerWidth / window.innerHeight, 0.1, 1000);
@@ -1432,6 +1438,7 @@ function visualSnapshot() {
 function renderScene(dt, snapshot = visualSnapshot()) {
     updateCamera();
     if (dt > 0) updateKnockedObstacles(dt);
+    if (shields && dt > 0) shields.update(dt, performance.now() / 1000, bikeGroup.position);
     if (v2) v2.frame(dt, snapshot);
     renderer.render(scene, camera);
 }
@@ -1479,6 +1486,8 @@ function resetGame() {
     if (v2) v2.skidmarks.clear();
     secretCode.step = 0;
     state.bavette = { left: 0, total: 0, armed: true, savedAt: -1e9 };
+    state.shield = { on: false, nextAt: 0, graceUntil: -1, told: false };
+    showShield(false);
     // The plate rides only on the V2 bike, once unlocked and switched on.
     state.plate = { on: IS_V2 && GAME_SETTINGS.gameMode === 'linear' && plateEquipped(), off: false };
     state.flipMode = GAME_SETTINGS.flipMode;
@@ -1771,6 +1780,8 @@ function standRiderUp() {
 function quitToMenu() {
     // Left on purpose: not a run cut short.
     clearLiveRun();
+    state.shield.on = false;
+    showShield(false);
     state.userPaused = false;
     state.isPlaying = false;
     crashSequence++;
@@ -1854,6 +1865,12 @@ function checkCollisions() {
             // would produce a replay the server refuses.
             const fragile = state.frame - 1 < state.vulnerableUntil;
             knockObstacle(obs);
+            if (state.shield.on || state.frame < state.shield.graceUntil) {
+                // The shield takes it (and whatever is touched with it).
+                if (state.shield.on) breakShield();
+                obs.active = false;
+                continue;
+            }
             if ((state.trick.active || fragile) && !state.skidding) {
                 // Hit during a stunt, or still shaken by a bad landing: no saving it.
                 obs.active = false;
@@ -1936,12 +1953,68 @@ function createRampMesh() {
     return mesh;
 }
 
+// Shields: now and then a ramp carries one, in a bubble on the way of its
+// jump; the jump picks it up, and it takes one obstacle (src/shield.js).
+function maybeShield(ramp) {
+    const shield = state.shield;
+    if (state.tricksOnly || shield.on || state.frame < shield.nextAt) return;
+    if (state.ramps.some((other) => other.shield && !other.shield.userData.taken)) return;
+    if (Math.random() >= SHIELD.chance) return;
+    shield.nextAt = state.frame + SHIELD.gapFrames;
+    if (!shields) shields = createShields(scene);
+    ramp.shield = shields.pickup();
+    ramp.shield.position.set(0, SHIELD.height, -RAMP.length / 2 - SHIELD.ahead);
+    ramp.mesh.add(ramp.shield);
+}
+
+// The mark beside the score, and the bubble around the bike.
+function showShield(on) {
+    if (shields) shields.carry(on);
+    const container = document.getElementById('score-container');
+    let mark = document.getElementById('score-shield');
+    if (!mark && on && container) {
+        mark = document.createElement('span');
+        mark.id = 'score-shield';
+        mark.setAttribute('role', 'img');
+        mark.setAttribute('aria-label', 'Bouclier');
+        mark.innerHTML = '<svg viewBox="0 0 24 28" aria-hidden="true"><path d="M2 3.5 Q12 0.5 22 3.5 V13 Q21.5 22 12 27 Q2.5 22 2 13 Z" fill="#1f6bff" stroke="#e8eef8" stroke-width="2"/><path d="M12 7.5 13.6 12 18 13.5 13.6 15 12 19.5 10.4 15 6 13.5 10.4 12 Z" fill="#ffc928"/></svg>';
+        container.append(mark);
+    }
+    if (mark) mark.classList.toggle('is-on', on);
+}
+
+function takeShield(pickup) {
+    shields.take(pickup);
+    state.shield.on = true;
+    showShield(true);
+    audio.play('multiplier_up', { volume: 0.6 });
+    if (!state.shield.told) {
+        state.shield.told = true;
+        toast('BOUCLIER', 'Il encaisse 1 obstacle', { discreet: true, float: true });
+    }
+}
+
+function breakShield() {
+    const shield = state.shield;
+    shield.on = false;
+    shield.graceUntil = state.frame + SHIELD.grace;
+    shield.nextAt = Math.max(shield.nextAt, state.frame + SHIELD.afterBreakFrames);
+    if (shields) shields.burst();
+    const mark = document.getElementById('score-shield');
+    if (mark) mark.classList.remove('is-on');
+    audio.play('plate_snap', { volume: 0.8 });
+    audio.play('whoosh', { volume: 0.45, rate: 0.8 });
+    toast('BOUCLIER BRISÉ', 'Obstacle encaissé', { discreet: true, float: true });
+}
+
 function spawnRamp(z) {
     const x = (Math.random() - 0.5) * 12;
     const mesh = createRampMesh();
     mesh.position.set(x, 0, z);
     scene.add(mesh);
-    state.ramps.push({ mesh, x, z, front: z + RAMP.length / 2, lip: z - RAMP.length / 2, launched: false });
+    const ramp = { mesh, x, z, front: z + RAMP.length / 2, lip: z - RAMP.length / 2, launched: false };
+    state.ramps.push(ramp);
+    maybeShield(ramp);
     // Clear the run-up and the landing zone of obstacles.
     const zone = { from: z + 25, to: z - 280 };
     state.rampFreeZones.push(zone);
@@ -1978,6 +2051,13 @@ function updateRamps() {
             state.jump.visualY = JUMP.rampHeight;
             bikeGroup.position.y = JUMP.rampHeight;
         }
+    }
+    // The shield of the ramp just jumped: picked up as the bike flies by.
+    for (const ramp of state.ramps) {
+        const pickup = ramp.shield;
+        if (!pickup || pickup.userData.taken || !ramp.launched || !state.jump.airborne) continue;
+        const past = ramp.lip - SHIELD.ahead - z;
+        if (past >= -1.5 && past < 12 && Math.abs(x - ramp.x) < RAMP.width / 2 + 1.2) takeShield(pickup);
     }
     state.ramps = state.ramps.filter((ramp) => {
         if (ramp.z > z + 60) {
@@ -2702,6 +2782,8 @@ async function gameOver(reason = 'crash') {
     clearLiveRun();
     speedLines?.hide();
     hidePoliceWarning();
+    state.shield.on = false;
+    showShield(false);
     showDefeatReason(reason);
     unrankedReason = null;
     const tricksOnly = state.tricksOnly && GAME_SETTINGS.gameMode === 'linear';
@@ -6118,6 +6200,7 @@ function releaseSplash() {
 if (import.meta.env.DEV) {
     window.__wheelie = {
         state, renderer, scene, camera, audio, CONFIG, playerVoice, gameOver, setIdleIn(seconds) { idleTime = 0; nextIdleAt = seconds; },
+        spawnRamp, spawnObstacle, SHIELD, get bikeGroup() { return bikeGroup; },
         get v2() { return v2; },
         // Free roam fall at `kmh` (skidding: the side-impact kind).
         fallTest(kmh, skidding = false) { startRoamFall(kmh / 3.6, skidding, v2.roam); },
