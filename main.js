@@ -149,11 +149,20 @@ const POLICE = {
 // Both: tricks on the ground pay with the speed, and a brake frame without
 // throttle carries its strength in the throttle byte (the automatic rear
 // brake below).
+// Rules 6 and 7 (2026-11-19): 4 and 5, and the speed never below zero (a
+// boost drained from a bike already slowed down ran it backwards, into the
+// police's "too slow"): what a skid, the brake or the drag takes comes off
+// the boost's gain first, the drain and coasting stop at zero. Rules 6 (the
+// default) also lift the same at every speed (`gentle`: no faster lift over
+// 110 km/h, the bavette holds as long): a tap of WHEELIE at speed sent the
+// bike over.
 const RULESETS = {
     4: { tipFull: false, firm: false, recharge: false, noSecond: false, longest: 45, shake: 20 },
-    5: { tipFull: true, firm: true, recharge: true, noSecond: true, longest: 110, shake: 45 }
+    5: { tipFull: true, firm: true, recharge: true, noSecond: true, longest: 110, shake: 45 },
+    6: { tipFull: false, firm: false, recharge: false, noSecond: false, longest: 45, shake: 20, floor: true, gentle: true },
+    7: { tipFull: true, firm: true, recharge: true, noSecond: true, longest: 110, shake: 45, floor: true }
 };
-const rulesFor = () => (GAME_SETTINGS.controlMode === 'arrows' || GAME_SETTINGS.customControls ? 5 : 4);
+const rulesFor = () => (GAME_SETTINGS.controlMode === 'arrows' || GAME_SETTINGS.customControls ? 7 : 6);
 const ruleset = () => RULESETS[state.rules] || RULESETS[4];
 // Automatic rear brake (option, up to 50 km/h by default): a wheelie about
 // to go over, or a bavette about to let go, is brought back down: throttle
@@ -182,16 +191,16 @@ const PLATE = { wearFrames: 120, bonus: 20, unlockPoints: 4000 };
 // the takeoff speed. Judged on the bike's whole angle at touchdown.
 const FLIP_MANUAL = { brake: 0.6, good: [-0.45, 1.1], bad: [-0.8, 1.6] };
 
-function bavetteFrames(angularVelocity, kmh, longest = BAVETTE.maxFrames) {
+function bavetteFrames(angularVelocity, kmh, longest = BAVETTE.maxFrames, steady = false) {
     if (angularVelocity >= BAVETTE.fatalAv) return 0;
     const softness = 1.0 - Math.max(0.0, angularVelocity - BAVETTE.gentleAv) / (BAVETTE.fatalAv - BAVETTE.gentleAv);
-    const speedFactor = Math.max(0.5, Math.min(1.0, 1.25 - kmh / 200));
+    const speedFactor = steady ? 1.0 : Math.max(0.5, Math.min(1.0, 1.25 - kmh / 200));
     const frames = Math.floor(longest * softness * speedFactor);
     return frames >= BAVETTE.minFrames ? frames : 0;
 }
 
 function wheelieLiftAt(kmh, angle) {
-    let lift = kmh > 110 ? CONFIG.wheelieLiftFast : kmh > 0 ? CONFIG.wheelieLift : CONFIG.wheelieLift * 0.5;
+    let lift = kmh > 110 && !ruleset().gentle ? CONFIG.wheelieLiftFast : kmh > 0 ? CONFIG.wheelieLift : CONFIG.wheelieLift * 0.5;
     if (angle > CONFIG.balancePoint - CONFIG.sweetSpotWidth && angle < CONFIG.balancePoint + CONFIG.sweetSpotWidth) lift *= 0.5;
     return lift;
 }
@@ -205,7 +214,7 @@ function wheelieWouldFall(angle, av, kmh, lifting, brakeFrom, armed) {
         if (i >= brakeFrom) lift -= CONFIG.wheelieLift * 2;
         av = (av + lift - CONFIG.gravity) * 0.98;
         angle += av;
-        if (angle > CONFIG.maxAngle) return (rules.noSecond && !armed) || bavetteFrames(av, kmh, rules.longest) === 0;
+        if (angle > CONFIG.maxAngle) return (rules.noSecond && !armed) || bavetteFrames(av, kmh, rules.longest, !!rules.gentle) === 0;
         if (av <= 0 && i >= brakeFrom) return false;
     }
     return false;
@@ -3307,7 +3316,10 @@ function animate(timestamp = performance.now()) {
             state.slow.frames = 0;
             // Every recorded skid frame slows the bike, including the last
             // one: the server replay (wheelie_replay.py) does the same.
+            const beforeSkid = state.speed;
             state.speed *= 0.98;
+            // Rules 6 and 7: off the boost's gain first.
+            if (ruleset().floor) state.boost.gain = Math.max(0, state.boost.gain - (beforeSkid - state.speed));
             bikeGroup.position.z -= state.speed;
             state.skidTimer -= dt;
             if (state.skidTimer <= 0) {
@@ -3667,7 +3679,7 @@ function animate(timestamp = performance.now()) {
             // Just out of a bavette (not back down yet), full throttle alone
             // lifts the bike.
             if ((wheelieInput || (!bavette.armed && fullThrottle)) && isAccelerating) {
-                if (kmh > 110) lift = CONFIG.wheelieLiftFast;
+                if (kmh > 110 && !rules.gentle) lift = CONFIG.wheelieLiftFast;
                 else if (kmh > 0) lift = CONFIG.wheelieLift;
                 else lift = CONFIG.wheelieLift * 0.5;
                 if (state.bike.angle > CONFIG.balancePoint - CONFIG.sweetSpotWidth &&
@@ -3691,14 +3703,20 @@ function animate(timestamp = performance.now()) {
                 // Its strength (the throttle byte, without throttle).
                 const brakeStrength = isAccelerating ? 1 : Math.round(accelerationScale * 255) / 255;
                 const brakePower = CONFIG.brakeForce * brakeEfficiency * brakeStrength;
+                const beforeBrake = state.speed;
                 state.speed = Math.max(0, state.speed - brakePower);
+                if (rules.floor) state.boost.gain = Math.max(0, state.boost.gain - (beforeBrake - state.speed));
             }
             const scraping = grounded && bavette.left > 0;
             if (scraping) {
                 // Bavette: the tail on the road, held at the top by the
                 // wheelie button or full throttle. It drags.
                 bavette.total += 1;
-                if (rules.firm) state.speed = Math.max(0, state.speed - BAVETTE.drag);
+                if (rules.firm) {
+                    const beforeDrag = state.speed;
+                    state.speed = Math.max(0, state.speed - BAVETTE.drag);
+                    if (rules.floor) state.boost.gain = Math.max(0, state.boost.gain - (beforeDrag - state.speed));
+                }
                 if ((wheelieInput || fullThrottle) && !isBraking) {
                     bavette.left -= 1;
                     if (bavette.left === 0) gameOver('bavette');
@@ -3732,7 +3750,7 @@ function animate(timestamp = performance.now()) {
                 if (state.bike.angle > CONFIG.maxAngle) {
                     // Over again before coming back down: no second chance.
                     const tooSoon = rules.noSecond && !bavette.armed;
-                    bavette.left = tooSoon ? 0 : bavetteFrames(state.bike.angularVelocity, kmh, rules.longest);
+                    bavette.left = tooSoon ? 0 : bavetteFrames(state.bike.angularVelocity, kmh, rules.longest, !!rules.gentle);
                     if (bavette.left === 0) {
                         gameOver(tooSoon ? 'earlyGas' : 'loop');
                     } else {
@@ -3779,7 +3797,9 @@ function animate(timestamp = performance.now()) {
                 // the bike (it only keeps it from coasting): it slows down.
                 if (state.speed < CONFIG.maxSpeed && !(rules.firm && scraping && !fullThrottle)) state.speed += accel;
             } else if (grounded && !isBraking) {
-                if (state.speed > CONFIG.minSpeed) state.speed -= CONFIG.deceleration;
+                if (state.speed > CONFIG.minSpeed) {
+                    state.speed = rules.floor ? Math.max(0, state.speed - CONFIG.deceleration) : state.speed - CONFIG.deceleration;
+                }
             }
             if (boost.frames > 0) {
                 if (grounded && state.speed < BOOST.maxSpeed) {
@@ -3790,7 +3810,7 @@ function animate(timestamp = performance.now()) {
                 boost.frames -= 1;
             } else if (boost.gain > 0) {
                 const drain = Math.min(BOOST.drain, boost.gain);
-                state.speed -= drain;
+                state.speed = rules.floor ? Math.max(0, state.speed - drain) : state.speed - drain;
                 boost.gain -= drain;
             }
             bikeGroup.position.z -= state.speed;
