@@ -87,6 +87,8 @@ const KEYS = [
 export function createWorld({ scene, renderer, mobile }) {
     const anisotropy = Math.min(mobile ? 4 : 8, renderer.capabilities.getMaxAnisotropy());
     let random = mulberry32(510);
+    // Roofs of the variant being built (walked on, landed on: roofAt()).
+    let roofs = [];
     const range = (min, max) => min + random() * (max - min);
     const pick = (list) => list[Math.floor(random() * list.length)];
     const weighted = (weights) => {
@@ -504,6 +506,16 @@ export function createWorld({ scene, renderer, mobile }) {
             sink.setBase(facadeMatrix(side, face, z0, '-x'));
             const built = buildings.build(sink, kind, width, depth, { ends: [!atStart, !atEnd] });
             shadows.push({ z0, z1, height: built.height, face });
+            if (built.roof) {
+                // Its roof in the street's frame (the left side is turned
+                // half round: x and z change sign).
+                const xa = face + built.roof.x0;
+                const xb = face + Math.min(built.roof.x1, depth - 0.1);
+                const za = z0 + 0.3;
+                const zb = z1 - 0.3;
+                roofs.push(side > 0 ? { x0: xa, x1: xb, z0: za, z1: zb, y: built.roof.y, side, kind }
+                    : { x0: -xb, x1: -xa, z0: -zb, z1: -za, y: built.roof.y, side, kind });
+            }
             for (const unit of built.units) {
                 if (['cafe', 'bar', 'bakery'].includes(unit.kind) && unit.z1 - unit.z0 > 3 && random() < 0.75) {
                     terraces.push({ z0: z0 + unit.z0 + 0.3, z1: z0 + unit.z1 - 0.3, face });
@@ -605,6 +617,7 @@ export function createWorld({ scene, renderer, mobile }) {
         const crossingZ = theme.crossing ? Math.round(range(-22, 18)) : null;
         street.parked.length = 0;
         street.shelters.length = 0;
+        roofs = [];
         for (const side of [1, -1]) buildSide(sink, side, theme, crossingZ, index);
         const parked = street.parked.slice();
         const shelters = street.shelters.slice();
@@ -612,7 +625,7 @@ export function createWorld({ scene, renderer, mobile }) {
         const toSpecs = (geometries) => Object.entries(geometries)
             .filter(([, geometry]) => geometry)
             .map(([key, geometry]) => ({ key, geometry, material: materials[key], renderOrder: RENDER_ORDER[key] || 0 }));
-        return { hi: toSpecs(hi), lo: toSpecs(lo), free: [], theme: theme.name, crossingZ, parked, shelters };
+        return { hi: toSpecs(hi), lo: toSpecs(lo), free: [], theme: theme.name, crossingZ, parked, shelters, roofs };
     }
 
     const variants = [];
@@ -736,6 +749,20 @@ export function createWorld({ scene, renderer, mobile }) {
             if (chunk.userData.variant.crossingZ !== null) out.push(chunk.position.z + chunk.userData.variant.crossingZ);
         }
         return out;
+    }
+
+    // The roof under (x, z), in world coordinates (null: none). margin:
+    // how far inside its edges (negative: a little outside counts).
+    function roofAt(x, z, margin = 0) {
+        for (const chunk of active) {
+            const lz = z - chunk.position.z;
+            for (const roof of chunk.userData.variant.roofs || []) {
+                if (x >= roof.x0 + margin && x <= roof.x1 - margin && lz >= roof.z0 + margin && lz <= roof.z1 - margin) {
+                    return { ...roof, z0: roof.z0 + chunk.position.z, z1: roof.z1 + chunk.position.z };
+                }
+            }
+        }
+        return null;
     }
 
     // Nearest parked car within `radius` of (x, z), still in place.
@@ -981,7 +1008,7 @@ export function createWorld({ scene, renderer, mobile }) {
 
     return {
         acquireChunk, releaseChunk, createObstacle, update, setDusk, setAmbience, setQuality, reseed, sharedMaterials, sun,
-        crossings, busShelters, parkedNear, takeParked, createCar, carModels: Object.keys(cars),
+        crossings, busShelters, parkedNear, takeParked, createCar, carModels: Object.keys(cars), roofAt,
         ambiences: Object.keys(AMBIENCES),
         stats: () => variants.map((variant) => ({
             theme: variant.theme,

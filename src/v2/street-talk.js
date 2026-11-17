@@ -182,7 +182,7 @@ export function createStreetTalk({ audio, people, playerVoice = null }) {
     // The police speak over anything else (and count as an exchange).
     // named: use the line with the player's name if there is one (it is
     // spoken by the first officer's voice).
-    function police(category, speaker, { named = false, namedClip = category } = {}) {
+    function police(category, speaker, { named = false, namedClip = category, who = 'Police' } = {}) {
         stats.police++;
         if (busy) {
             token++;
@@ -190,7 +190,7 @@ export function createStreetTalk({ audio, people, playerVoice = null }) {
         }
         const useName = named && playerVoice?.has(namedClip);
         const voice = data.policeVoices[(useName ? 0 : speaker) % data.policeVoices.length];
-        return run([() => line(voice, category, 'Police', { volume: 1, named: useName ? namedClip : null })]);
+        return run([() => line(voice, category, who, { volume: 1, named: useName ? namedClip : null })]);
     }
 
     // Another speaker (the rider standing still) takes a slot in the limit.
@@ -214,6 +214,16 @@ export function createStreetTalk({ audio, people, playerVoice = null }) {
         update, police, warmPolice, reset, claim, concern,
         // The main character says one line of `category` (his own voice).
         rider: (category) => run([() => line(riderStreetVoice(), category, 'Toi', { volume: 1 })]),
+        // A driver (a passer-by's voice, kept for the whole scene).
+        driverVoice: () => pick(data.pedestrianVoices),
+        driver: (category, voice) => {
+            stats.police++;
+            if (busy) {
+                token++;
+                audio.stopSaying();
+            }
+            return run([() => line(voice, category, 'Automobiliste', { volume: 1 })]);
+        },
         get stats() { return { ...stats, interactions, recent: recent.length }; },
         get busy() { return busy; }
     };

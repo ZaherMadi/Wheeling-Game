@@ -344,8 +344,11 @@ function decorateControls() {
         // Free roam: get off, walk to a vehicle, get in.
         analog.insertAdjacentHTML('beforeend', '<button class="action-btn ui-pad" id="analog-action" hidden></button>');
         control($('analog-action'), 'user', 'DESCENDRE');
+        // Free roam: the jetpack.
+        analog.insertAdjacentHTML('beforeend', '<button class="action-btn ui-pad" id="analog-jet" hidden></button>');
+        control($('analog-jet'), 'throttle', 'JETPACK');
     }
-    for (const id of ['analog-gas', 'analog-brake', 'analog-wheelie', 'analog-trick', 'analog-action', 'analog-boost', 'analog-jump', 'analog-run']) {
+    for (const id of ['analog-gas', 'analog-brake', 'analog-wheelie', 'analog-trick', 'analog-action', 'analog-boost', 'analog-jump', 'analog-run', 'analog-jet']) {
         pressFeedback($(id));
     }
     const arrows = { 'btn-left': ['back', ''], 'btn-right': ['chevron', ''], 'btn-up': ['throttle', 'GAZ'], 'btn-down': ['brake', 'FREIN'], 'btn-wheelie': ['wheelie', 'WHEELIE'] };
@@ -392,8 +395,10 @@ function installToasts() {
 // time the player changes vehicle; H shows them again.
 const KEY_SETS = {
     race: [['↑', 'Gaz'], ['Espace', 'Wheeling'], ['↓', 'Frein'], ['← →', 'Diriger'], ['F', 'Figure'], ['B', 'Boost'], ['Échap', 'Pause']],
-    bike: [['↑', 'Gaz'], ['↓', 'Frein'], ['← →', 'Tourner'], ['Espace', 'Wheeling'], ['B', 'Boost'], ['G', 'Descendre'], ['Échap', 'Pause']],
-    walk: [['↑ ↓ ← →', 'Marcher'], ['Maj', 'Courir'], ['Espace', 'Sauter'], ['G', 'Monter / conduire'], ['Échap', 'Pause']],
+    bike: [['↑', 'Gaz'], ['↓', 'Frein'], ['← →', 'Tourner'], ['Espace', 'Wheeling'], ['B', 'Boost'], ['G', 'Descendre'], ['J', 'Jetpack'], ['Échap', 'Pause']],
+    walk: [['↑ ↓ ← →', 'Marcher'], ['Maj', 'Courir'], ['Espace', 'Sauter'], ['G', 'Monter / conduire'], ['J', 'Jetpack'], ['Échap', 'Pause']],
+    jet: [['↑ ↓', 'Avancer / freiner'], ['← →', 'Tourner'], ['Espace', 'Monter'], ['Maj / B', 'Turbo'], ['J / G', 'Atterrir'], ['Échap', 'Pause']],
+    glide: [['← →', 'Diriger le deltaplane'], ['Échap', 'Pause']],
     car: [['↑', 'Avancer'], ['↓', 'Freiner / reculer'], ['← →', 'Tourner'], ['B', 'Boost'], ['G', 'Sortir'], ['Échap', 'Pause']]
 };
 function installKeyHints() {
@@ -484,7 +489,12 @@ function installPrompt() {
     // Pads follow the player: on the bike, on foot, in a car.
     document.addEventListener('wheelie:controls', (event) => {
         const mode = event.detail?.mode || 'bike';
-        document.body.classList.toggle('ui-on-foot', mode === 'walk');
+        // The jetpack flies with the pedestrian pads (SAUTER: up, COURIR: turbo).
+        document.body.classList.toggle('ui-on-foot', mode === 'walk' || mode === 'jet');
+        const jump = $('analog-jump')?.querySelector('.ui-pad__label');
+        const run = $('analog-run')?.querySelector('.ui-pad__label');
+        if (jump) jump.textContent = mode === 'jet' ? 'MONTER' : 'SAUTER';
+        if (run) run.textContent = mode === 'jet' ? 'TURBO' : 'COURIR';
         document.body.classList.toggle('ui-in-car', mode === 'car');
     });
     // Boost gauge: charges in competitive, recharge time in free roam.

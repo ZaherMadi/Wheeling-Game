@@ -1301,7 +1301,7 @@ function roamImpact(hit, v, roam) {
     return v * 0.35;
 }
 
-function startRoamFall(v, skidding, roam) {
+function startRoamFall(v, skidding, roam, kind = 'hit') {
     if (!v2) return;
     roamFall.active = true;
     roamFall.t = 0;
@@ -1309,7 +1309,8 @@ function startRoamFall(v, skidding, roam) {
     roamFall.skid = 0;
     freeRide.speed = 0;
     const unitsPerSecond = Math.abs(v);
-    v2.rider.startCrash('hit', unitsPerSecond, {
+    freeWheelie.bavette = 0;
+    v2.rider.startCrash(kind, unitsPerSecond, {
         kmh: unitsPerSecond * 3.6, skidding, steer: freeRide.steer, angleRatio: 0
     });
     audio.play('collision', { volume: 0.9 });
@@ -1517,6 +1518,97 @@ function maybeOfferFreeTricks() {
 }
 document.addEventListener('wheelie:points', maybeOfferFreeTricks);
 
+// Free roam wheelies (on the bike): WHEELIE lifts the front as in a
+// competitive run, and pays like one: a point a second, times the angle,
+// the time up and the speed, straight into the cumulative points (shown as
+// they come, ten at a time). At the top the tail touches the road: a
+// bavette (sparks). Let go in time: its bonus (5 to 30 points with the
+// speed, as in competitive); held too long, or up too fast, the bike goes
+// over (a fall). The police take a dim view of it (police.js).
+const freeWheelie = { points: 0, time: 0, bavette: 0, armed: true, shownAt: 0 };
+function freeWheelieStep(dt, roam) {
+    const bike = state.bike;
+    const can = roam.mode === 'bike' && !roam.frozen && !roamFall.active && !state.trick.active;
+    const kmh = Math.abs(freeRide.speed) * 3.6;
+    const up = can && !!state.keys.space && kmh > 6;
+    if (freeWheelie.bavette > 0) {
+        // The tail on the road: held there by WHEELIE (the gas is held all
+        // the time in free roam: it does not count).
+        if (up) {
+            freeWheelie.bavette -= 1;
+            if (freeWheelie.bavette === 0) {
+                bike.angle = 0;
+                bike.angularVelocity = 0;
+                startRoamFall(freeRide.speed, false, roam, 'loop');
+                return;
+            }
+        } else {
+            freeWheelie.bavette = 0;
+            bike.angle = CONFIG.maxAngle;
+            bike.angularVelocity = BAVETTE.releaseAv;
+            const bonus = bavetteBonus(kmh);
+            addPoints(bonus);
+            state.score += bonus;
+            bumpStat('bavettes');
+            scoreBonus(bonus, 'BAVETTE');
+            audio.play('new_record', { volume: 0.3, rate: 1.4 });
+        }
+    } else if (can) {
+        let lift = 0;
+        if (up) {
+            lift = kmh > 110 ? CONFIG.wheelieLiftFast : CONFIG.wheelieLift;
+            if (Math.abs(bike.angle - CONFIG.balancePoint) < CONFIG.sweetSpotWidth) lift *= 0.5;
+        }
+        bike.angularVelocity += lift - CONFIG.gravity;
+        bike.angularVelocity *= 0.98;
+        bike.angle += bike.angularVelocity;
+        if (bike.angle < 0) {
+            bike.angle = 0;
+            bike.angularVelocity = 0;
+        }
+        if (bike.angle > CONFIG.maxAngle) {
+            const frames = freeWheelie.armed ? bavetteFrames(bike.angularVelocity, kmh, BAVETTE.maxFrames, true) : 0;
+            if (frames === 0) {
+                bike.angle = 0;
+                bike.angularVelocity = 0;
+                startRoamFall(freeRide.speed, false, roam, 'loop');
+                return;
+            }
+            bike.angle = CONFIG.maxAngle;
+            bike.angularVelocity = 0;
+            freeWheelie.bavette = frames;
+            freeWheelie.armed = false;
+            audio.play('skid', { volume: 0.45, rate: 1.5 });
+        }
+        if (bike.angle < BAVETTE.rearmAngle) freeWheelie.armed = true;
+    } else {
+        // Off the bike, held by the police, a trick: the front comes down.
+        bike.angle = Math.max(0, bike.angle - 0.04);
+        bike.angularVelocity = 0;
+    }
+    bikePivot.rotation.x = -bike.angle;
+    // Points: as a competitive run's.
+    const ratio = Math.max(0, Math.min(1, bike.angle / CONFIG.maxAngle));
+    if (can && kmh > 20 && ratio > 0.08) {
+        freeWheelie.time = bike.angle > CONFIG.maxAngle * 0.5 ? freeWheelie.time + dt : 0;
+        const timeMultiplier = freeWheelie.time > 0 ? Math.min(2 + freeWheelie.time / 30 * 3, 5) : 1;
+        freeWheelie.points += dt * (1 + ratio) * timeMultiplier * speedMultiplier(kmh);
+    } else {
+        freeWheelie.time = 0;
+    }
+    if (freeWheelie.points >= 10 || (ratio < 0.02 && freeWheelie.points >= 1)) {
+        const whole = Math.floor(freeWheelie.points);
+        freeWheelie.points -= whole;
+        addPoints(whole);
+        state.score += whole;
+        if (whole >= 5 || performance.now() - freeWheelie.shownAt > 2500) {
+            freeWheelie.shownAt = performance.now();
+            scoreBonus(whole, 'WHEELING');
+        }
+    }
+    roam.setRide(ratio > 0.12 || freeWheelie.bavette > 0, Math.abs(freeRide.speed));
+}
+
 function freeTrickStep(dt, roam) {
     const can = freeTricksUnlocked() && roam.mode === 'bike' && !roam.frozen && !roamFall.active;
     setTrick(can && !!state.keys.trick);
@@ -1591,8 +1683,9 @@ function rideFreeBike(dt, roam) {
     // After a boost: the speed it reached is kept while the gas is held
     // (gas off, it coasts down like any speed).
     if (v > top && gas === 0 && brake === 0) v = Math.max(top, v - 1.5 * dt);
-    // Held by the police: brought to a stop at once (like the car).
-    if (roam.frozen) v = 0;
+    // Held by the police: brought to a hard stop (cut off: they brake in
+    // front of him).
+    if (roam.frozen) v = Math.max(0, v - 28 * dt);
     // Bars: tight at walking pace, gentler at speed (reversed when backing up).
     const pace = Math.min(1, Math.abs(v) / 25);
     const rate = (Math.abs(v) < 0.3 ? 1.1 : 2.3 - 1.4 * pace) * steer;
@@ -1761,7 +1854,7 @@ function visualSnapshot() {
         reversing: free && v2 ? v2.roam.reversing : false,
         airborne: !free && state.jump.airborne,
         trick: state.trick.active ? state.trick.type : null,
-        bavette: !free && state.bavette.left > 0,
+        bavette: free ? freeWheelie.bavette > 0 : state.bavette.left > 0,
         // Free roam drift: how much the rear slides (screech).
         drift: freeBike ? freeRide.drift : 0,
         // Free roam: fallen off the bike (the rider is moved by the fall).
@@ -1790,6 +1883,8 @@ function resetGame() {
     state.bike.angle = 0;
     state.bike.angularVelocity = 0;
     state.bike.lateralVelocity = 0;
+    freeWheelie.bavette = 0;
+    freeWheelie.points = 0;
     state.isPaused = false;
     state.userPaused = false;
     state.skidding = false;
@@ -2650,6 +2745,13 @@ function land(trickFrames, difficulty) {
 }
 
 // Free roam ----------------------------------------------------------------------
+// The jetpack (J, or its pad): on, or down to land.
+function roamJet() {
+    if (!v2 || !state.isPlaying || state.isPaused || GAME_SETTINGS.gameMode !== 'free') return;
+    if (roamFall.active) return;
+    if (v2.roam.toggleJet() && v2.roam.mode === 'jet') bumpStat('jetpacks');
+}
+
 function roamAction() {
     if (!v2 || !state.isPlaying || state.isPaused || GAME_SETTINGS.gameMode !== 'free') return;
     // Getting up after a fall: nothing to get off.
@@ -3599,7 +3701,7 @@ function animate(timestamp = performance.now()) {
             }
             if (roam && roam.mode !== 'bike') {
                 const unit = CONFIG.freeModeSpeed * 3;
-                roam.move(dt, moveX / unit, moveZ / unit, { run: state.keys.run, jump: state.keys.space });
+                roam.move(dt, moveX / unit, moveZ / unit, { run: state.keys.run, jump: state.keys.space, boost: state.keys.boost });
                 state.freeMode.speed = roam.speed;
                 state.distance += roam.speed;
                 freeRide.speed = 0;
@@ -3612,6 +3714,7 @@ function animate(timestamp = performance.now()) {
                 // V2: ridden like a bike (gas, brake, bars), see rideFreeBike().
                 state.freeMode.speed = rideFreeBike(dt, roam);
                 freeTrickStep(dt, roam);
+                freeWheelieStep(dt, roam);
             } else {
             bikeGroup.position.x += moveX;
             bikeGroup.position.z += moveZ;
@@ -3628,7 +3731,8 @@ function animate(timestamp = performance.now()) {
             }
             void previous;
 
-            // Wheelie mechanics in free mode
+            // Wheelie mechanics in free mode (V2: freeWheelieStep).
+            if (!roam) {
             let lift = 0;
             if (state.keys.space) {
                 lift = CONFIG.wheelieLift;
@@ -3695,6 +3799,7 @@ function animate(timestamp = performance.now()) {
             } else {
                 state.bike.maxWheelieTimer = 0; // Reset timer
                 if (!roam) bikeGroup.rotation.z = lateralLean; // Restore normal lean
+            }
             }
 
             state.distance += Math.abs(moveZ) + Math.abs(moveX);
@@ -4321,7 +4426,7 @@ function animate(timestamp = performance.now()) {
     if (v2) {
         if (!speedLines) speedLines = createSpeedLines();
         const free = GAME_SETTINGS.gameMode === 'free';
-        const boosting = free ? v2.roam.boostState().active : state.boost.frames > 0;
+        const boosting = free ? v2.roam.boostState().active || (v2.roam.jetState?.boost || 0) > 0.4 : state.boost.frames > 0;
         const kmhNow = speedKmh();
         const intensity = free && v2.roam.mode !== 'walk' ? Math.max(0, Math.min(1, (kmhNow - 95) / 55)) : 0;
         speedLines.update(elapsed, Math.min(1, intensity + (boosting ? 0.45 : 0)));
@@ -4354,6 +4459,7 @@ function updateCamera() {
         if (state.keys.up || (GAME_SETTINGS.controlMode === 'analog' && analogData.y < -0.3)) {
             fovBoost += IS_V2 ? 3 : 8; // Boost supplémentaire lors de l'accélération
         }
+        if (roamMode === 'jet') fovBoost += (v2.roam.jetState?.boost || 0) * 12;
         const targetFOV = targetBaseFOV + fovBoost;
         camera.fov += (targetFOV - camera.fov) * 0.08;
         camera.updateProjectionMatrix();
@@ -4397,7 +4503,12 @@ function updateCamera() {
 
         if (roamMode === 'walk') {
             distanceOffset = 4.6;
-            heightOffset = 2.5;
+            heightOffset = 2.5 + target.y;
+        } else if (roamMode === 'jet') {
+            // Behind and above the jetpack, further back the faster it goes.
+            const jet = v2.roam.jetState || { speed: 0, boost: 0 };
+            distanceOffset = 5.2 + Math.abs(jet.speed) * 0.05 + jet.boost * 1.3;
+            heightOffset = target.y + 2.4 - Math.min(1.2, Math.abs(jet.speed) * 0.02);
         } else if (roamMode === 'bike' && v2) {
             // The bike is smaller in free roam (life-size street); at speed
             // the camera drops lower and closer, the road rushes by.
@@ -4419,11 +4530,11 @@ function updateCamera() {
         let lookZ = target.z - 8;
         if (v2 && roamMode !== 'walk') {
             // Riding or driving: behind the vehicle, turning with it.
-            const heading = roamMode === 'car' ? v2.roam.carYaw : roamMode === 'glide' ? v2.roam.glideYaw : bikeGroup.rotation.y;
+            const heading = roamMode === 'car' ? v2.roam.carYaw : roamMode === 'glide' ? v2.roam.glideYaw : roamMode === 'jet' ? v2.roam.jetYaw : bikeGroup.rotation.y;
             if (freeCamYaw === null) freeCamYaw = heading;
             let turn = heading - freeCamYaw;
             turn = Math.atan2(Math.sin(turn), Math.cos(turn));
-            freeCamYaw += turn * 0.08;
+            freeCamYaw += turn * (roamMode === 'jet' ? 0.11 : 0.08);
             targetX = target.x - Math.sin(freeCamYaw) * distanceOffset;
             targetZ = target.z - Math.cos(freeCamYaw) * distanceOffset;
             lookX = target.x + Math.sin(freeCamYaw) * 8;
@@ -4452,7 +4563,13 @@ function updateCamera() {
             camera.position.x += (Math.random() - 0.5) * 0.05 * buzz;
             camera.position.y += (Math.random() - 0.5) * 0.04 * buzz;
         }
-        camera.lookAt(lookX, roamMode === 'glide' ? target.y + 0.5 : roamMode === 'walk' ? 1.25 : 1, lookZ);
+        if (roamMode === 'jet' && v2.roam.jetState?.boost > 0.3) {
+            // Turbo: the air shakes.
+            const shake = v2.roam.jetState.boost * 0.06;
+            camera.position.x += (Math.random() - 0.5) * shake;
+            camera.position.y += (Math.random() - 0.5) * shake;
+        }
+        camera.lookAt(lookX, roamMode === 'glide' ? target.y + 0.5 : roamMode === 'jet' ? target.y + 1 : roamMode === 'walk' ? 1.25 + target.y : 1, lookZ);
     } else {
         // Dynamic FOV based on speed (Visual Acceleration)
         // Base increase + extra kick when accelerating
@@ -4590,7 +4707,56 @@ document.addEventListener('wheelie:controls', () => {
     if (GAME_SETTINGS.gameMode === 'free') setTimeout(() => showKeyHints(7), 0);
 });
 
+// Free roam: the police's last warning (a wheelie in front of them): the
+// seconds left to put the front wheel down.
+document.addEventListener('wheelie:police-warn', (event) => {
+    const { seconds = null, down = false } = event.detail || {};
+    let banner = document.getElementById('ui-police-warn');
+    if (seconds === null) {
+        if (banner) banner.hidden = true;
+        return;
+    }
+    if (!banner) {
+        banner = document.createElement('div');
+        banner.id = 'ui-police-warn';
+        (document.getElementById('ui-layer') || document.body).append(banner);
+    }
+    banner.hidden = false;
+    banner.classList.toggle('is-ok', !!down);
+    banner.innerHTML = `<b>🚨 ${down ? 'ROUE AU SOL : GARDE-LA' : 'ROUE AVANT AU SOL !'}</b><span>${Math.ceil(seconds)} s</span>`;
+});
+
+// Free roam: the jetpack's pad, and its fuel (the cumulative points).
+function updateJetHud() {
+    const roaming = !!v2 && state.isPlaying && GAME_SETTINGS.gameMode === 'free';
+    const mode = roaming ? v2.roam.mode : null;
+    document.body.classList.toggle('ui-roam', roaming);
+    document.body.classList.toggle('ui-jet', mode === 'jet');
+    const pad = document.getElementById('analog-jet');
+    if (pad) {
+        pad.hidden = !roaming || mode === 'car' || mode === 'glide' || roamFall.active || v2.roam.frozen;
+        const label = pad.querySelector('.ui-pad__label');
+        if (label) label.textContent = mode === 'jet' ? 'ATTERRIR' : 'JETPACK';
+    }
+    let gauge = document.getElementById('ui-jet-fuel');
+    const jet = mode === 'jet' ? v2.roam.jetState : null;
+    if (!jet) {
+        if (gauge) gauge.hidden = true;
+        return;
+    }
+    if (!gauge) {
+        gauge = document.createElement('div');
+        gauge.id = 'ui-jet-fuel';
+        (document.getElementById('ui-layer') || document.body).append(gauge);
+    }
+    gauge.hidden = false;
+    gauge.classList.toggle('is-turbo', jet.boost > 0.4);
+    gauge.classList.toggle('is-out', !!jet.out);
+    gauge.innerHTML = `<b>⛽ ${totalPoints().toLocaleString('fr-FR')}</b><span>${jet.out ? 'PANNE SÈCHE' : jet.boost > 0.4 ? 'TURBO −30 pts/s' : '−10 pts/s'} · ${Math.round(Math.abs(jet.speed) * 3.6)} km/h · ${Math.round(jet.height)} m</span>`;
+}
+
 function updateUI() {
+    updateJetHud();
     updateTrickButton();
     updatePoliceMap();
     if (state.isPlaying) updateBoostState();
@@ -5136,6 +5302,10 @@ function setupAnalogControls() {
         event.preventDefault();
         roamAction();
     });
+    document.getElementById('analog-jet')?.addEventListener('pointerdown', (event) => {
+        event.preventDefault();
+        roamJet();
+    });
     Object.entries(buttons).forEach(([id, key]) => {
         const btn = document.getElementById(id);
         if (!btn) return;
@@ -5229,6 +5399,7 @@ document.addEventListener('keydown', (e) => {
 
     if (e.code === 'KeyF' || e.code === 'KeyE') state.keys.trick = true;
     if (e.code === 'KeyG' && !e.repeat) roamAction();
+    if (e.code === 'KeyJ' && !e.repeat) roamJet();
     if (e.code === 'KeyH' && !e.repeat) showKeyHints(8);
     if (e.code === 'KeyB') state.keys.boost = true;
     if (e.code === 'ShiftLeft' || e.code === 'ShiftRight') {

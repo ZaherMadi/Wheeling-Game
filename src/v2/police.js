@@ -88,9 +88,12 @@ export function decoratePoliceCar(group) {
 }
 
 // An officer: stick figure in navy uniform and peaked cap (no face).
-export function createOfficer(scene) {
-    const navy = new THREE.MeshLambertMaterial({ color: 0x1b2740 });
-    const shirt = new THREE.MeshLambertMaterial({ color: 0x24375c });
+// civilian: a driver instead (jeans, a coloured top, no cap nor badge).
+export function createOfficer(scene, { civilian = false } = {}) {
+    const navy = new THREE.MeshLambertMaterial({ color: civilian ? 0x2e3f5c : 0x1b2740 });
+    const shirt = new THREE.MeshLambertMaterial({
+        color: civilian ? [0xb8322e, 0x2f7a4a, 0xe8e4da, 0x3b3f46, 0xd98a2b][Math.floor(Math.random() * 5)] : 0x24375c
+    });
     const black = new THREE.MeshLambertMaterial({ color: 0x111214 });
     const skin = new THREE.MeshLambertMaterial({ color: [0xf1c8a8, 0xd9a07a, 0xa86b4a, 0x6e4430][Math.floor(Math.random() * 4)] });
     const white = new THREE.MeshLambertMaterial({ color: 0xe8e8e8 });
@@ -104,13 +107,18 @@ export function createOfficer(scene) {
     };
     add(new THREE.CapsuleGeometry(0.18 * S, 0.42 * S, 4, 10), shirt, 0, 1.18, 0);
     add(new THREE.CylinderGeometry(0.185 * S, 0.185 * S, 0.06 * S, 14), black, 0, 0.97, 0);
-    add(new THREE.BoxGeometry(0.06 * S, 0.07 * S, 0.02 * S), white, 0.08, 1.38, 0.17);
+    if (!civilian) add(new THREE.BoxGeometry(0.06 * S, 0.07 * S, 0.02 * S), white, 0.08, 1.38, 0.17);
     add(new THREE.SphereGeometry(0.11 * S, 12, 10), skin, 0, 1.62, 0);
-    // Peaked cap: crown, band, visor.
-    add(new THREE.CylinderGeometry(0.135 * S, 0.11 * S, 0.07 * S, 16), navy, 0, 1.745, 0);
-    add(new THREE.CylinderGeometry(0.113 * S, 0.113 * S, 0.035 * S, 16), black, 0, 1.7, 0);
-    const visor = add(new THREE.BoxGeometry(0.17 * S, 0.012 * S, 0.09 * S), black, 0, 1.69, 0.12);
-    visor.rotation.x = 0.2;
+    if (civilian) {
+        // Short hair.
+        add(new THREE.SphereGeometry(0.115 * S, 12, 8, 0, Math.PI * 2, 0, Math.PI / 2), black, 0, 1.64, -0.01);
+    } else {
+        // Peaked cap: crown, band, visor.
+        add(new THREE.CylinderGeometry(0.135 * S, 0.11 * S, 0.07 * S, 16), navy, 0, 1.745, 0);
+        add(new THREE.CylinderGeometry(0.113 * S, 0.113 * S, 0.035 * S, 16), black, 0, 1.7, 0);
+        const visor = add(new THREE.BoxGeometry(0.17 * S, 0.012 * S, 0.09 * S), black, 0, 1.69, 0.12);
+        visor.rotation.x = 0.2;
+    }
     const limb = (radius, length, material, x, y) => {
         const pivot = new THREE.Group();
         pivot.position.set(x * S, y * S, 0);
@@ -173,8 +181,15 @@ const LOST_LINES = { 'sedan,van': 'lost_sedan_van', sedan: 'lost_sedan', van: 'l
 const FLEE_DISTANCE = 20;
 const CHASE_SHOUT_EVERY = 10;
 const CHASE_FINE = 400; // in all, with the 100 of the first stop
+// A wheelie in front of a patrol car driving the same way: it comes
+// alongside, a last warning over the loudspeaker, then `seconds` to put the
+// front wheel down. Still up (or up again while they ride along): they cut
+// in front of the bike and fine `share` of the cumulative points. Seen
+// within `range` metres; warned once, the next wheelie in front of them
+// within `memory` seconds goes straight to the cut.
+const WHEELIE_POLICE = { range: 42, seconds: 5, share: 0.2, side: 2.9, memory: 60, cut: 1.5, ahead: 7.5 };
 
-export function createPolicePatrol({ scene, world, traffic, audio, talk, onFine, onCaught, onEscape, freezePlayer, confiscateBike }) {
+export function createPolicePatrol({ scene, world, traffic, audio, talk, onFine, onCaught, onEscape, freezePlayer, confiscateBike, totalPoints = () => 0, onWarn = () => {} }) {
     let group = null;
     let car = null;
     let clock = 0;
@@ -262,14 +277,15 @@ export function createPolicePatrol({ scene, world, traffic, audio, talk, onFine,
     // The officers' verdict: fine, then what it costs (cars lost, warning
     // at zero points, the bike taken away the third time).
     async function sentence(context, mine) {
-        const total = context === 'chase' ? CHASE_FINE - stop.fined : 100;
+        const total = context === 'chase' ? CHASE_FINE - stop.fined
+            : context === 'wheelie' ? Math.max(1, Math.ceil(totalPoints() * WHEELIE_POLICE.share)) : 100;
         const result = onFine(total, context);
         stop.fined += result.applied;
         const lines = [];
         if (result.before === 0) {
             lines.push(result.confiscate ? 'confiscate' : 'zero');
         } else {
-            lines.push(context === 'chase' ? 'chasefine' : 'fine');
+            lines.push(context === 'chase' ? 'chasefine' : context === 'wheelie' ? 'wheelie_fine' : 'fine');
             const key = result.lost.join(',');
             const lost = LOST_LINES[key] || (result.lost.length ? LOST_LINES[result.lost[result.lost.length - 1]] : null);
             if (lost) lines.push(lost);
@@ -321,13 +337,149 @@ export function createPolicePatrol({ scene, world, traffic, audio, talk, onFine,
         stop.t = 0;
     }
 
-    // player: { x, z, radius, mode }
+    // --- Wheelies in front of the patrol -----------------------------------
+    // warn: { phase: 'approach' | 'escort' | 'release', t, deadline, down }
+    let warn = null;
+    let warnedAt = -Infinity;
+    const alongside = new THREE.Vector3();
+    // Where the patrol car rides relative to the bike: `ahead` metres in
+    // front, `side` metres to its side (bike's frame).
+    function besideBike(player, ahead, side, out) {
+        const fx = Math.sin(player.heading);
+        const fz = Math.cos(player.heading);
+        return out.set(player.x + fx * ahead + fz * side, 0, player.z + fz * ahead - fx * side);
+    }
+    // Rides along with the bike (its speed), closing in on `target`.
+    function driveTo(target, yaw, dt, rate, player) {
+        if (player) {
+            group.position.x += Math.sin(player.heading) * player.speed * dt;
+            group.position.z += Math.cos(player.heading) * player.speed * dt;
+        }
+        const k = Math.min(1, dt * rate);
+        group.position.x += (target.x - group.position.x) * k;
+        group.position.z += (target.z - group.position.z) * k;
+        let turn = yaw - group.rotation.y;
+        turn = Math.atan2(Math.sin(turn), Math.cos(turn));
+        group.rotation.y += turn * k;
+    }
+    function sameWay(player) {
+        return car && car.lane && Math.cos(player.heading) * car.lane.dir > 0.5;
+    }
+    function startCut(player) {
+        warn = null;
+        onWarn(null);
+        car.chasing = true;
+        car.ghost = true;
+        stop = { phase: 'cut', t: 0, speaker: 0, context: 'wheelie', fined: 0, token: 0, hits: 0, side: player.x > 0 ? -1 : 1 };
+        audio.play('police_siren', { volume: 0.7 });
+        audio.play('brake', { volume: 0.5, delay: 0.6 });
+        document.dispatchEvent(new CustomEvent('wheelie:toast', { detail: { title: 'QUEUE DE POISSON !', text: 'La police te coupe la route' } }));
+    }
+    function updateWarn(dt, player) {
+        const wheeling = player.mode === 'bike' && !!player.wheeling;
+        if (!warn) {
+            if (!car || stop || car.towing || car.chasing || !wheeling || player.speed < 3) return;
+            const distance = Math.hypot(group.position.x - player.x, group.position.z - player.z);
+            if (distance > WHEELIE_POLICE.range || !sameWay(player)) return;
+            // Warned not long ago: no second warning.
+            if (clock - warnedAt < WHEELIE_POLICE.memory) {
+                startCut(player);
+                return;
+            }
+            warn = { phase: 'approach', t: 0, deadline: Infinity, down: false, side: player.x > 0 ? -1 : 1, spoken: false };
+            car.chasing = true;
+            // Rides close to the bike: no collisions with it meanwhile.
+            car.ghost = true;
+            audio.play('police_siren', { volume: 0.55 });
+            return;
+        }
+        warn.t += dt;
+        const speed = Math.max(4, player.speed);
+        if (warn.phase === 'approach' || warn.phase === 'escort') {
+            // Alongside the bike, matching its speed.
+            besideBike(player, warn.phase === 'approach' ? -2 : 0.5, warn.side * WHEELIE_POLICE.side, alongside);
+            driveTo(alongside, player.heading, dt, warn.phase === 'approach' ? 1.4 : 4, player);
+            car.speed = speed;
+            const close = Math.hypot(group.position.x - alongside.x, group.position.z - alongside.z) < 6;
+            if (warn.phase === 'approach' && (close || warn.t > 4)) {
+                warn.phase = 'escort';
+                warn.t = 0;
+                warnedAt = clock;
+                const mine = warn;
+                talk.police('wheelie_warn', 0, { who: '📢 Police' }).then(() => {
+                    if (warn !== mine) return;
+                    mine.deadline = clock + WHEELIE_POLICE.seconds;
+                });
+                // Until the line is over, the countdown waits (at most 6 s).
+                warn.deadline = clock + WHEELIE_POLICE.seconds + 6;
+                document.dispatchEvent(new CustomEvent('wheelie:toast', {
+                    detail: { title: 'DERNIER AVERTISSEMENT', text: `Roue avant au sol dans les ${WHEELIE_POLICE.seconds} s` }
+                }));
+            }
+            if (warn.phase === 'escort') {
+                if (!wheeling) warn.down = true;
+                // Up again after putting it down, or still up at the end.
+                if ((warn.down && wheeling) || (clock >= warn.deadline && wheeling)) {
+                    startCut(player);
+                    return;
+                }
+                onWarn(Math.min(WHEELIE_POLICE.seconds, Math.max(0, warn.deadline - clock)), warn.down);
+                if (clock >= warn.deadline) {
+                    warn.phase = 'release';
+                    warn.t = 0;
+                    onWarn(null);
+                    talk.police('wheelie_ok', 0, { who: '📢 Police' });
+                }
+            }
+        } else if (warn.phase === 'release') {
+            // Back to its lane, on its way.
+            group.position.x += (car.lane.x - group.position.x) * Math.min(1, dt * 1.2);
+            group.position.z += car.lane.dir * Math.max(car.cruise, speed) * dt;
+            group.rotation.y = car.lane.dir < 0 ? Math.PI : 0;
+            if (warn.t > 2) {
+                car.chasing = false;
+                car.ghost = false;
+                warn = null;
+            }
+        }
+    }
+
+    // The cut: past the bike, then across its path, braking hard.
+    function updateCut(dt, player) {
+        const k = Math.min(1, stop.t / WHEELIE_POLICE.cut);
+        const side = stop.side * WHEELIE_POLICE.side * (1 - k);
+        besideBike(player, 1 + k * (WHEELIE_POLICE.ahead - 1), side, alongside);
+        driveTo(alongside, player.heading - stop.side * 0.45 * Math.sin(k * Math.PI), dt, 5, player);
+        if (stop.t > WHEELIE_POLICE.cut * 0.5) freezePlayer?.(true);
+        if (stop.t > WHEELIE_POLICE.cut && player.speed < 0.5) {
+            car.chasing = false;
+            car.ghost = false;
+            car.hold = true;
+            car.speed = 0;
+            stop.phase = 'out';
+            stop.t = 0;
+        }
+    }
+
+    // player: { x, z, radius, mode, heading, speed (m/s), wheeling }
     function update(dt, focus, player, bike) {
         clock += dt;
         if (!car && clock > nextAt) spawn(focus);
-        if (!car) return;
+        if (!car) {
+            if (warn) {
+                warn = null;
+                onWarn(null);
+            }
+            return;
+        }
         group.userData.flash(clock);
         if (car.towing) tow(bike);
+        updateWarn(dt, player);
+        if (stop && stop.phase === 'cut') {
+            stop.t += dt;
+            updateCut(dt, player);
+            return;
+        }
         const distance = Math.hypot(group.position.x - player.x, group.position.z - player.z);
         const pan = Math.max(-1, Math.min(1, (group.position.x - focus.x) / 10));
         if (!sirenDone && distance < 55) {
@@ -441,6 +593,8 @@ export function createPolicePatrol({ scene, world, traffic, audio, talk, onFine,
     // New street: the police lose track of the player.
     function reset() {
         const escaped = !!stop && stop.phase === 'chase';
+        if (warn) onWarn(null);
+        warn = null;
         if (car) traffic.leave(car);
         car = null;
         stop = null;
@@ -464,6 +618,8 @@ export function createPolicePatrol({ scene, world, traffic, audio, talk, onFine,
         get chasing() { return !!stop && stop.phase === 'chase'; },
         get hits() { return stop ? stop.hits : 0; },
         get towing() { return !!car && !!car.towing; },
-        get phase() { return stop ? stop.phase : car ? (car.towing ? 'towing' : 'patrol') : 'none'; }
+        get phase() { return stop ? stop.phase : warn ? `warn-${warn.phase}` : car ? (car.towing ? 'towing' : 'patrol') : 'none'; },
+        // Tests: forget the last warning.
+        forgetWarning() { warnedAt = -Infinity; }
     };
 }

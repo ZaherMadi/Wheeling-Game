@@ -227,6 +227,14 @@ export function createBuildingKit({ random, atlases }) {
         both.quad(vec({ x: -0.25, y: top, z: 0 }), vec({ x: -0.25, y: top, z: width }), vec({ x: inset, y: top + rise, z: width }),
             vec({ x: inset, y: top + rise, z: 0 }), slate, [0, top / s, width / s, (top + rise) / s]);
         both.floor(inset, 0, depth, width, top + rise, slate);
+        // Zinc ridge along the edge of the flat top, a skylight.
+        sink.hi.props.block(inset - 0.05, top + rise, 0, inset + 0.12, top + rise + 0.1, width, 0x9aa3ad, 1, 'xXyY');
+        if (width > 8) {
+            const z = range(2, width - 3);
+            const x = range(inset + 2, Math.max(inset + 2.2, depth - 3));
+            sink.hi.props.block(x, top + rise, z, x + 1.1, top + rise + 0.28, z + 0.9, 0x5b6470, 1, 'xXzZ');
+            sink.hi.glass.floor(x + 0.08, z + 0.08, x + 1.02, z + 0.82, top + rise + 0.29, 0xb8d4e6);
+        }
         both.quad(vec({ x: -0.25, y: top, z: 0 }), vec({ x: inset, y: top + rise, z: 0 }), vec({ x: depth, y: top + rise, z: 0 }),
             vec({ x: depth, y: top, z: 0 }), slate);
         both.quad(vec({ x: -0.25, y: top, z: width }), vec({ x: depth, y: top, z: width }), vec({ x: depth, y: top + rise, z: width }),
@@ -263,28 +271,111 @@ export function createBuildingKit({ random, atlases }) {
         }
     }
 
+    // Flat roofs, seen from the hang glider and walked on: a finish
+    // (gravel, light membrane, a green roof or a wooden terrace), a stone
+    // coping on the parapet, and what lives up there: solar panels,
+    // skylights, air-conditioning units, a water tank, vents, an antenna, a
+    // terrace with planters and a parasol.
+    const ROOF_FINISHES = [[0x6e7076, 0.4], [0xa7abb0, 0.3], [0x5d7a45, 0.15], [0x8a6a4c, 0.15]];
+    function roofFinish() {
+        let roll = random();
+        for (const [color, weight] of ROOF_FINISHES) {
+            roll -= weight;
+            if (roll <= 0) return color;
+        }
+        return ROOF_FINISHES[0][0];
+    }
+
     function flatRoof(sink, wallKey, tint, width, depth, top, options = {}) {
         const s = WALL_SCALE[wallKey];
-        sink.both[wallKey].block(-0.12, top, 0, 0.3, top + (options.parapet ?? 0.9), width, tint, s, 'xXzZY');
-        sink.both.props.floor(0.3, 0, depth, width, top + 0.2, 0x55575c);
-        // Rooftop clutter seen above the parapet.
+        const parapet = options.parapet ?? 0.9;
+        const floor = top + 0.2;
+        sink.both[wallKey].block(-0.12, top, 0, 0.3, top + parapet, width, tint, s, 'xXzZY');
+        // Parapets all round (the back and the ends too: walked along).
+        sink.both[wallKey].block(depth - 0.3, top, 0, depth, top + parapet, width, tint, s, 'xXzZY');
+        sink.hi[wallKey].block(0.3, top, 0, depth - 0.3, top + parapet, 0.25, tint, s, 'zZY');
+        sink.hi[wallKey].block(0.3, top, width - 0.25, depth - 0.3, top + parapet, width, tint, s, 'zZY');
+        // Stone coping on the street side.
+        sink.both.props.block(-0.18, top + parapet, -0.02, 0.36, top + parapet + 0.08, width + 0.02, 0xe4ddd0, 1, 'xXyYzZ');
+        const finish = roofFinish();
+        sink.both.props.floor(0.3, 0, depth, width, floor, finish);
+        // A darker band of gravel along the parapets, a seam every 3 m.
+        sink.hi.props.floor(0.3, 0.25, 1.1, width - 0.25, floor + 0.01, 0x55575c);
+        for (let z = 3; z < width - 1; z += 3) sink.hi.props.floor(0.3, z - 0.04, depth - 0.3, z + 0.04, floor + 0.012, 0x4a4c50);
+        // Rooftop clutter seen above the parapet (kept off the street edge).
+        const used = [];
+        const free = (x0, z0, x1, z1) => !used.some((r) => x0 < r[2] && x1 > r[0] && z0 < r[3] && z1 > r[1]) && (used.push([x0, z0, x1, z1]), true);
         const units = Math.floor(width / 7) + 1;
         for (let i = 0; i < units; i++) {
-            const c = range(1, width - 2);
+            const c = range(1, width - 2.5);
             const x0 = range(3, Math.max(3.2, depth - 4));
+            if (!free(x0 - 1.2, c - 1.2, x0 + 2, c + 2)) continue;
             if (chance(0.5)) {
-                sink.both.props.block(x0, top + 0.2, c, x0 + 1.6, top + 1.4, c + 1.1, 0xb8bcc2, 1, 'xXzZY');
+                // Air-conditioning unit with its fan grille.
+                sink.both.props.block(x0, floor, c, x0 + 1.6, floor + 1.2, c + 1.1, 0xb8bcc2, 1, 'xXzZY');
+                sink.hi.props.add(PRIMS.disc, transform(x0 + 0.8, floor + 1.21, c + 0.55, 0.42, 1, 0.42), 0x3a3d42);
+                sink.hi.props.tube([vec({ x: x0 + 1.6, y: floor + 0.4, z: c + 0.5 }), vec({ x: x0 + 2.4, y: floor + 0.4, z: c + 0.5 }),
+                    vec({ x: x0 + 2.4, y: floor, z: c + 0.5 })], [0.07, 0.07], 0x9aa0a6, 5);
             } else {
-                sink.hi.props.add(PRIMS.cylinder, transform(x0, top + 1.6, c, 1.1, 2.8, 1.1), 0x8d7f6c);
-                sink.hi.props.add(PRIMS.cone, transform(x0, top + 3.3, c, 1.15, 0.6, 1.15), 0x5a5048);
+                // Water tank on legs.
+                sink.hi.props.add(PRIMS.cylinder, transform(x0, floor + 1.4, c, 1.1, 2.8, 1.1), 0x8d7f6c);
+                sink.hi.props.add(PRIMS.cone, transform(x0, floor + 3.1, c, 1.15, 0.6, 1.15), 0x5a5048);
                 for (const [dx, dz] of [[-0.7, -0.7], [0.7, -0.7], [-0.7, 0.7], [0.7, 0.7]]) {
-                    sink.hi.props.add(PRIMS.box, transform(x0 + dx, top + 0.6, c + dz, 0.08, 0.9, 0.08), 0x3a3c40);
+                    sink.hi.props.add(PRIMS.box, transform(x0 + dx, floor + 0.4, c + dz, 0.08, 0.9, 0.08), 0x3a3c40);
                 }
             }
         }
-        if (chance(0.4)) {
-            sink.hi.props.tube([vec({ x: depth * 0.5, y: top, z: width * 0.4 }), vec({ x: depth * 0.5, y: top + 5, z: width * 0.4 })], [0.05, 0.03], 0x3a3c40, 4);
+        if (finish !== 0x5d7a45 && finish !== 0x8a6a4c && width > 9 && chance(0.55)) {
+            // Solar panels: rows tilted to the sun.
+            const rows = Math.min(3, Math.floor((depth - 6) / 2.6));
+            const z0 = range(1.2, 2.5);
+            const z1 = Math.min(width - 1.2, z0 + range(5, 10));
+            for (let r = 0; r < rows; r++) {
+                const x = depth - 2.2 - r * 2.6;
+                if (!free(x - 1.9, z0, x + 0.1, z1)) continue;
+                for (let z = z0; z + 1.05 <= z1; z += 1.1) {
+                    sink.both.props.quad(vec({ x, y: floor + 0.25, z }), vec({ x, y: floor + 0.25, z: z + 1.05 }),
+                        vec({ x: x - 1.7, y: floor + 0.95, z: z + 1.05 }), vec({ x: x - 1.7, y: floor + 0.95, z }), 0x1d2d52);
+                    sink.hi.props.quad(vec({ x: x - 0.02, y: floor + 0.27, z: z + 0.03 }), vec({ x: x - 0.02, y: floor + 0.27, z: z + 1.02 }),
+                        vec({ x: x - 0.86, y: floor + 0.6, z: z + 1.02 }), vec({ x: x - 0.86, y: floor + 0.6, z: z + 0.03 }), 0x2c4a86);
+                }
+                sink.hi.props.block(x - 1.75, floor, z0, x - 1.65, floor + 0.95, z0 + 0.08, 0x9aa0a6);
+                sink.hi.props.block(x - 0.05, floor, z0, x + 0.05, floor + 0.25, z0 + 0.08, 0x9aa0a6);
+            }
         }
+        if (finish === 0x8a6a4c || chance(0.2)) {
+            // A terrace: planters, a table under a parasol.
+            const cx = range(3, Math.max(3.5, depth - 4));
+            const cz = range(2, Math.max(2.5, width - 3));
+            if (free(cx - 2, cz - 2, cx + 2, cz + 2)) {
+                sink.both.props.block(cx - 1.8, floor, cz - 1.8, cx - 1.2, floor + 0.55, cz + 1.8, 0x7a5a3c, 1, 'xXzZY');
+                sink.both.props.block(cx - 1.75, floor + 0.55, cz - 1.75, cx - 1.25, floor + 1.15, cz + 1.75, 0x4f8a3a, 1, 'xXzZY');
+                sink.hi.props.add(PRIMS.cylinder, transform(cx, floor + 0.38, cz, 0.45, 0.04, 0.45), 0xeeeeea);
+                sink.hi.props.add(PRIMS.box, transform(cx, floor + 0.18, cz, 0.06, 0.36, 0.06), 0x3a3c40);
+                sink.hi.props.add(PRIMS.box, transform(cx, floor + 1.1, cz, 0.04, 2.2, 0.04), 0xd8d6d0);
+                sink.both.props.add(PRIMS.spike, transform(cx, floor + 2.25, cz, 1.4, 0.45, 1.4), pick([0xe8473c, 0xf2c014, 0x2a7ab8, 0xf4f1e8]));
+            }
+        }
+        // Skylights.
+        for (let i = 0; i < Math.floor(width / 9); i++) {
+            const x = range(2.5, Math.max(2.6, depth - 3));
+            const z = range(1.5, Math.max(1.6, width - 2.5));
+            if (!free(x - 0.2, z - 0.2, x + 1.4, z + 1.2)) continue;
+            sink.hi.props.block(x, floor, z, x + 1.2, floor + 0.3, z + 1, 0xd8d6d0, 1, 'xXzZ');
+            sink.hi.glass.floor(x + 0.08, z + 0.08, x + 1.12, z + 0.92, floor + 0.31, 0xb8d4e6);
+        }
+        // Vents.
+        for (let i = 0; i < 2; i++) {
+            const x = range(2, Math.max(2.2, depth - 2));
+            const z = range(1, Math.max(1.2, width - 1));
+            sink.hi.props.add(PRIMS.cylinder6, transform(x, floor + 0.45, z, 0.12, 0.9, 0.12), 0x8a8e94);
+            sink.hi.props.add(PRIMS.cone, transform(x, floor + 0.95, z, 0.2, 0.12, 0.2), 0x6a6e74);
+        }
+        if (chance(0.4)) {
+            sink.hi.props.tube([vec({ x: depth * 0.5, y: floor, z: width * 0.4 }), vec({ x: depth * 0.5, y: floor + 5, z: width * 0.4 })], [0.05, 0.03], 0x3a3c40, 4);
+            sink.hi.props.add(PRIMS.box, transform(depth * 0.5, floor + 4.2, width * 0.4, 0.04, 0.04, 1.6), 0x3a3c40);
+        }
+        return { y: floor, x0: 0.35, x1: depth - 0.35, parapet: top + parapet };
     }
 
     // ends: [start, end] — false where another facade takes the place.
@@ -347,7 +438,7 @@ export function createBuildingKit({ random, atlases }) {
         sink.both.stone.block(-0.6, top, 0, 0, top + 0.3, width, tint, WALL_SCALE.stone, 'xyYzZ');
         mansard(sink, width, depth, top + 0.3, tint);
         endWalls(sink, 'stone', tint, width, depth, top + 0.3, options.ends);
-        return { height: top + 3.4, units };
+        return { height: top + 3.4, units, roof: { y: top + 3.4, x0: 1.6, x1: depth - 0.1 } };
     }
 
     // Brick block: punched windows with stone lintels, shutters, flat roof.
@@ -380,14 +471,14 @@ export function createBuildingKit({ random, atlases }) {
         }
         sink.both.stone.block(-0.12, GROUND_FLOOR - 0.05, 0, 0, GROUND_FLOOR + 0.25, width, trim, WALL_SCALE.stone, 'xyYzZ');
         sink.both.stone.block(-0.4, top - 0.4, 0, 0, top, width, trim, WALL_SCALE.stone, 'xyYzZ');
-        flatRoof(sink, 'brick', tint, width, depth, top);
+        const roof = flatRoof(sink, 'brick', tint, width, depth, top);
         endWalls(sink, 'brick', tint, width, depth, top + 0.9, options.ends);
         if (chance(0.35)) {
             // Painted mural on the blank end wall.
             const h = Math.min(top - GROUND_FLOOR - 1, 8);
             sink.both.print.wallX(0.6, GROUND_FLOOR + 1, Math.min(depth - 0.6, 0.6 + h * 2), GROUND_FLOOR + 1 + h, -0.03, -1, 0xffffff, prints.mural);
         }
-        return { height: top + 0.9, units };
+        return { height: top + 0.9, units, roof };
     }
 
     // Rendered modern block: large windows, glass balconies, set-back attic.
@@ -435,7 +526,18 @@ export function createBuildingKit({ random, atlases }) {
         const ps = WALL_SCALE.plain;
         sink.both.plain.wallX(2.2, top + 0.3, depth, top + 0.3 + attic, 0, -1, tint, [-depth / ps, (top + 0.3) / ps, -2.2 / ps, (top + 0.3 + attic) / ps]);
         sink.both.plain.wallX(2.2, top + 0.3, depth, top + 0.3 + attic, width, 1, tint, [2.2 / ps, (top + 0.3) / ps, depth / ps, (top + 0.3 + attic) / ps]);
-        return { height: top + 3.4, units };
+        // The attic's roof: a light membrane with a few units on it.
+        const atticTop = top + 0.6 + attic;
+        sink.both.props.floor(2.0, 0, depth, width, atticTop + 0.01, 0xb4b8bd);
+        sink.both.plain.block(2.0, atticTop, 0, depth, atticTop + 0.35, 0.2, tint, ps, 'zZY');
+        sink.both.plain.block(2.0, atticTop, width - 0.2, depth, atticTop + 0.35, width, tint, ps, 'zZY');
+        sink.both.plain.block(2.0, atticTop, 0, 2.25, atticTop + 0.35, width, tint, ps, 'xXY');
+        if (width > 8) {
+            const z = range(1.5, width - 3);
+            sink.both.props.block(depth - 4, atticTop, z, depth - 2.4, atticTop + 1.1, z + 1.1, 0xb8bcc2, 1, 'xXzZY');
+            sink.hi.props.add(PRIMS.disc, transform(depth - 3.2, atticTop + 1.11, z + 0.55, 0.4, 1, 0.4), 0x3a3d42);
+        }
+        return { height: top + 3.4, units, roof: { y: atticTop + 0.01, x0: 2.3, x1: depth - 0.2 } };
     }
 
     // Office tower: curtain wall with fins, tall lobby, mechanical crown.
@@ -482,7 +584,10 @@ export function createBuildingKit({ random, atlases }) {
         sink.both.concrete.block(4, height + 1.4, 3, Math.max(5, depth - 3), height + 5, Math.max(4, width - 3), 0xc8c6c2, s, 'xXzZY');
         sink.hi.props.tube([vec({ x: depth / 2, y: height + 5, z: width / 2 }), vec({ x: depth / 2, y: height + 13, z: width / 2 })], [0.12, 0.04], 0x2a2c30, 5);
         sink.both.emissive.block(depth / 2 - 0.15, height + 13, width / 2 - 0.15, depth / 2 + 0.15, height + 13.3, width / 2 + 0.15, 0xff3020);
-        return { height: height + 5, units: [] };
+        // The top of the crown: a helipad-style marking.
+        sink.both.props.floor(0, 0, depth, width, height + 1.41, 0x3c4148);
+        sink.hi.props.floor(1, 1, 3.2, Math.min(width - 1, 6), height + 1.42, 0xf2c014);
+        return { height: height + 5, units: [], roof: { y: height + 1.42, x0: 0.2, x1: depth - 0.2 } };
     }
 
     // Lower filler: a two-storey shop building with a big sign and a mural.
@@ -496,9 +601,9 @@ export function createBuildingKit({ random, atlases }) {
         sink.lo.plain.wallZ(0, GROUND_FLOOR, width, top, 0, -1, tint,
             [0, GROUND_FLOOR / WALL_SCALE.plain, width / WALL_SCALE.plain, top / WALL_SCALE.plain]);
         for (const o of g.rows[0].openings) windowUnit(sink, 'plain', tint, o, { frame: FRAME_DARK, depth: 0.14, transom: false });
-        flatRoof(sink, 'plain', tint, width, depth, top, { parapet: 0.6 });
+        const roof = flatRoof(sink, 'plain', tint, width, depth, top, { parapet: 0.6 });
         endWalls(sink, 'plain', tint, width, depth, top + 0.6, options.ends);
-        return { height: top + 0.6, units };
+        return { height: top + 0.6, units, roof };
     }
 
     const TYPES = { classic, brick, modern, tower, lowrise };

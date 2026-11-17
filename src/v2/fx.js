@@ -179,6 +179,29 @@ export function createFx({ scene, mobile }) {
         }
     }
 
+    // Jetpack: flames shot out of a nozzle along `down` (a unit vector),
+    // hotter and longer with the turbo, and smoke left hanging behind.
+    function jet(point, down, velocity, amount = 3, boost = 0) {
+        for (let i = 0; i < amount; i++) {
+            const push = rand(7, 13) * (1 + boost * 0.8);
+            const core = Math.random() < 0.3;
+            sparks.emit(
+                point.x + rand(-0.04, 0.04), point.y + rand(-0.04, 0.04), point.z + rand(-0.04, 0.04),
+                velocity.x * 0.85 + down.x * push + rand(-0.7, 0.7), velocity.y * 0.85 + down.y * push, velocity.z * 0.85 + down.z * push + rand(-0.7, 0.7),
+                core
+                    ? { life: rand(0.05, 0.1), r: 0.8, g: 0.92, b: 1, alpha: 1, size: rand(0.22, 0.36), growth: 0.8, gravity: 0 }
+                    : { life: rand(0.12, 0.28) * (1 + boost * 0.5), r: 1, g: rand(0.35, 0.62) - boost * 0.15, b: 0.08, alpha: 0.95, size: rand(0.3, 0.55) * (1 + boost * 0.5), growth: 1.8, gravity: 1 }
+            );
+        }
+        if (Math.random() < 0.55) {
+            soft.emit(
+                point.x + down.x * 0.9, point.y + down.y * 0.9, point.z + down.z * 0.9,
+                velocity.x * 0.2 + rand(-0.6, 0.6), velocity.y * 0.2 + down.y * 2 + rand(-0.3, 0.3), velocity.z * 0.2 + rand(-0.6, 0.6),
+                { life: rand(1.1, 1.9), r: 0.8, g: 0.8, b: 0.82, alpha: 0.22, size: rand(0.5, 0.8), growth: 2.2, gravity: 0.6 }
+            );
+        }
+    }
+
     function update(dt, camera, viewportHeight) {
         const scale = viewportHeight / (2 * Math.tan(THREE.MathUtils.degToRad(camera.fov) / 2));
         soft.update(dt, scale);
@@ -191,5 +214,5 @@ export function createFx({ scene, mobile }) {
         sprayDebt = 0;
     }
 
-    return { spray, smoke, tyreSmoke, spark, flame, update, clear };
+    return { spray, smoke, tyreSmoke, spark, flame, jet, update, clear };
 }

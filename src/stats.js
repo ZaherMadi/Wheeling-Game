@@ -106,7 +106,8 @@ export function renderStats(container, { points = 0, codes = {}, all = null } = 
         ['Mode libre', [
             ['Sorties', whole(stats.freeSessions)],
             ['Temps', duration(stats.freeSeconds)],
-            ['Figures Land trouvée', whole(stats.figuresLand)]
+            ['Figures Land trouvée', whole(stats.figuresLand)],
+            ['Vols en jetpack', whole(stats.jetpacks)]
         ]]
     ];
     const secret = [];

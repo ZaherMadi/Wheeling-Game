@@ -40,7 +40,7 @@ export function createRealisticVersion({ scene, renderer, camera, mobile, audio,
     const fx = createFx({ scene, mobile });
     // Free roam drift: tyre marks on the road.
     const skidmarks = createSkidMarks(scene, { max: mobile ? 450 : 700 });
-    const roam = createFreeRoam({ scene, world, rider, audio, onTurn, playerVoice });
+    const roam = createFreeRoam({ scene, world, rider, audio, onTurn, playerVoice, fx });
     // Figures Land: one free roam ride in 20 finds it.
     const figuresLand = createFiguresLand({ scene });
     let wasRoaming = false;

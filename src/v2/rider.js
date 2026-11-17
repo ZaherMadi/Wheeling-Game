@@ -1221,16 +1221,19 @@ export function createRider({ scene }) {
         updateWalk(0, x, z, yaw, 0);
     }
 
-    function updateWalk(dt, x, z, yaw, speed, y = 0, running = false, cuffed = false) {
+    // ground: the height he stands on (a roof); pitch: leaning forward
+    // (flying); fly: the jetpack pose (arms back, legs together).
+    function updateWalk(dt, x, z, yaw, speed, y = 0, running = false, cuffed = false, { ground = 0, pitch = 0, fly = false } = {}) {
         // stride 0..1 walking, up to ~1.8 running (longer steps, faster).
         const stride = Math.min(running ? 1.8 : 1, speed / WALK_REFERENCE);
         const step = Math.min(1, stride);
         // Quicker steps than the big rider had, so the feet keep up with the ground.
         walkPhase += dt * (2 + stride * 6.6) * (stride > 0.05 ? 1 : 0);
         const bob = Math.abs(Math.sin(walkPhase)) * 0.03 * stride;
-        const air = y > 0.02 ? 1 : 0;
+        const air = y - ground > 0.02 && !fly ? 1 : 0;
         riderGroup.position.set(x, y * 1, z);
-        riderGroup.rotation.set(0, yaw, 0);
+        riderGroup.rotation.set(0, yaw, 0, 'YXZ');
+        riderGroup.rotation.x = pitch;
         pelvis.position.set(0, 0.94 + bob - air * 0.08, 0);
         pelvis.rotation.set(0.05 + step * 0.05 + (running ? 0.22 : 0), Math.sin(walkPhase) * 0.1 * step, 0);
         head.rotation.set(-0.08, -Math.sin(walkPhase) * 0.06 * stride, 0);
@@ -1242,6 +1245,7 @@ export function createRider({ scene }) {
             target.set(side * 0.11, 0.07 + Math.max(0, Math.sin(phase)) * 0.13 * stride, Math.cos(phase) * 0.3 * stride);
             // In the air the knees come up.
             if (air) target.set(side * 0.13, 0.32 + (i ? 0.08 : 0), 0.16);
+            if (fly) target.set(side * 0.1, 0.02 + Math.sin(walkPhase * 0.7 + i) * 0.03, -0.12);
             kneeHint.set(side * 0.1, 0, 1);
             solveLimb(legs[i], kneeHint);
             shoes[i].position.copy(target);
@@ -1250,6 +1254,7 @@ export function createRider({ scene }) {
             target.set(side * 0.27, running ? 1.0 : 0.8, -Math.cos(phase) * (running ? 0.3 : 0.22) * stride + 0.04);
             if (running) target.y += Math.max(0, -Math.cos(phase)) * 0.15;
             if (air) target.set(side * 0.42, 1.55, 0.1);
+            if (fly) target.set(side * 0.34, 0.85, -0.32);
             // Hands together behind the back.
             if (cuffed) target.set(side * 0.06, 0.96, -0.2);
             elbowHint.set(side * 0.3, running ? -0.3 : 0, -1);

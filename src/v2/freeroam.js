@@ -7,6 +7,7 @@ import { createPeople } from './people.js';
 import { createPolicePatrol } from './police.js';
 import { createStreetTalk } from './street-talk.js';
 import { createHangGlider } from './glider.js';
+import { createJetpack } from './jetpack.js';
 import { createOfficer, decoratePoliceCar } from './police.js';
 import { CAR_NAMES, CAR_UNLOCKS } from './cars.js';
 import { noteRankedTotal, profileBalance } from '../profile.js';
@@ -128,7 +129,7 @@ export function syncPoints(serverTotal) {
     document.dispatchEvent(new CustomEvent('wheelie:points'));
 }
 
-export function createFreeRoam({ scene, world, rider, audio, onTurn, playerVoice = null }) {
+export function createFreeRoam({ scene, world, rider, audio, onTurn, playerVoice = null, fx = null }) {
     const traffic = createTraffic({
         scene, world,
         onHonk: (pan) => audio.play('horn_distant', { volume: 0.55, pan, rate: 1.1 + Math.random() * 0.2 })
@@ -155,13 +156,17 @@ export function createFreeRoam({ scene, world, rider, audio, onTurn, playerVoice
             save(STRIKES_KEY, confiscate ? 0 : strikes);
             toast('PLUS DE POINTS', confiscate ? 'La police confisque ta moto' : `Avertissement ${strikes}/3`);
         } else {
-            toast(`-${applied} PTS`, reason === 'chase' ? 'Délit de fuite' : 'Mauvaise conduite');
+            toast(`-${applied.toLocaleString('fr-FR')} PTS`, reason === 'chase' ? 'Délit de fuite' : reason === 'wheelie' ? 'Rodéo urbain · 20 % de tes points' : 'Mauvaise conduite');
             if (lost.length) setTimeout(() => toast(lost.map((model) => CAR_NAMES[model]).join(' + '), 'Plus assez de points pour la conduire'), 2700);
         }
         return { before, after, applied, lost, strikes, confiscate };
     }
+    // The bike's wheelie and speed, given by the game (for the police).
+    const ride = { wheeling: false, speed: 0 };
     const patrol = createPolicePatrol({
         scene, world, traffic, audio, talk,
+        totalPoints,
+        onWarn: (seconds, down) => document.dispatchEvent(new CustomEvent('wheelie:police-warn', { detail: { seconds, down } })),
         onFine: fine,
         freezePlayer: (value) => { frozen = value; },
         onCaught: () => toast('RATTRAPÉ !', 'La police t\'arrête'),
@@ -174,7 +179,8 @@ export function createFreeRoam({ scene, world, rider, audio, onTurn, playerVoice
         }
     });
     const focus = new THREE.Vector3();
-    const walker = { x: 0, z: 0, yaw: Math.PI, speed: 0, y: 0, vy: 0, running: false, jumpHeld: false };
+    // roof: the roof he walks on (null: the street); y is then its height.
+    const walker = { x: 0, z: 0, yaw: Math.PI, speed: 0, y: 0, vy: 0, running: false, jumpHeld: false, roof: null };
     const boost = { readyAt: 0, until: 0 };
     const now = () => performance.now() / 1000;
     const drive = { group: null, model: null, speed: 0, yaw: Math.PI, braking: false, reversing: false };
@@ -236,7 +242,7 @@ export function createFreeRoam({ scene, world, rider, audio, onTurn, playerVoice
 
     // Boost in free roam: on the bike or in a car, every 15 s.
     function tryBoost() {
-        if (mode === 'walk' || now() < boost.readyAt) return false;
+        if (mode === 'walk' || mode === 'jet' || mode === 'glide' || now() < boost.readyAt) return false;
         boost.until = now() + BOOST_TIME;
         boost.readyAt = now() + BOOST_COOLDOWN;
         audio.play('boost', { volume: 0.7 });
@@ -248,7 +254,7 @@ export function createFreeRoam({ scene, world, rider, audio, onTurn, playerVoice
         const t = now();
         return {
             active: t < boost.until,
-            ready: mode !== 'walk' && t >= boost.readyAt,
+            ready: (mode === 'bike' || mode === 'car') && t >= boost.readyAt,
             wait: Math.max(0, Math.ceil(boost.readyAt - t))
         };
     }
@@ -258,6 +264,10 @@ export function createFreeRoam({ scene, world, rider, audio, onTurn, playerVoice
     function move(dt, nx, nz, keys = {}) {
         if (mode === 'glide') {
             moveGlide(dt, nx);
+            return;
+        }
+        if (mode === 'jet') {
+            moveJet(dt, nx, nz, keys);
             return;
         }
         // Stopped by the police: no control until they are done.
@@ -274,26 +284,40 @@ export function createFreeRoam({ scene, world, rider, audio, onTurn, playerVoice
             if (length > 0.05) walker.yaw = Math.atan2(nx, nz);
             walker.x += Math.sin(walker.yaw) * walker.speed;
             walker.z += Math.cos(walker.yaw) * walker.speed;
-            // Jump: one per press, only from the ground.
-            if (keys.jump && !walker.jumpHeld && walker.y === 0) {
+            const ground = walker.roof ? walker.roof.y : 0;
+            // Jump: one per press, only from the ground. At the edge of a
+            // roof: the hang glider takes him off.
+            if (keys.jump && !walker.jumpHeld && walker.y <= ground + 0.001) {
+                if (walker.roof && nearEdge()) {
+                    walker.jumpHeld = true;
+                    leapFromRoof();
+                    return;
+                }
                 walker.vy = 0.12;
                 audio.play('ui_click', { volume: 0.25, rate: 0.7 });
             }
             walker.jumpHeld = !!keys.jump;
-            if (walker.y > 0 || walker.vy > 0) {
+            if (walker.y > ground || walker.vy > 0) {
                 walker.y += walker.vy;
                 walker.vy -= 0.0105;
-                if (walker.y <= 0) {
-                    walker.y = 0;
+                if (walker.y <= ground) {
+                    walker.y = ground;
                     walker.vy = 0;
                     audio.play('landing', { volume: 0.12, rate: 1.6 });
                 }
             }
-            const position = new THREE.Vector3(walker.x, 0, walker.z);
-            constrain(position, 19.4, 0);
-            traffic.pushOut(position, 0.32);
-            walker.x = position.x;
-            walker.z = position.z;
+            if (walker.roof) {
+                // Free on the roof, kept inside its parapets.
+                const roof = walker.roof;
+                walker.x = Math.max(roof.x0 + 0.35, Math.min(roof.x1 - 0.35, walker.x));
+                walker.z = Math.max(roof.z0 + 0.35, Math.min(roof.z1 - 0.35, walker.z));
+            } else {
+                const position = new THREE.Vector3(walker.x, 0, walker.z);
+                constrain(position, 19.4, 0);
+                traffic.pushOut(position, 0.32);
+                walker.x = position.x;
+                walker.z = position.z;
+            }
         } else if (mode === 'car') {
             // Speeds in metres per frame (1/60 s): accelerations in m/s² / 3600.
             const throttle = -nz;
@@ -344,33 +368,82 @@ export function createFreeRoam({ scene, world, rider, audio, onTurn, playerVoice
     }
 
     // --- Secret: the hang glider ------------------------------------------
-    // From high above the street, gliding down (left / right to steer);
-    // touches down running, leaves the glider behind; the police come, the
-    // rider says sorry; one time in two they only take the glider, else
-    // also 50 points. The bike then waits next to him.
-    const glide = { group: null, x: 0, z: 0, y: 0, yaw: Math.PI, speed: 12, phase: '', t: 0, roll: 0, scene: null };
-    function startGlide() {
-        if (mode !== 'bike' || frozen || turning || !bike) return false;
+    // From high above the street, gliding down (left / right to steer). It
+    // can land:
+    // - on a roof: he runs a few steps and is free to walk about up there;
+    //   SAUTER at the edge and the glider takes him off again, on to the
+    //   next place (no police up there);
+    // - on the street: a few running steps, the glider left behind; the
+    //   police come, he says sorry, they take the glider and fine him (at
+    //   least 50 points and at least 2.5 % of his cumulative points);
+    // - on a car: the driver brakes, gets out ("on est où là ?"), the police
+    //   come, the driver explains (GTA...), and the fine is three times as
+    //   much.
+    // The bike then waits next to him.
+    const GLIDE = { sink: 1.6, speed: 12, startHeight: 42, fine: 50, share: 0.025, carFactor: 3, edge: 1.6, reach: 62 };
+    const glide = { group: null, x: 0, z: 0, y: 0, yaw: Math.PI, speed: GLIDE.speed, phase: '', t: 0, roll: 0, scene: null, roof: null, car: null };
+    function glideFine(factor) {
+        const points = totalPoints();
+        return Math.max(GLIDE.fine, Math.ceil(points * GLIDE.share)) * factor;
+    }
+
+    function ensureGlider() {
         if (!glide.group) {
             glide.group = createHangGlider();
             scene.add(glide.group);
         }
         glide.group.visible = true;
+        glide.group.scale.setScalar(1);
+    }
+
+    function startGlide() {
+        if (mode !== 'bike' || frozen || turning || !bike) return false;
+        ensureGlider();
         glide.yaw = bike.rotation.y;
         // Starts a little behind the bike, high up.
         glide.x = bike.position.x;
         glide.z = bike.position.z - Math.cos(glide.yaw) * 25;
-        glide.y = 42;
-        glide.speed = 12;
+        glide.y = GLIDE.startHeight;
+        launchGlide();
+        bike.visible = false;
+        rider.dismount(glide.x, glide.z, glide.yaw);
+        toast('CODE SECRET', 'Deltaplane ! Gauche / droite pour te diriger · pose-toi sur un toit');
+        return true;
+    }
+
+    function launchGlide() {
+        glide.speed = GLIDE.speed;
         glide.phase = 'fly';
         glide.t = 0;
         glide.roll = 0;
-        bike.visible = false;
-        rider.dismount(glide.x, glide.z, glide.yaw);
+        glide.roof = null;
+        glide.car = null;
+        walker.roof = null;
         setMode('glide');
         audio.play('whoosh', { volume: 0.6, rate: 0.7 });
-        toast('CODE SECRET', 'Deltaplane ! Gauche / droite pour te diriger');
+    }
+
+    // From the edge of a roof: the glider takes him off again.
+    function leapFromRoof() {
+        const roof = walker.roof;
+        if (!roof || frozen) return false;
+        // Off the nearest edge, the way he faces if it points out enough.
+        const edges = [[walker.x - roof.x0, -Math.PI / 2], [roof.x1 - walker.x, Math.PI / 2], [walker.z - roof.z0, Math.PI], [roof.z1 - walker.z, 0]];
+        const [, outward] = edges.sort((a, b) => a[0] - b[0])[0];
+        const facing = Math.cos(walker.yaw - outward);
+        ensureGlider();
+        glide.yaw = facing > 0.3 ? walker.yaw : outward;
+        glide.x = walker.x + Math.sin(glide.yaw) * 1.2;
+        glide.z = walker.z + Math.cos(glide.yaw) * 1.2;
+        glide.y = roof.y + 0.6;
+        launchGlide();
+        bumpLeaps();
+        toast('🪂 C’EST PARTI', 'Vers la prochaine destination');
         return true;
+    }
+    let leaps = 0;
+    function bumpLeaps() {
+        leaps++;
     }
 
     function placeGlider() {
@@ -379,77 +452,204 @@ export function createFreeRoam({ scene, world, rider, audio, onTurn, playerVoice
         g.rotation.set(0, glide.yaw, glide.roll);
     }
 
+    function nearEdge() {
+        const roof = walker.roof;
+        if (!roof) return false;
+        return Math.min(walker.x - roof.x0, roof.x1 - walker.x, walker.z - roof.z0, roof.z1 - walker.z) < GLIDE.edge;
+    }
+
+    // Left behind where he touched down: on one wingtip, off to the side.
+    function dropGlider(groundY) {
+        const aside = glide.x > 0 ? -1 : 1;
+        glide.group.position.set(glide.x + Math.cos(glide.yaw) * aside * 2.2, groundY + 1.1, glide.z - Math.sin(glide.yaw) * aside * 2.2);
+        glide.group.rotation.set(-0.2, glide.yaw, aside * 0.32);
+    }
+
     function moveGlide(dt, nx) {
         glide.t += dt;
         if (glide.phase === 'fly') {
             glide.yaw -= nx * 0.8 * dt;
             glide.roll += (-nx * 0.35 - glide.roll) * Math.min(1, dt * 3);
+            const before = { x: glide.x, z: glide.z };
             glide.x += Math.sin(glide.yaw) * glide.speed * dt;
             glide.z += Math.cos(glide.yaw) * glide.speed * dt;
-            // Over the street and its pavements.
-            if (Math.abs(glide.x) > 13) {
-                glide.x = Math.sign(glide.x) * 13;
+            // Over the street and its buildings; low down, over the street.
+            const limit = glide.y < 6 ? 18.5 : GLIDE.reach;
+            if (Math.abs(glide.x) > limit) {
+                glide.x = Math.sign(glide.x) * limit;
                 glide.yaw += (Math.PI - glide.yaw) * 0.02;
             }
-            glide.y = Math.max(0, glide.y - 1.6 * dt);
+            glide.y = Math.max(0, glide.y - GLIDE.sink * dt);
+            // A roof under him: down on it (or, far below its edge, along
+            // the wall instead of through it).
+            const roof = world.roofAt(glide.x, glide.z, 0.3);
+            if (roof && glide.y <= roof.y + 0.05) {
+                if (glide.y > roof.y - 7) {
+                    glide.y = roof.y;
+                    glide.roof = roof;
+                    glide.phase = 'run';
+                    glide.t = 0;
+                    dropGlider(roof.y);
+                    audio.play('landing', { volume: 0.5 });
+                    toast('SUR LE TOIT !', 'Cours où tu veux · SAUTER au bord pour repartir en deltaplane');
+                    return;
+                }
+                glide.x = before.x;
+                glide.z = before.z;
+                glide.yaw += Math.PI * dt;
+            }
+            // A car under him, at the height of its roof.
+            const car = glide.y < 2.2 ? traffic.hitTest(glide.x, glide.z, 0.1) : null;
+            if (car && !car.special && glide.y <= car.group.userData.height + 0.05) {
+                landOnCar(car);
+                return;
+            }
             placeGlider();
-            rider.updateWalk(dt, glide.x, glide.z, glide.yaw, 0, Math.max(0.05, glide.y));
+            rider.updateWalk(dt, glide.x, glide.z, glide.yaw, 0, Math.max(0.05, glide.y), false, false, { ground: glide.y - 1 });
             if (glide.y <= 0) {
-                // Touchdown: a few running steps, the glider stays behind.
+                // Touchdown in the street: a few running steps, the glider stays behind.
                 glide.phase = 'run';
                 glide.t = 0;
-                // Let go: it settles on one wingtip, off to the side.
-                const aside = glide.x > 0 ? -1 : 1;
-                glide.group.position.set(glide.x + Math.cos(glide.yaw) * aside * 2.2, 1.1, glide.z - Math.sin(glide.yaw) * aside * 2.2);
-                glide.group.rotation.set(-0.2, glide.yaw, aside * 0.32);
+                dropGlider(0);
                 audio.play('landing', { volume: 0.5 });
             }
         } else if (glide.phase === 'run') {
             // A few running steps, well clear of the glider.
             const pace = Math.max(0, 5.5 * (1 - glide.t / 2.4));
+            const ground = glide.roof ? glide.roof.y : 0;
             glide.x += Math.sin(glide.yaw) * pace * dt;
             glide.z += Math.cos(glide.yaw) * pace * dt;
-            rider.updateWalk(dt, glide.x, glide.z, glide.yaw, pace / 60, 0, pace > 2);
-            if (glide.t > 2.4) {
+            if (glide.roof) {
+                glide.x = Math.max(glide.roof.x0 + 0.4, Math.min(glide.roof.x1 - 0.4, glide.x));
+                glide.z = Math.max(glide.roof.z0 + 0.4, Math.min(glide.roof.z1 - 0.4, glide.z));
+            }
+            rider.updateWalk(dt, glide.x, glide.z, glide.yaw, pace / 60, ground, pace > 2, false, { ground });
+            if (glide.t > (glide.roof ? 1.2 : 2.4)) {
                 walker.x = glide.x;
                 walker.z = glide.z;
                 walker.yaw = glide.yaw;
                 walker.speed = 0;
+                walker.y = ground;
+                walker.vy = 0;
+                walker.roof = glide.roof;
+                setMode('walk');
+                if (!glide.roof) startGliderPolice('street');
+            }
+        } else if (glide.phase === 'car') {
+            // Standing on the roof of the car while it brakes.
+            const car = glide.car;
+            const g = car.group;
+            const top = g.userData.height;
+            glide.x = g.position.x;
+            glide.z = g.position.z;
+            rider.updateWalk(dt, glide.x, glide.z, glide.yaw, 0, top, false, false, { ground: top });
+            if (car.speed < 0.6 && glide.t > 1.2) {
+                glide.phase = 'down';
+                glide.t = 0;
+                startCarScene(car);
+            }
+        } else if (glide.phase === 'down') {
+            // Jumps down beside the car, on the pavement side.
+            const stage = glide.scene;
+            const k = Math.min(1, glide.t / 0.55);
+            const g = glide.car.group;
+            const top = g.userData.height;
+            const x = g.position.x + stage.riderSide * 1.9 * k;
+            const y = top * (1 - k) + Math.sin(k * Math.PI) * 0.5;
+            rider.updateWalk(dt, x, g.position.z, glide.yaw, 0, y, false, false, { ground: k < 1 ? -1 : 0 });
+            if (k >= 1) {
+                audio.play('landing', { volume: 0.3, rate: 1.3 });
+                walker.x = x;
+                walker.z = g.position.z;
+                walker.yaw = -stage.riderSide * Math.PI / 2;
                 walker.y = 0;
                 walker.vy = 0;
+                walker.roof = null;
                 setMode('walk');
-                startGliderPolice();
+                frozen = true;
             }
         }
     }
 
-    function startGliderPolice() {
+    // --- Landing on a car ------------------------------------------------
+    function landOnCar(car) {
+        glide.car = car;
+        glide.phase = 'car';
+        glide.t = 0;
+        glide.y = car.group.userData.height;
+        car.hold = true;
+        glide.group.visible = false;
+        audio.play('collision', { volume: 0.6 });
+        audio.play('landing', { volume: 0.6, rate: 0.8, delay: 0.05 });
+        audio.play('brake', { volume: 0.5, delay: 0.2 });
+        toast('SUR UNE VOITURE !', 'Amende triple en vue…');
+    }
+
+    function startCarScene(car) {
+        const g = car.group;
+        // Pavement side for the rider, the road side for the driver.
+        const riderSide = g.position.x >= 0 ? 1 : -1;
+        const driver = createOfficer(scene, { civilian: true });
+        driver.group.visible = true;
+        driver.group.position.set(g.position.x - riderSide * 1.2, 0, g.position.z + car.lane.dir * 0.4);
+        driver.group.rotation.y = car.lane.dir > 0 ? 0 : Math.PI;
+        audio.play('car_door', { volume: 0.55 });
+        const voice = talk.driverVoice();
+        glide.scene = {
+            kind: 'car', car, driver, voice, riderSide, step: 'shock', t: 0, time: 0,
+            forward: new THREE.Vector3(0, 0, car.lane.dir), policeX: car.lane.x
+        };
+        // The driver, stunned.
+        talk.driver('roof_shock', voice).then(() => {
+            const stage = glide.scene;
+            if (!stage || stage.kind !== 'car') return;
+            startGliderPolice('car');
+        });
+    }
+
+    function startGliderPolice(kind) {
         frozen = true;
-        const car = world.createCar('sedan', 0xf4f4f2);
-        decoratePoliceCar(car);
-        scene.add(car);
+        const police = world.createCar('sedan', 0xf4f4f2);
+        decoratePoliceCar(police);
+        scene.add(police);
+        const carStage = kind === 'car' ? glide.scene : null;
+        const forward = carStage ? carStage.forward : new THREE.Vector3(Math.sin(glide.yaw), 0, Math.cos(glide.yaw));
         const side = walker.x > 0 ? -1 : 1;
-        const back = -Math.cos(glide.yaw);
-        car.position.set(walker.x + side * 3.4, 0, walker.z + back * 45);
-        car.rotation.y = glide.yaw;
+        // Comes from behind; behind the car it landed on, or beside him.
+        const stopX = carStage ? carStage.policeX : walker.x + side * 3.4;
+        const stopZ = carStage ? carStage.car.group.position.z - forward.z * 8.5 : walker.z - forward.z * 2;
+        police.position.set(stopX, 0, stopZ - forward.z * 45);
+        police.rotation.y = Math.atan2(forward.x, forward.z);
         const officer = createOfficer(scene);
-        glide.scene = { car, officer, side, step: 'arrive', t: 0, time: 0 };
+        const stage = carStage || {};
+        Object.assign(stage, { kind, police, officer, side, forward, stopZ, step: 'arrive', t: 0, time: stage.time || 0 });
+        glide.scene = stage;
         audio.play('police_siren', { volume: 0.6 });
     }
 
     async function gliderTalk(stage) {
-        await talk.police('glider', 0);
-        if (glide.scene !== stage) return;
-        await talk.rider('sorry');
-        if (glide.scene !== stage) return;
-        const lenient = Math.random() < 0.5;
-        await talk.police(lenient ? 'glider_ok' : 'glider_fine', 0);
-        if (glide.scene !== stage) return;
-        if (!lenient) {
-            const lost = finePoints(50);
-            toast(lost ? `-${lost} PTS` : 'AMENDE', 'Trouble à l’ordre public');
-            document.dispatchEvent(new CustomEvent('wheelie:points'));
+        const on = () => glide.scene === stage;
+        if (stage.kind === 'car') {
+            await talk.police('roof_ask', 0);
+            if (!on()) return;
+            stage.driverTalking = true;
+            await talk.driver('roof_explain', stage.voice);
+            stage.driverTalking = false;
+            if (!on()) return;
+            await talk.rider('sorry');
+            if (!on()) return;
+            await talk.police('roof_fine', 0);
+        } else {
+            await talk.police('glider', 0);
+            if (!on()) return;
+            await talk.rider('sorry');
+            if (!on()) return;
+            await talk.police('glider_fine', 0);
         }
+        if (!on()) return;
+        const factor = stage.kind === 'car' ? GLIDE.carFactor : 1;
+        const lost = finePoints(glideFine(factor));
+        toast(lost ? `-${lost.toLocaleString('fr-FR')} PTS` : 'AMENDE', stage.kind === 'car' ? 'Atterrissage sur une voiture · amende ×3' : 'Trouble à l’ordre public');
         stage.step = 'take';
         stage.t = 0;
     }
@@ -459,23 +659,34 @@ export function createFreeRoam({ scene, world, rider, audio, onTurn, playerVoice
         if (!stage) return;
         stage.t += dt;
         stage.time += dt;
-        const { car, officer } = stage;
-        car.userData.flash(stage.time);
-        const forward = new THREE.Vector3(Math.sin(glide.yaw), 0, Math.cos(glide.yaw));
+        const { driver } = stage;
+        if (driver) {
+            // The driver stays by the car, facing whoever speaks.
+            const g = driver.group;
+            const look = stage.officer && stage.officer.group.visible && !stage.driverTalking ? stage.officer.group.position : new THREE.Vector3(walker.x, 0, walker.z);
+            if (stage.step !== 'leave' || stage.t < 0.4) {
+                g.rotation.y = Math.atan2(look.x - g.position.x, look.z - g.position.z);
+                driver.animate(dt, 0, stage.step === 'shock' || !!stage.driverTalking, stage.time);
+            }
+        }
+        if (!stage.police) return;
+        const { police, officer, forward } = stage;
+        police.userData.flash(stage.time);
         if (stage.step === 'arrive') {
-            const stopZ = walker.z - forward.z * 2;
-            const remaining = (stopZ - car.position.z) * forward.z;
-            car.position.addScaledVector(forward, Math.min(Math.max(remaining, 0), Math.max(2, remaining * 1.6) * dt));
+            const remaining = (stage.stopZ - police.position.z) * forward.z;
+            police.position.addScaledVector(forward, Math.min(Math.max(remaining, 0), Math.max(2, remaining * 1.6) * dt));
             if (remaining < 0.3) {
                 stage.step = 'out';
                 stage.t = 0;
                 audio.play('car_door', { volume: 0.5 });
                 officer.group.visible = true;
-                officer.group.position.set(car.position.x - stage.side * 1.3, 0, car.position.z);
+                officer.group.position.set(police.position.x - stage.side * 1.3, 0, police.position.z);
             }
         } else if (stage.step === 'out' || stage.step === 'talk') {
-            // Stops between the car and the rider, about 1.5 m from him.
-            const target = new THREE.Vector3(walker.x + (car.position.x - walker.x) * 0.45, 0, walker.z);
+            // Stops between the car and the rider (by the driver after a car).
+            const target = stage.kind === 'car'
+                ? new THREE.Vector3((walker.x + stage.driver.group.position.x) / 2, 0, walker.z - forward.z * 1.6)
+                : new THREE.Vector3(walker.x + (police.position.x - walker.x) * 0.45, 0, walker.z);
             const g = officer.group;
             const dx = target.x - g.position.x;
             const dz = target.z - g.position.z;
@@ -487,8 +698,9 @@ export function createFreeRoam({ scene, world, rider, audio, onTurn, playerVoice
                 g.rotation.y = Math.atan2(dx, dz);
                 officer.animate(dt, 2.4, false, stage.time);
             } else {
-                g.rotation.y = Math.atan2(walker.x - g.position.x, walker.z - g.position.z);
-                officer.animate(dt, 0, true, stage.time);
+                const facing = stage.driverTalking ? stage.driver.group.position : walker;
+                g.rotation.y = Math.atan2(facing.x - g.position.x, facing.z - g.position.z);
+                officer.animate(dt, 0, !stage.driverTalking, stage.time);
                 if (stage.step === 'out') {
                     stage.step = 'talk';
                     walker.yaw = Math.atan2(g.position.x - walker.x, g.position.z - walker.z);
@@ -496,24 +708,28 @@ export function createFreeRoam({ scene, world, rider, audio, onTurn, playerVoice
                 }
             }
         } else if (stage.step === 'take') {
-            // The glider goes on the roof, the officer back in, off they go.
-            glide.group.position.set(car.position.x, car.userData.height + 0.15, car.position.z);
-            glide.group.rotation.set(0, glide.yaw, 0);
+            // The glider goes on the patrol car's roof, the officer back in.
+            glide.group.visible = true;
+            glide.group.position.set(police.position.x, police.userData.height + 0.15, police.position.z);
+            glide.group.rotation.set(0, police.rotation.y, 0);
             glide.group.scale.setScalar(0.45);
             officer.group.visible = false;
+            if (stage.driver) stage.driver.group.visible = false;
             if (stage.t > 0.6) {
                 stage.step = 'leave';
                 stage.t = 0;
                 audio.play('car_door', { volume: 0.45 });
+                if (stage.car) stage.car.hold = false;
                 // The bike, waiting beside him.
-                bike.position.set(walker.x + stage.side * -1.4, 0, walker.z + forward.z * 1.5);
-                bike.rotation.set(0, glide.yaw, 0);
+                bike.position.set(walker.x - stage.side * 1.4, 0, walker.z + forward.z * 1.5);
+                if (stage.kind === 'car') bike.position.set(walker.x + stage.riderSide * 1.3, 0, walker.z);
+                bike.rotation.set(0, Math.atan2(forward.x, forward.z), 0);
                 bike.visible = true;
                 frozen = false;
             }
         } else if (stage.step === 'leave') {
-            car.position.addScaledVector(forward, Math.min(14, 2 + stage.t * 6) * dt);
-            glide.group.position.set(car.position.x, car.userData.height + 0.15, car.position.z);
+            police.position.addScaledVector(forward, Math.min(14, 2 + stage.t * 6) * dt);
+            glide.group.position.set(police.position.x, police.userData.height + 0.15, police.position.z);
             if (stage.t > 8) endGlide();
         }
     }
@@ -521,11 +737,14 @@ export function createFreeRoam({ scene, world, rider, audio, onTurn, playerVoice
     function endGlide() {
         const stage = glide.scene;
         if (stage) {
-            scene.remove(stage.car);
-            scene.remove(stage.officer.group);
+            if (stage.police) scene.remove(stage.police);
+            if (stage.officer) scene.remove(stage.officer.group);
+            if (stage.driver) scene.remove(stage.driver.group);
+            if (stage.car) stage.car.hold = false;
         }
         glide.scene = null;
         glide.phase = '';
+        glide.car = null;
         if (glide.group) {
             glide.group.visible = false;
             glide.group.scale.setScalar(1);
@@ -534,9 +753,167 @@ export function createFreeRoam({ scene, world, rider, audio, onTurn, playerVoice
         if (bike) bike.visible = true;
     }
 
+    // --- Jetpack ------------------------------------------------------------
+    // Fly anywhere over the street and its roofs. The fuel is the cumulative
+    // points: JET.burn a second in the air, JET.boostBurn with the turbo.
+    // SAUTER climbs, let go he sinks slowly; the stick flies him (forward,
+    // turn); COURIR (or B) is the turbo; ATTERRIR (or J) brings him down.
+    // Out of fuel: the engine coughs and he comes down. He lands on the
+    // street or a roof; the bike is brought to him on the street.
+    const JET = { burn: 10, boostBurn: 30, speed: 24, boostSpeed: 60, climb: 10, sink: 2.4, ceiling: 140, turn: 1.9, reach: 66, minPoints: 20 };
+    const jetpack = createJetpack({ scene });
+    const jet = { x: 0, y: 0, z: 0, yaw: Math.PI, speed: 0, vy: 0, pitch: 0, boost: 0, thrust: 0, debt: 0, landing: false, out: false,
+        wasBoosting: false, ground: 0, roof: null, time: 0, whoosh: 0 };
+    const jetVelocity = new THREE.Vector3();
+
+    function startJet() {
+        if (frozen || turning || glide.scene || mode === 'car' || mode === 'glide' || mode === 'jet') return false;
+        if (totalPoints() < JET.minPoints) {
+            toast('PAS DE CARBURANT', `Le jetpack brûle tes points cumulés : il en faut au moins ${JET.minPoints}`);
+            return false;
+        }
+        const from = getFocus();
+        jet.x = from.x;
+        jet.z = from.z;
+        jet.y = mode === 'walk' ? walker.y : 0;
+        jet.yaw = mode === 'bike' ? bike.rotation.y : walker.yaw;
+        jet.speed = 0;
+        jet.vy = 9;
+        jet.pitch = 0;
+        jet.boost = 0;
+        jet.debt = 0;
+        jet.landing = false;
+        jet.out = false;
+        jet.time = 0;
+        if (mode === 'bike') {
+            rider.dismount(jet.x + Math.cos(jet.yaw) * 1.1, jet.z - Math.sin(jet.yaw) * 1.1, jet.yaw);
+            jet.x += Math.cos(jet.yaw) * 1.1;
+            jet.z -= Math.sin(jet.yaw) * 1.1;
+        }
+        walker.roof = null;
+        setMode('jet');
+        jetpack.ring(jet.x, jet.y + 0.1, jet.z, true);
+        audio.play('boost', { volume: 0.8, rate: 0.85 });
+        audio.play('backfire', { volume: 0.6, delay: 0.08 });
+        audio.play('whoosh', { volume: 0.7, rate: 0.6, delay: 0.1 });
+        toast('🚀 JETPACK', `Carburant : tes ${totalPoints().toLocaleString('fr-FR')} points · ${JET.burn} pts/s, turbo ${JET.boostBurn} pts/s`);
+        document.dispatchEvent(new CustomEvent('wheelie:jet', { detail: { on: true } }));
+        return true;
+    }
+
+    function landJet() {
+        if (mode !== 'jet') return false;
+        jet.landing = true;
+        return true;
+    }
+
+    function endJet() {
+        const roof = jet.roof;
+        walker.x = jet.x;
+        walker.z = jet.z;
+        walker.yaw = jet.yaw;
+        walker.y = jet.y;
+        walker.vy = 0;
+        walker.speed = 0;
+        walker.roof = roof;
+        jetpack.hide();
+        setMode('walk');
+        audio.play('landing', { volume: 0.45 });
+        // On the street: the bike is brought to him (it was left far away).
+        if (!roof && bike && !bikeConfiscated() && Math.hypot(bike.position.x - walker.x, bike.position.z - walker.z) > 6) {
+            const side = walker.x > 0 ? -1 : 1;
+            bike.position.set(Math.max(-8.5, Math.min(8.5, walker.x + side * 1.5)), 0, walker.z);
+            bike.rotation.set(0, Math.PI, 0);
+        }
+        document.dispatchEvent(new CustomEvent('wheelie:jet', { detail: { on: false } }));
+        if (roof) toast('SUR LE TOIT !', 'SAUTER au bord pour repartir en deltaplane, ou reprends le jetpack');
+    }
+
+    function moveJet(dt, nx, nz, keys) {
+        jet.time += dt;
+        const forward = Math.max(-0.4, Math.min(1, -nz));
+        const boosting = !jet.out && !jet.landing && !!(keys.run || keys.boost) && forward > 0.1;
+        jet.yaw -= nx * JET.turn * dt * (1 - 0.35 * Math.min(1, jet.speed / JET.boostSpeed));
+        const target = jet.out || jet.landing ? jet.speed * 0.6 : forward * (boosting ? JET.boostSpeed : JET.speed);
+        jet.speed += (target - jet.speed) * Math.min(1, dt * (boosting ? 2.2 : 1.5));
+        // Up while SAUTER is held, else a slow sink (a fast one to land, a
+        // fall when the tank is empty).
+        const climbing = !!keys.jump && !jet.out && !jet.landing;
+        const wanted = climbing ? JET.climb : jet.out ? -11 : jet.landing ? -7 : -JET.sink;
+        jet.vy += (wanted - jet.vy) * Math.min(1, dt * (climbing ? 3 : 2));
+        const before = { x: jet.x, z: jet.z };
+        jet.x += Math.sin(jet.yaw) * jet.speed * dt;
+        jet.z += Math.cos(jet.yaw) * jet.speed * dt;
+        if (Math.abs(jet.x) > JET.reach) jet.x = Math.sign(jet.x) * JET.reach;
+        jet.y = Math.min(JET.ceiling, jet.y + jet.vy * dt);
+        // Buildings: over their roofs, never through their walls.
+        const wall = world.roofAt(jet.x, jet.z, -0.4);
+        if (wall && jet.y < wall.y - 0.4) {
+            jet.x = before.x;
+            jet.z = before.z;
+            jet.speed *= 0.3;
+        }
+        const roof = world.roofAt(jet.x, jet.z, 0.3);
+        // Low over the street: kept off the buildings' ground floors.
+        if (!roof && jet.y < 4.5 && Math.abs(jet.x) > 18.5) jet.x = Math.sign(jet.x) * 18.5;
+        jet.ground = roof ? roof.y : 0;
+        if (jet.y <= jet.ground) {
+            jet.y = jet.ground;
+            jet.vy = Math.max(0, jet.vy);
+            jet.roof = roof;
+            if (jet.landing || jet.out || (!climbing && jet.speed < 1.5 && jet.time > 1.5)) {
+                endJet();
+                return;
+            }
+        }
+        // The fuel: the cumulative points, taken ten at a time.
+        jet.debt += (boosting ? JET.boostBurn : JET.burn) * dt;
+        if (jet.debt >= 10) {
+            const take = Math.floor(jet.debt);
+            jet.debt -= take;
+            const taken = finePoints(take);
+            if (taken < take && !jet.out) {
+                jet.out = true;
+                audio.play('backfire', { volume: 0.7, rate: 0.6 });
+                toast('PANNE SÈCHE !', 'Plus de points : le jetpack se tait, tu redescends');
+            }
+        }
+        // Turbo: a ring of air and a bang when it kicks in.
+        if (boosting && !jet.wasBoosting) {
+            jetpack.ring(jet.x, jet.y + 1.2, jet.z, false, jet.yaw);
+            audio.play('boost', { volume: 0.8 });
+            audio.play('backfire', { volume: 0.55, delay: 0.06 });
+        }
+        jet.wasBoosting = boosting;
+        jet.boost += ((boosting ? 1 : 0) - jet.boost) * Math.min(1, dt * 5);
+        jet.thrust = jet.out ? (Math.random() < 0.15 ? 0.6 : 0) : climbing ? 1 : 0.45 + forward * 0.35 + jet.boost * 0.3;
+        jet.pitch += (Math.min(1.1, jet.speed / JET.boostSpeed * 1.1) * Math.sign(jet.speed || 1) - jet.pitch) * Math.min(1, dt * 3);
+        jet.whoosh -= dt;
+        if (jet.speed > 30 && jet.whoosh <= 0) {
+            jet.whoosh = 1.4 - jet.boost * 0.6;
+            audio.play('whoosh', { volume: 0.35 + jet.boost * 0.3, rate: 0.8 + Math.random() * 0.3 });
+        }
+        rider.updateWalk(dt, jet.x, jet.z, jet.yaw, 0.03, jet.y, false, false, { ground: jet.y - 1, pitch: jet.pitch, fly: true });
+    }
+
+    function jetVisuals(dt) {
+        if (mode !== 'jet') {
+            jetpack.update(dt, { on: false });
+            return;
+        }
+        const shown = jetpack.update(dt, {
+            on: true, x: jet.x, y: jet.y, z: jet.z, yaw: jet.yaw, pitch: jet.pitch, thrust: jet.thrust, boost: jet.boost, ground: jet.ground, scale: 0.95
+        });
+        if (!shown || !fx) return;
+        jetVelocity.set(Math.sin(jet.yaw) * jet.speed, jet.vy, Math.cos(jet.yaw) * jet.speed);
+        const amount = jet.thrust > 0.05 ? (jet.boost > 0.5 ? 3 : 2) : 0;
+        if (amount) for (const point of shown.points) fx.jet(point, shown.down, jetVelocity, amount, jet.boost);
+    }
+
     function getFocus() {
         if (mode === 'glide') return focus.set(glide.x, glide.y, glide.z);
-        if (mode === 'walk') return focus.set(walker.x, 0, walker.z);
+        if (mode === 'jet') return focus.set(jet.x, jet.y, jet.z);
+        if (mode === 'walk') return focus.set(walker.x, walker.roof ? walker.roof.y : 0, walker.z);
         if (mode === 'car' && drive.group) return focus.copy(drive.group.position);
         return focus.copy(bike ? bike.position : focus);
     }
@@ -561,6 +938,9 @@ export function createFreeRoam({ scene, world, rider, audio, onTurn, playerVoice
     function refreshPrompt() {
         if (mode === 'bike') return emit('DESCENDRE', true);
         if (mode === 'car') return emit('SORTIR', true);
+        if (mode === 'jet') return emit(jet.landing ? '' : 'ATTERRIR', !jet.landing);
+        if (mode === 'glide') return emit('', false);
+        if (walker.roof) return emit(nearEdge() ? 'SAUTER : DELTAPLANE' : '', nearEdge());
         const ride = nearestRide();
         if (!ride) return emit('', false);
         if (ride.kind === 'bike') return emit('MONTER SUR LA MOTO', true);
@@ -584,6 +964,15 @@ export function createFreeRoam({ scene, world, rider, audio, onTurn, playerVoice
 
     function action() {
         if (turning || frozen) return;
+        if (mode === 'jet') {
+            landJet();
+            return;
+        }
+        if (mode === 'glide') return;
+        if (mode === 'walk' && walker.roof) {
+            if (nearEdge()) leapFromRoof();
+            return;
+        }
         if (mode === 'bike') {
             stepOff();
             audio.play('ui_click', { volume: 0.4 });
@@ -652,7 +1041,9 @@ export function createFreeRoam({ scene, world, rider, audio, onTurn, playerVoice
         }
         confiscationShown = bikeConfiscated();
         const here = getFocus();
-        const blockers = [{ x: here.x, z: here.z }, ...patrol.blockers()];
+        // Up in the air or on a roof, the traffic does not stop for him.
+        const aloft = mode === 'glide' || mode === 'jet' || (mode === 'walk' && !!walker.roof);
+        const blockers = [...(aloft ? [] : [{ x: here.x, z: here.z }]), ...patrol.blockers()];
         if (mode !== 'bike') blockers.push({ x: bike.position.x, z: bike.position.z });
         traffic.update(dt, here, blockers);
         // Riding past a car fast: a whoosh on that side.
@@ -670,10 +1061,17 @@ export function createFreeRoam({ scene, world, rider, audio, onTurn, playerVoice
         }
         lastHere = (lastHere || new THREE.Vector3()).copy(here);
         people.update(dt, here);
-        talk.update(dt, mode, here);
-        patrol.update(dt, here, { x: here.x, z: here.z, mode, radius: mode === 'car' ? 1.6 : mode === 'bike' ? 0.9 : 0.4 }, bike);
-        if (mode === 'walk') rider.updateWalk(dt, walker.x, walker.z, walker.yaw, walker.speed, walker.y, walker.running);
+        talk.update(dt, aloft ? 'air' : mode, here);
+        patrol.update(dt, here, {
+            x: here.x, z: here.z, mode, radius: mode === 'car' ? 1.6 : mode === 'bike' ? 0.9 : 0.4,
+            heading: mode === 'bike' ? bike.rotation.y : mode === 'car' ? drive.yaw : walker.yaw,
+            speed: mode === 'bike' ? ride.speed : 0, wheeling: mode === 'bike' && ride.wheeling
+        }, bike);
+        if (mode === 'walk') {
+            rider.updateWalk(dt, walker.x, walker.z, walker.yaw, walker.speed, walker.y, walker.running, false, { ground: walker.roof ? walker.roof.y : 0 });
+        }
         if (glide.scene) updateGliderPolice(dt);
+        jetVisuals(dt);
         // Cars left behind on another block go away.
         for (let i = dropped.length - 1; i >= 0; i--) {
             if (Math.abs(dropped[i].group.position.z - here.z) > 300) {
@@ -687,6 +1085,8 @@ export function createFreeRoam({ scene, world, rider, audio, onTurn, playerVoice
     // The world has been rebuilt as a new street along -z.
     function afterTurn(bikeGroup) {
         endGlide();
+        walker.roof = null;
+        walker.y = 0;
         const here = getFocus();
         const z = here.z;
         if (mode === 'bike') {
@@ -719,6 +1119,9 @@ export function createFreeRoam({ scene, world, rider, audio, onTurn, playerVoice
 
     function reset() {
         endGlide();
+        jetpack.hide();
+        walker.roof = null;
+        walker.y = 0;
         if (mode !== 'bike') rider.mount();
         setMode('bike');
         frozen = false;
@@ -740,8 +1143,19 @@ export function createFreeRoam({ scene, world, rider, audio, onTurn, playerVoice
 
     return {
         move, update, action, clampBike, afterTurn, reset, tryBoost, boostState,
-        startGlide,
+        startGlide, startJet, landJet,
+        // The game tells how the bike rides (wheelie, speed in m/s).
+        setRide(wheeling, speed) {
+            ride.wheeling = wheeling;
+            ride.speed = speed;
+        },
+        toggleJet: () => (mode === 'jet' ? landJet() : startJet()),
         get glideYaw() { return glide.yaw; },
+        get jetYaw() { return jet.yaw; },
+        // For the camera and the HUD: the jetpack's flight.
+        get jetState() { return mode === 'jet' ? { speed: jet.speed, boost: jet.boost, height: jet.y - jet.ground, out: jet.out, climb: jet.vy } : null; },
+        get onRoof() { return mode === 'walk' && !!walker.roof; },
+        get gliderScene() { return glide.scene ? glide.scene.kind + ':' + glide.scene.step : glide.phase; },
         get gliding() { return mode === 'glide' || !!glide.scene; },
         // A fall on the bike: the nearest passer-by (20 m) says something.
         concern: (x, z) => talk.concern({ x, z }),
@@ -762,10 +1176,10 @@ export function createFreeRoam({ scene, world, rider, audio, onTurn, playerVoice
         get braking() { return mode === 'car' && drive.braking; },
         patrol, talk, people, traffic,
         // Tests: the player's position on foot.
-        debug: { walker, drive },
+        debug: { walker, drive, glide, jet },
         get mode() { return mode; },
         get focus() { return getFocus(); },
-        get speed() { return mode === 'walk' ? walker.speed : mode === 'car' ? Math.abs(drive.speed) : 0; },
+        get speed() { return mode === 'walk' ? walker.speed : mode === 'car' ? Math.abs(drive.speed) : mode === 'jet' ? Math.abs(jet.speed) / 60 : 0; },
         get carYaw() { return drive.yaw; }
     };
 }

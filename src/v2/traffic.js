@@ -71,6 +71,12 @@ export function createTraffic({ scene, world, onHonk }) {
             // Brake lights while slowing down or standing in traffic.
             car.group.userData.lights?.set(slowing || (car.speed < 0.5 && (car.hold || gap < 9)), false);
             car.group.position.z += lane.dir * car.speed * dt;
+            // Left its lane (the police after a stop): eases back into it.
+            if (car.group.position.x !== lane.x) {
+                const back = lane.x - car.group.position.x;
+                car.group.position.x = Math.abs(back) < 0.02 ? lane.x : car.group.position.x + back * Math.min(1, dt * 1.2);
+                car.group.rotation.y = (lane.dir < 0 ? Math.PI : 0) + Math.max(-0.25, Math.min(0.25, back * 0.08)) * lane.dir;
+            }
             if (player && gap < 12 && !car.honked) {
                 car.honked = true;
                 onHonk?.(Math.max(-1, Math.min(1, (lane.x - focus.x) / 8)));
@@ -130,6 +136,7 @@ export function createTraffic({ scene, world, onHonk }) {
     function pushOut(position, radius) {
         let moved = null;
         for (const car of cars) {
+            if (car.ghost) continue;
             const dx = position.x - car.group.position.x;
             const dz = position.z - car.group.position.z;
             const px = 1.1 + radius - Math.abs(dx);

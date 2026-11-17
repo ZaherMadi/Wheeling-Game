@@ -86,6 +86,16 @@
       "Attention monsieur !",
       "Vous voulez que j'appelle les pompiers ?",
       "Oh là là, vous vous êtes fait mal ?"
+    ],
+    "roof_shock": [
+      "Owww ! Mais on est où là ?!",
+      "Eh oh ! Y a quelqu’un sur mon toit ?!",
+      "Wesh ! C’était quoi ce boum sur le toit ?!"
+    ],
+    "roof_explain": [
+      "Je sais pas moi, je roule normal et ce fou il saute sur le toit ! Genre euh… wesh, on est sur GTA ou quoi ? Eh vas-y, lui !",
+      "Monsieur l’agent, je roulais tranquille et lui, il atterrit sur ma voiture ! On est dans un film ou quoi ?",
+      "J’en sais rien moi ! Il est tombé du ciel avec son deltaplane, direct sur mon toit ! Wesh, on est sur GTA ?"
     ]
   },
   "rider": {
@@ -152,6 +162,26 @@
     ],
     "glider_fine": [
       "Bon, on vous le débarrasse, on vous le confisque. Et pour trouble à l'ordre public, ce sera moins cinquante points, monsieur."
+    ],
+    "roof_ask": [
+      "Qu’est-ce qu’il se passe, monsieur ?",
+      "Bonjour. Qu’est-ce qui se passe ici ?"
+    ],
+    "roof_fine": [
+      "Atterrir sur une voiture en circulation… L’amende est trois fois plus salée.",
+      "Sur le toit d’une voiture qui roule ? Amende triple, monsieur."
+    ],
+    "wheelie_warn": [
+      "Le wheeling et le rodéo urbain sont interdits ! Voici votre dernier avertissement !",
+      "Police ! Le rodéo urbain est interdit. Dernier avertissement : la roue avant au sol, tout de suite !"
+    ],
+    "wheelie_fine": [
+      "On vous avait prévenu. Rodéo urbain : vingt pour cent de vos points.",
+      "Dernier avertissement ignoré. Ça va vous coûter cher."
+    ],
+    "wheelie_ok": [
+      "Voilà. On reste comme ça.",
+      "C’est mieux. Bonne route, et doucement."
     ]
   }
 }
