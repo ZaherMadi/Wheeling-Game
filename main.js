@@ -6118,6 +6118,16 @@ document.addEventListener('visibilitychange', () => {
     if (!document.hidden) reloadIfUpdated();
 });
 setInterval(reloadIfUpdated, 5 * 60 * 1000);
+// The service worker asks every open page whether it is a recent version
+// (old ones do not answer, and are reloaded): this one is.
+if ('serviceWorker' in navigator) {
+    navigator.serviceWorker.addEventListener('message', (event) => {
+        if (event.data && event.data.type === 'wheelie:alive?' && event.ports && event.ports[0]) {
+            event.ports[0].postMessage({ type: 'wheelie:alive' });
+        }
+    });
+    navigator.serviceWorker.startMessages?.();
+}
 // A lazily loaded file of an older version missing: reload if nothing is lost.
 window.addEventListener('vite:preloadError', (event) => {
     if (!state.isPlaying && !submitting) {
@@ -6174,7 +6184,9 @@ async function fetchLeaderboardFromAPI(skip = 0, limit = 20) {
     try {
         // The day's leaderboard (since 5:50, French time) or of all time.
         const period = boardPeriod === 'day' ? '&period=day' : '';
-        const response = await apiFetch(`${API_BASE_URL}/leaderboard/${GAME_NAME}?skip=${skip}&limit=${limit}${period}`);
+        const url = `${API_BASE_URL}/leaderboard/${GAME_NAME}?skip=${skip}&limit=${limit}${period}`;
+        // The server waking up can take a few seconds: once more, longer.
+        const response = await apiFetch(url).catch(() => apiFetch(url, {}, 15000));
 
         if (!response.ok) {
             throw new Error('Erreur lors de la récupération du classement');

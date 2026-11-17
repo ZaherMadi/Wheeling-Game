@@ -1,4 +1,4 @@
-const CACHE_NAME = 'wheelie-king-v5';
+const CACHE_NAME = 'wheelie-king-v6';
 const APP_SHELL = [
     '/',
     '/index.html',
@@ -80,6 +80,39 @@ self.addEventListener('fetch', (event) => {
     );
 });
 
+// Pages of a version from before 2026-11-17 do not answer this worker's
+// question: they are reloaded once, when it takes over. (A tab left open
+// since before the human check, 2026-11-14, can no longer be ranked: the
+// server answers 403, and it never updated itself.)
+function answers(page) {
+    return new Promise((resolve) => {
+        const channel = new MessageChannel();
+        const timer = setTimeout(() => resolve(false), 4000);
+        channel.port1.onmessage = () => {
+            clearTimeout(timer);
+            resolve(true);
+        };
+        try {
+            page.postMessage({ type: 'wheelie:alive?' }, [channel.port2]);
+        } catch {
+            clearTimeout(timer);
+            resolve(true);
+        }
+    });
+}
+
+async function reloadOldPages() {
+    const pages = await self.clients.matchAll({ type: 'window' });
+    await Promise.all(pages.map(async (page) => {
+        if (await answers(page)) return;
+        try {
+            await page.navigate(page.url);
+        } catch {
+            // Not ours to reload: it updates on its next visit.
+        }
+    }));
+}
+
 self.addEventListener('activate', (event) => {
     event.waitUntil(
         caches.keys().then(async (cacheNames) => {
@@ -87,6 +120,7 @@ self.addEventListener('activate', (event) => {
                 .filter((cacheName) => cacheName !== CACHE_NAME)
                 .map((cacheName) => caches.delete(cacheName)));
             await self.clients.claim();
+            await reloadOldPages();
         })
     );
 });
