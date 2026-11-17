@@ -31,7 +31,7 @@ export const SECRET_CODES = [
                 return false;
             }
         },
-        locked: 'Code révélé en activant les figures en mode libre (5 000 points cumulés, dans le choix du mode libre).',
+        locked: 'Code révélé en activant les figures en mode libre (50 000 points cumulés, dans le choix du mode libre).',
         where: 'En mode libre, assis sur la moto',
         does: 'Figures Land, le parc secret, t’attend dans une des prochaines rues : suis le panneau.'
     }

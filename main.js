@@ -15,6 +15,7 @@ import { createAccount, deviceToken } from './src/account.js';
 import { createSecretBird } from './src/secret-bird.js';
 import { SHIELD, createShields } from './src/shield.js';
 import { bestStat, bumpStat, renderStats } from './src/stats.js';
+import { configureProfile, profileStats, syncProfile } from './src/profile.js';
 import { applyPadLayout, openPadEditor } from './src/pad-layout.js';
 import { startActivity } from './src/activity.js';
 import { createSpeedLines } from './src/v2/speedlines.js';
@@ -156,13 +157,17 @@ const POLICE = {
 // default) also lift the same at every speed (`gentle`: no faster lift over
 // 110 km/h, the bavette holds as long): a tap of WHEELIE at speed sent the
 // bike over.
+// Rules 8 and 9 (2026-11-17): 6 and 7, and the boost keeps the speed it
+// reached (players: it slowed down after, sometimes below where it started).
 const RULESETS = {
     4: { tipFull: false, firm: false, recharge: false, noSecond: false, longest: 45, shake: 20 },
     5: { tipFull: true, firm: true, recharge: true, noSecond: true, longest: 110, shake: 45 },
     6: { tipFull: false, firm: false, recharge: false, noSecond: false, longest: 45, shake: 20, floor: true, gentle: true },
-    7: { tipFull: true, firm: true, recharge: true, noSecond: true, longest: 110, shake: 45, floor: true }
+    7: { tipFull: true, firm: true, recharge: true, noSecond: true, longest: 110, shake: 45, floor: true },
+    8: { tipFull: false, firm: false, recharge: false, noSecond: false, longest: 45, shake: 20, floor: true, gentle: true, keepBoost: true },
+    9: { tipFull: true, firm: true, recharge: true, noSecond: true, longest: 110, shake: 45, floor: true, keepBoost: true }
 };
-const rulesFor = () => (GAME_SETTINGS.controlMode === 'arrows' || GAME_SETTINGS.customControls ? 7 : 6);
+const rulesFor = () => (GAME_SETTINGS.controlMode === 'arrows' || GAME_SETTINGS.customControls ? 9 : 8);
 const ruleset = () => RULESETS[state.rules] || RULESETS[4];
 // Automatic rear brake (option, up to 50 km/h by default): a wheelie about
 // to go over, or a bavette about to let go, is brought back down: throttle
@@ -1328,10 +1333,15 @@ function updateRoamFall(dt) {
     if (roamFall.phase === 'crash') {
         rider.updateCrash(dt);
         if (t > 3.4) {
-            // Gets up where he landed, facing the bike.
+            // Gets up where he landed (no jump to his feet), facing the bike.
             rider.riderPosition(roamFall.at);
             rider.finishCrash();
             roamFall.yaw = Math.atan2(bike.x - roamFall.at.x, bike.z - roamFall.at.z);
+            if (!rider.startGetUp(roamFall.at.x, roamFall.at.z, roamFall.yaw)) rider.dismount(roamFall.at.x, roamFall.at.z, roamFall.yaw);
+            roamFall.phase = 'getup';
+        }
+    } else if (roamFall.phase === 'getup') {
+        if (!rider.updateGetUp(dt)) {
             rider.dismount(roamFall.at.x, roamFall.at.z, roamFall.yaw);
             roamFall.phase = 'walk';
         }
@@ -1401,13 +1411,14 @@ function driftEffects(dt, heading) {
     }
 }
 
-// Tricks in free roam (on the bike): an investment, offered from 10 000
-// cumulative points and costing 5000 once; they pay twice the competitive
+// Tricks in free roam (on the bike): an investment, offered from 50 000
+// cumulative points and costing 50 000 once (5000 until 2026-11-17: the
+// best players pile up far more now); they pay twice the competitive
 // ground rate (10 to 30 points a second with the speed), straight into the
 // cumulative points. Buying them also gives the Figures Land code. The
 // first time the player has enough, the offer opens by itself (the game
 // paused if a run is on).
-const FREE_TRICKS = { cost: 5000, need: 10000, factor: 2, key: 'wheelie_free_tricks', shownKey: 'wheelie_free_tricks_offered' };
+const FREE_TRICKS = { cost: 50000, need: 50000, factor: 2, key: 'wheelie_free_tricks', shownKey: 'wheelie_free_tricks_offered' };
 const freeTrick = { points: 0 };
 function freeTricksUnlocked() {
     return readSetting(FREE_TRICKS.key) === '1';
@@ -1440,7 +1451,7 @@ document.addEventListener('click', (event) => {
     if (!(event.target instanceof Element) || !event.target.closest('[data-free-tricks]')) return;
     const points = totalPoints();
     if (points < FREE_TRICKS.need) {
-        toast('10 000 POINTS MINIMUM', `Figures en mode libre : il te manque ${(FREE_TRICKS.need - points).toLocaleString('fr-FR')} points cumulés`, { discreet: true, float: true });
+        toast('50 000 POINTS MINIMUM', `Figures en mode libre : il te manque ${(FREE_TRICKS.need - points).toLocaleString('fr-FR')} points cumulés`, { discreet: true, float: true });
         return;
     }
     showFreeTricksOffer();
@@ -1478,13 +1489,13 @@ function showFreeTricksOffer() {
         <p class="account-text">Tu as assez de points : les figures du compétitif, maintenant dans la ville, sur ta moto (bouton FIGURE).</p>
         <div class="free-tricks-pictures">${pictures}</div>
         <div class="free-tricks-deal">
-            <p><b>Ça coûte</b><span>5 000 points, une seule fois</span></p>
+            <p><b>Ça coûte</b><span>50 000 points, une seule fois</span></p>
             <p><b>Ça rapporte</b><span>2× les points des figures du compétitif : 10 à 30 points par seconde de figure, selon la vitesse</span></p>
-            <p><b>Rentabilisé</b><span>en 4 minutes de figures à 100 km/h, puis tout est bonus</span></p>
+            <p><b>Rentabilisé</b><span>en 42 minutes de figures à 100 km/h, puis tout est bonus</span></p>
             <p><b>En cadeau</b><span>un code secret pour trouver Figures Land</span></p>
         </div>
         <p class="account-text free-tricks-note">C’est un investissement : tu dépenses maintenant, tu gagnes plus après.</p>
-        <button type="button" class="account-btn account-btn--primary free-tricks-buy">INVESTIR 5 000 POINTS</button>
+        <button type="button" class="account-btn account-btn--primary free-tricks-buy">INVESTIR 50 000 POINTS</button>
         <button type="button" class="account-btn account-btn--quiet free-tricks-later">Plus tard</button>
     </div>`;
     freeTricksDialog.hidden = false;
@@ -1577,8 +1588,9 @@ function rideFreeBike(dt, roam) {
         const slow = (FREE_BIKE.coast + FREE_BIKE.drag * v * v) * dt;
         v = v > 0 ? Math.max(0, v - slow) : Math.min(0, v + 3 * dt);
     }
-    // After a boost: back down to the normal top speed.
-    if (v > top) v = Math.max(top, v - 5 * dt);
+    // After a boost: the speed it reached is kept while the gas is held
+    // (gas off, it coasts down like any speed).
+    if (v > top && gas === 0 && brake === 0) v = Math.max(top, v - 1.5 * dt);
     // Held by the police: brought to a stop at once (like the car).
     if (roam.frozen) v = 0;
     // Bars: tight at walking pace, gentler at speed (reversed when backing up).
@@ -4042,7 +4054,7 @@ function animate(timestamp = performance.now()) {
                 }
                 state.score += BOOST.rate * FIXED_STEP * (GAME_SETTINGS.difficulty === 'hard' ? 1.4 : GAME_SETTINGS.difficulty === 'medium' ? 1.2 : 1.0);
                 boost.frames -= 1;
-            } else if (boost.gain > 0) {
+            } else if (boost.gain > 0 && !rules.keepBoost) {
                 const drain = Math.min(BOOST.drain, boost.gain);
                 state.speed = rules.floor ? Math.max(0, state.speed - drain) : state.speed - drain;
                 boost.gain -= drain;
@@ -6485,11 +6497,25 @@ const account = createAccount({
         method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(payload)
     }, 9000),
     nickname: () => localStorage.getItem('wheelie_nickname'),
-    // "Mes stats": the codes' own lines once the codes are revealed.
-    stats: (container) => renderStats(container, {
-        points: totalPoints(),
-        codes: { glider: IS_V2 && totalPoints() >= GLIDER_POINTS, tricks: totalPoints() >= TRICKS_CODE_POINTS }
-    }),
+    // "Mes stats": the codes' own lines once the codes are revealed. The
+    // same on every device of the player (src/profile.js): drawn at once,
+    // again when the sync answers.
+    stats: (container) => {
+        const draw = () => {
+            const holder = document.createElement('div');
+            renderStats(holder, {
+                points: totalPoints(), all: profileStats(),
+                codes: { glider: IS_V2 && totalPoints() >= GLIDER_POINTS, tricks: totalPoints() >= TRICKS_CODE_POINTS }
+            });
+            const drawn = container.querySelector('.stats');
+            if (drawn) drawn.replaceWith(...holder.childNodes);
+            else container.prepend(...holder.childNodes);
+        };
+        draw();
+        syncProfile({ force: true }).then((synced) => {
+            if (synced && container.isConnected) draw();
+        });
+    },
     onStatus: (status) => {
         const chip = document.getElementById('player-nickname');
         chip?.classList.toggle('is-protected', !!status?.protected && !!status?.trusted);
@@ -6511,6 +6537,33 @@ const account = createAccount({
         }
     });
 })();
+
+// The player's profile on every device (src/profile.js): stats, points and
+// what was bought. Synced at start, a moment after the points change (a
+// run, a fine, a purchase), every two minutes, when the page is hidden and
+// when the nickname changes.
+configureProfile({
+    post: (path, payload, keepalive) => {
+        const init = { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(payload) };
+        return keepalive ? fetch(`${API_BASE_URL}/${path}`, { ...init, keepalive: true }) : apiFetch(`${API_BASE_URL}/${path}`, init, 9000);
+    },
+    nickname: () => localStorage.getItem('wheelie_nickname'),
+    deviceToken
+});
+setTimeout(() => syncProfile({ force: true }), 2500);
+let profileTimer = null;
+document.addEventListener('wheelie:points', (event) => {
+    if (event.detail?.fromProfile) return;
+    clearTimeout(profileTimer);
+    profileTimer = setTimeout(() => syncProfile(), 5000);
+});
+document.addEventListener('wheelie:nickname', () => setTimeout(() => syncProfile({ force: true }), 300));
+setInterval(() => {
+    if (!document.hidden) syncProfile();
+}, 120000);
+document.addEventListener('visibilitychange', () => {
+    if (document.hidden) syncProfile({ keepalive: true });
+});
 
 function updateLeaderboard(nickname, score) {
     // Récupérer le leaderboard actuel

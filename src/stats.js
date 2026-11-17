@@ -56,6 +56,11 @@ export function bestStat(name, value) {
 
 export const statOf = (name) => stats[name] || 0;
 
+// A copy of this device's stats (src/profile.js sends them).
+export function statsSnapshot() {
+    return { ...stats };
+}
+
 const whole = (value) => Math.floor(value || 0).toLocaleString('fr-FR');
 
 function duration(seconds) {
@@ -66,8 +71,10 @@ function duration(seconds) {
 
 // points: the cumulative points now; codes: which secret codes the player
 // has been shown ({ glider, tricks }): their stats appear with them, or as
-// soon as they have been used.
-export function renderStats(container, { points = 0, codes = {} } = {}) {
+// soon as they have been used. all: the stats of every device the player
+// uses (src/profile.js), else this device's.
+export function renderStats(container, { points = 0, codes = {}, all = null } = {}) {
+    const stats = all || statsSnapshot();
     const groups = [
         ['Général', [
             ['Parties classées', whole(stats.runs)],
@@ -128,7 +135,10 @@ export function renderStats(container, { points = 0, codes = {} } = {}) {
     const note = document.createElement('p');
     note.className = 'stats-note';
     const since = new Date(stats.since || Date.now());
-    note.textContent = `Comptées sur cet appareil depuis le ${since.toLocaleDateString('fr-FR', { day: 'numeric', month: 'long', year: 'numeric' })}.`;
+    const day = since.toLocaleDateString('fr-FR', { day: 'numeric', month: 'long', year: 'numeric' });
+    note.textContent = all
+        ? `Comptées sur ${all.devices > 1 ? `tes ${all.devices} appareils` : 'tous tes appareils'} depuis le ${day}.`
+        : `Comptées sur cet appareil depuis le ${day}. Choisis un pseudo pour les retrouver sur tes autres appareils.`;
     wrap.append(note);
     container.append(wrap);
 }

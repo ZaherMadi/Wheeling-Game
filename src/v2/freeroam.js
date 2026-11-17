@@ -9,6 +9,7 @@ import { createStreetTalk } from './street-talk.js';
 import { createHangGlider } from './glider.js';
 import { createOfficer, decoratePoliceCar } from './police.js';
 import { CAR_NAMES, CAR_UNLOCKS } from './cars.js';
+import { noteRankedTotal, profileBalance } from '../profile.js';
 
 const POINTS_KEY = 'wheelie_total_points';
 // Fines (police) are kept apart, so the server total can still raise the
@@ -43,8 +44,10 @@ function stored(key) {
     }
 }
 
+// The same on every device of the player once synced (src/profile.js).
 export function totalPoints() {
-    return Math.max(0, stored(POINTS_KEY) - stored(PENALTY_KEY));
+    const shared = profileBalance();
+    return shared ?? Math.max(0, stored(POINTS_KEY) - stored(PENALTY_KEY));
 }
 
 export function addPoints(points) {
@@ -110,9 +113,12 @@ function notice(title, text, seconds = 7) {
     document.dispatchEvent(new CustomEvent('wheelie:notice', { detail: { title, text, seconds } }));
 }
 
-// The server keeps each player's total: never show less than that.
+// The server keeps each player's total: never show less than that. Once the
+// profile is synced, it keeps the total (the device's own count is not
+// raised: it is this device's share).
 export function syncPoints(serverTotal) {
     const total = Math.floor(Number(serverTotal) || 0);
+    if (noteRankedTotal(total) || profileBalance() !== null) return;
     if (total <= stored(POINTS_KEY)) return;
     try {
         localStorage.setItem(POINTS_KEY, String(total));
@@ -310,7 +316,8 @@ export function createFreeRoam({ scene, world, rider, audio, onTurn, playerVoice
                 drive.speed = Math.sign(drive.speed) * Math.max(0, Math.abs(drive.speed) - coast);
             }
             if (boosting && drive.speed < top) drive.speed += 6 / 3600;
-            if (drive.speed > top) drive.speed = Math.max(top, drive.speed - 5 / 3600);
+            // After a boost: the speed it reached stays while the pedal is down.
+            if (drive.speed > top && throttle <= 0.05) drive.speed = Math.max(top, drive.speed - 1.5 / 3600);
             // Lights: red when braking or backing up, white reversing lights.
             drive.reversing = drive.speed < -0.01;
             drive.braking = throttle * drive.speed < 0 && Math.abs(drive.speed) > 0.01;

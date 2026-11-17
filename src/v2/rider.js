@@ -584,11 +584,18 @@ export function createRider({ scene }) {
         brake: 0, rearSpin: 0, frontSpin: 0, wasAirborne: false, peakAngle: 0, time: 0,
         surge: 0, pump: 0, throttle: 0, lastKmh: 0, lastAngle: 0, trick: 0, trickType: 'superman', tuckAir: 0
     };
+    // The rider's fall turns about his own middle (a pivot at the pelvis),
+    // not about the bike's base at road level: turning about that point sent
+    // his head and shoulders through the road.
+    const crashPivot = new THREE.Group();
+    crashPivot.name = 'crash-pivot';
     const crash = {
         active: false, time: 0, kind: 'hit', variant: 'tumble', side: 1, landed: false, landTime: 0,
-        bikePitch: 0, bikeYaw: 0, bikeSlide: 2.4,
+        bikePitch: 0, bikeYaw: 0, bikeSlide: 2.4, style: 'tumble', contacts: 0,
         velocity: new THREE.Vector3(), bikeVelocity: new THREE.Vector3(), spinRates: new THREE.Vector3()
     };
+    const getUp = { active: false, t: 0, from: new THREE.Vector3(), fromQuaternion: new THREE.Quaternion(), fromScale: 1,
+        to: new THREE.Vector3(), toQuaternion: new THREE.Quaternion(), yaw: 0 };
 
     // Torn off by the bavette: it flies off behind and slides on the road.
     function tearPlate(unitsPerSecond = 0) {
@@ -912,6 +919,34 @@ export function createRider({ scene }) {
         bail: { carry: 0.7, up: 2.8, push: 1.2, spin: [-5, 0.6, 0.8], bike: 'flipBack', slide: 2.4 },
         tipover: { carry: 0.6, up: 1.1, push: 1.6, spin: [0.6, 0.2, 3], bike: 'tip', slide: 4 }
     };
+    // What the body does once it hits the road: tumbles over and over
+    // (bouncing), rolls along, slides on its back or side, or stumbles.
+    const STYLES = { highside: 'tumble', tumble: 'tumble', bail: 'roll', loopFlip: 'roll', loopSlide: 'slide', lowside: 'slide', tipover: 'stumble' };
+    // Friction on the road (1/s) and bounce, per style.
+    const GROUND = {
+        tumble: { friction: 1.6, bounce: 0.42, roll: 1 },
+        roll: { friction: 1.9, bounce: 0.3, roll: 1 },
+        slide: { friction: 1.5, bounce: 0.15, roll: 0 },
+        stumble: { friction: 3, bounce: 0.2, roll: 0.4 }
+    };
+    // What can touch the road: the corners of each part of the body (taken
+    // when the fall starts; the parts move, their corners with them).
+    const contacts = [];
+    const contactPoint = new THREE.Vector3();
+    function gatherContacts() {
+        contacts.length = 0;
+        riderGroup.traverse((object) => {
+            if (!object.isMesh || !object.visible || !object.geometry) return;
+            if (!object.geometry.boundingBox) object.geometry.computeBoundingBox();
+            const { min, max } = object.geometry.boundingBox;
+            const corners = [];
+            for (const x of [min.x, max.x]) for (const y of [min.y, max.y]) for (const z of [min.z, max.z]) corners.push(new THREE.Vector3(x, y, z));
+            contacts.push({ object, corners });
+        });
+    }
+    const crashScale = new THREE.Vector3();
+    const rollAxis = new THREE.Vector3();
+    const riderQuaternion = new THREE.Quaternion();
 
     function startCrash(kind, unitsPerSecond, info = {}) {
         crash.active = true;
@@ -931,7 +966,8 @@ export function createRider({ scene }) {
         crash.bikeVelocity.copy(forward).multiplyScalar(speed);
         crash.bikeSlide = spec.slide;
         // Stay close to the bike so the fall is still in frame.
-        crash.velocity.copy(forward).multiplyScalar(speed * spec.carry);
+        // Not too far: a few metres along the road, still near the bike.
+        crash.velocity.copy(forward).multiplyScalar(Math.min(speed * spec.carry, 12 * (bikeGroup.scale.x || 1)));
         crash.velocity.y = spec.up * SCALE * (0.9 + Math.random() * 0.2);
         crash.velocity.x += crash.side * spec.push * SCALE;
         // Spin in the bike's frame: [flip forward, yaw, roll towards the fall side].
@@ -941,7 +977,28 @@ export function createRider({ scene }) {
             .addScaledVector(flat, spec.spin[0] * jitter())
             .addScaledVector(UP, spec.spin[1] * (Math.random() - 0.5) * 2)
             .addScaledVector(forward, spec.spin[2] * crash.side * jitter());
-        scene.attach(riderGroup);
+        crash.style = STYLES[crash.variant] || 'tumble';
+        gatherContacts();
+        crash.contacts = 0;
+        getUp.active = false;
+        // The pivot at his middle, then he leaves the bike with it.
+        if (!crashPivot.parent) scene.add(crashPivot);
+        pelvis.getWorldPosition(crashPivot.position);
+        crashPivot.quaternion.identity();
+        crashPivot.scale.set(1, 1, 1);
+        crashPivot.updateMatrixWorld(true);
+        crashPivot.attach(riderGroup);
+    }
+
+    // The lowest point of the body under the road (> 0: how far under).
+    function underRoad() {
+        crashPivot.updateMatrixWorld(true);
+        let deepest = -Infinity;
+        for (const { object, corners } of contacts) {
+            const e = object.matrixWorld.elements;
+            for (const c of corners) deepest = Math.max(deepest, -(e[1] * c.x + e[5] * c.y + e[9] * c.z + e[13]));
+        }
+        return deepest;
     }
 
     // Arms and legs during the fall: flailing in the air, sprawled once down.
@@ -1030,40 +1087,87 @@ export function createRider({ scene }) {
         contactShadow.material.opacity = 0.35;
 
         // Rider -----------------------------------------------------------
+        // Flies, turning about his middle; on the road, never through it.
+        const ground = GROUND[crash.style];
+        const size = SCALE * (riderGroup.getWorldScale(crashScale).x || 1) / SCALE;
         crash.velocity.y -= 14 * SCALE * dt;
-        riderGroup.position.addScaledVector(crash.velocity, dt);
-        const ground = 0.22 * SCALE;
-        if (riderGroup.position.y <= ground && crash.velocity.y <= 0) {
-            riderGroup.position.y = ground;
-            if (!crash.landed) crash.landTime = t;
-            // Bounces once or twice on a hard landing.
-            crash.velocity.y = crash.velocity.y < -3 ? -crash.velocity.y * 0.28 : 0;
-            crash.landed = true;
-        }
-        if (crash.landed) {
-            const friction = Math.exp(-dt * 2.6);
-            crash.velocity.x *= friction;
-            crash.velocity.z *= friction;
-            // Keeps rolling along the ground for a moment, then settles flat.
-            crash.spinRates.multiplyScalar(Math.exp(-dt * 3.2));
-        }
+        crashPivot.position.addScaledVector(crash.velocity, dt);
         if (crash.spinRates.lengthSq() > 1e-4) {
             axis.copy(crash.spinRates).normalize();
             spinStep.setFromAxisAngle(axis, crash.spinRates.length() * dt);
-            riderGroup.quaternion.premultiply(spinStep);
+            crashPivot.quaternion.premultiply(spinStep);
         }
-        if (crash.landed && crash.spinRates.length() < 2.5) {
+        const under = underRoad();
+        const touching = under > -0.05 * size;
+        if (under > 0) {
+            crashPivot.position.y += under;
+            if (crash.velocity.y < 0) {
+                if (!crash.landed) crash.landTime = t;
+                crash.landed = true;
+                crash.contacts++;
+                // Hard hits bounce him back up (several times when he tumbles).
+                crash.velocity.y = crash.velocity.y < -2.2 * size ? -crash.velocity.y * ground.bounce : 0;
+            }
+        }
+        const along = Math.hypot(crash.velocity.x, crash.velocity.z);
+        if (crash.landed && touching) {
+            const friction = Math.exp(-dt * ground.friction);
+            crash.velocity.x *= friction;
+            crash.velocity.z *= friction;
+            if (ground.roll > 0 && along > 1.2 * size) {
+                // Rolls along the road, over and over, as fast as he goes.
+                rollAxis.set(crash.velocity.x, 0, crash.velocity.z).normalize();
+                rollAxis.crossVectors(UP, rollAxis).multiplyScalar(ground.roll * along / (0.42 * size));
+                crash.spinRates.lerp(rollAxis, 1 - Math.exp(-dt * 7));
+            } else {
+                // Sliding (or nearly stopped): the spin dies away.
+                crash.spinRates.multiplyScalar(Math.exp(-dt * (crash.style === 'slide' ? 6 : 3.2)));
+            }
+        }
+        if (crash.landed && (crash.style === 'slide' || along < 1.5 * size) && crash.spinRates.length() < 2.5) {
             // Lie down in whatever direction he was tipping.
-            riderUp.set(0, 1, 0).applyQuaternion(riderGroup.quaternion);
+            riderGroup.getWorldQuaternion(riderQuaternion);
+            riderUp.set(0, 1, 0).applyQuaternion(riderQuaternion);
             flat.set(riderUp.x, 0, riderUp.z);
             if (flat.lengthSq() < 1e-3) flat.copy(forward).multiplyScalar(-1);
             flat.normalize();
             settle.setFromUnitVectors(riderUp, flat);
-            spinStep.identity().slerp(settle, 1 - Math.exp(-dt * 6));
-            riderGroup.quaternion.premultiply(spinStep);
+            spinStep.identity().slerp(settle, 1 - Math.exp(-dt * 5));
+            crashPivot.quaternion.premultiply(spinStep);
+            const lifted = underRoad();
+            if (lifted > 0) crashPivot.position.y += lifted;
         }
         animateLimbs(t);
         return t < 3;
+    }
+
+    // Free roam: back on his feet, from where he lies to standing at (x, z)
+    // facing `yaw` (then walked by updateWalk).
+    function startGetUp(x, z, yaw) {
+        if (riderGroup.parent !== crashPivot) return false;
+        scene.attach(riderGroup);
+        getUp.active = true;
+        getUp.t = 0;
+        getUp.from.copy(riderGroup.position);
+        getUp.fromQuaternion.copy(riderGroup.quaternion);
+        getUp.fromScale = riderGroup.scale.x;
+        getUp.to.set(x, 0, z);
+        getUp.toQuaternion.setFromAxisAngle(UP, yaw);
+        getUp.yaw = yaw;
+        return true;
+    }
+
+    // One frame of getting up; false once standing.
+    function updateGetUp(dt) {
+        if (!getUp.active) return false;
+        getUp.t = Math.min(1, getUp.t + dt / 0.9);
+        const k = getUp.t * getUp.t * (3 - 2 * getUp.t);
+        updateWalk(0, getUp.to.x, getUp.to.z, getUp.yaw, 0);
+        riderGroup.position.lerpVectors(getUp.from, getUp.to, k);
+        riderGroup.quaternion.slerpQuaternions(getUp.fromQuaternion, getUp.toQuaternion, k);
+        riderGroup.scale.setScalar(getUp.fromScale + (WALK_SCALE - getUp.fromScale) * k);
+        if (getUp.t >= 1) getUp.active = false;
+        return getUp.active;
     }
 
     // Free roam: the fall is over, the rider gets up (the bike stays down).
@@ -1071,8 +1175,11 @@ export function createRider({ scene }) {
         crash.active = false;
     }
 
+    // Where he lies: under his middle, on the road.
     function riderPosition(out) {
-        return riderGroup.getWorldPosition(out);
+        pelvis.getWorldPosition(out);
+        out.y = 0;
+        return out;
     }
 
     function slideSpeed() {
@@ -1298,7 +1405,7 @@ export function createRider({ scene }) {
     reset();
     return {
         setLivery, dismount, updateWalk, mount, setRiderVisible, setBoost, exhaustPoint, setWorldScale, setFlip,
-        tearPlate, platePoint, resetPlate: restPlate, finishCrash, riderPosition,
+        tearPlate, platePoint, resetPlate: restPlate, finishCrash, riderPosition, startGetUp, updateGetUp,
         get worldScale() { return worldScale; },
         // How far into a stunt the rider is (0: the riding position).
         get trickBlend() { return pose.trick; },
