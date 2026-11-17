@@ -1053,8 +1053,23 @@ function dropChunk(chunk) {
 // two one right after the other, and the gap grows with the speed, for the
 // time to see the next one and move (at 150 km/h about 90 m, 25 at 40).
 const OBSTACLE_GAP = { minUnits: 24, seconds: 0.55, depth: 3 };
+// Difficulty with the score (2026-11-20): from `from` points the obstacles
+// come closer (the gap down to `seconds[1]` of riding) and more often (more
+// tries per block, a higher chance each), the ramps clear less road, up to
+// `full` points: hard but still playable (never two in a row).
+const SCORE_DIFFICULTY = {
+    from: 1500, full: 20000, seconds: [0.55, 0.3], minUnits: [24, 15], tries: [4, 12], chance: 0.25, rampClear: [280, 150]
+};
+function scoreDifficulty() {
+    if (state.tricksOnly) return 0;
+    const { from, full } = SCORE_DIFFICULTY;
+    return Math.max(0, Math.min(1, (state.score - from) / (full - from)));
+}
+const lerpBy = ([a, b], k) => a + (b - a) * k;
 function obstacleRoomAt(z) {
-    const gap = Math.max(OBSTACLE_GAP.minUnits, state.speed * 60 * OBSTACLE_GAP.seconds) + OBSTACLE_GAP.depth;
+    const level = scoreDifficulty();
+    const seconds = lerpBy(SCORE_DIFFICULTY.seconds, level);
+    const gap = Math.max(lerpBy(SCORE_DIFFICULTY.minUnits, level), state.speed * 60 * seconds) + OBSTACLE_GAP.depth;
     return !state.obstacles.some((obs) => {
         if (!obs.active) return false;
         const away = z < obs.box.min.z ? obs.box.min.z - z : z > obs.box.max.z ? z - obs.box.max.z : 0;
@@ -1798,6 +1813,7 @@ function resetGame() {
     if (v2) v2.skidmarks.clear();
     secretCode.step = 0;
     secretCode.recent = [];
+    state.difficultyStep = 0;
     state.bavette = { left: 0, total: 0, armed: true, savedAt: -1e9 };
     // The control type's rules, for the whole run.
     state.rules = rulesFor();
@@ -2419,8 +2435,9 @@ function spawnRamp(z) {
     maybeShield(ramp);
     // Not stretched with its ramp.
     if (ramp.shield) ramp.shield.scale.x = SHIELD.size / wider;
-    // Clear the run-up and the landing zone of obstacles.
-    const zone = { from: z + 25, to: z - 280 };
+    // Clear the run-up and the landing zone of obstacles (less road as the
+    // score climbs).
+    const zone = { from: z + 25, to: z - lerpBy(SCORE_DIFFICULTY.rampClear, scoreDifficulty()) };
     state.rampFreeZones.push(zone);
     state.obstacles = state.obstacles.filter((obs) => {
         const oz = obs.mesh.position.z;
@@ -4222,11 +4239,21 @@ function animate(timestamp = performance.now()) {
                 const rampZ = newZ + 20 + Math.random() * 60;
                 if (state.frame >= rampsFrom() && Math.random() < rampChance && !inQuietZone(rampZ)) spawnRamp(rampZ);
                 state.rampFreeZones = state.rampFreeZones.filter((zone) => zone.to < bikeGroup.position.z);
-                for (let i = 0; i < 4; i++) {
+                // More of them as the score climbs (SCORE_DIFFICULTY).
+                const level = scoreDifficulty();
+                const tries = Math.round(lerpBy(SCORE_DIFFICULTY.tries, level));
+                // A word at each quarter of the way up.
+                const step = Math.floor(level * 4 + 1e-9);
+                if (step > (state.difficultyStep || 0)) {
+                    state.difficultyStep = step;
+                    toast(step === 4 ? 'DIFFICULTÉ MAX' : 'ÇA SE CORSE', step === 4 ? 'Le plus dur : tiens bon' : 'Plus d’obstacles', { discreet: true, float: true });
+                }
+                for (let i = 0; i < tries; i++) {
                     // Difficulty-based spawning
                     let spawnChance = 0.3; // Easy default
                     if (GAME_SETTINGS.difficulty === 'medium') spawnChance = 0.6;
                     if (GAME_SETTINGS.difficulty === 'hard') spawnChance = 0.9;
+                    spawnChance = Math.min(1, spawnChance + SCORE_DIFFICULTY.chance * level);
 
                     const z = newZ + Math.random() * 100;
                     // Fewer while they come back (phase 3).
