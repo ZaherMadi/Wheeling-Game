@@ -480,6 +480,133 @@ body.pad-editing .is-picked {
   outline: 3px solid #f6c416 !important;
 }
 
+/* Taking up a cut run: the offer, then the supersonic start. */
+#resume-dialog {
+  z-index: 70;
+}
+
+.resume-card b {
+  color: #f6c416;
+}
+
+.supersonic {
+  position: fixed;
+  inset: 0;
+  z-index: 55;
+  overflow: hidden;
+  pointer-events: none;
+}
+
+.supersonic__lines {
+  position: absolute;
+  inset: -50%;
+  background: repeating-conic-gradient(from 0deg, rgba(255, 255, 255, 0) 0deg 5deg, rgba(160, 225, 255, .55) 5.4deg 6deg, rgba(255, 255, 255, 0) 6.4deg 11deg);
+  -webkit-mask: radial-gradient(circle, transparent 0 16%, #000 42%);
+  mask: radial-gradient(circle, transparent 0 16%, #000 42%);
+  animation: supersonic-lines 2.3s linear forwards;
+}
+
+.supersonic__flash {
+  position: absolute;
+  inset: 0;
+  background: radial-gradient(circle at 50% 55%, #fff 0 20%, rgba(150, 220, 255, .85) 45%, rgba(20, 40, 80, .2) 100%);
+  animation: supersonic-flash 2.3s ease-out forwards;
+}
+
+.supersonic__ring {
+  position: absolute;
+  left: 50%;
+  top: 55%;
+  width: 40px;
+  height: 40px;
+  margin: -20px 0 0 -20px;
+  border: 6px solid rgba(255, 255, 255, .95);
+  border-radius: 50%;
+  box-shadow: 0 0 30px 10px rgba(120, 210, 255, .8), inset 0 0 24px 6px rgba(120, 210, 255, .7);
+  opacity: 0;
+  animation: supersonic-ring 1s cubic-bezier(.15, .7, .3, 1) .62s forwards;
+}
+
+.supersonic__ring--late {
+  animation-delay: .8s;
+  border-width: 3px;
+}
+
+.supersonic__text {
+  position: absolute;
+  left: 50%;
+  top: 42%;
+  display: grid;
+  justify-items: center;
+  font-family: 'Russo One', sans-serif;
+  color: #fff;
+  text-shadow: 0 0 18px rgba(80, 190, 255, .9), 0 3px 0 rgba(0, 0, 0, .45);
+  transform: translate(-50%, -50%);
+  animation: supersonic-text 2.3s ease-out forwards;
+}
+
+.supersonic__text small {
+  font-size: clamp(14px, 3.4vw, 22px);
+  letter-spacing: .35em;
+  color: #9fe3ff;
+}
+
+.supersonic__text b {
+  font-weight: 400;
+  font-size: clamp(30px, 8.5vw, 64px);
+  font-style: italic;
+  letter-spacing: .02em;
+}
+
+.supersonic__score {
+  margin-top: 4px;
+  font-size: clamp(26px, 6.5vw, 50px);
+  color: #f6c416;
+}
+
+.supersonic--go .supersonic__text {
+  animation: supersonic-away .6s ease-in forwards;
+}
+
+@keyframes supersonic-lines {
+  0% { opacity: 0; transform: scale(1.6) rotate(0deg); }
+  20% { opacity: 1; }
+  75% { opacity: 1; transform: scale(.9) rotate(12deg); }
+  100% { opacity: 0; transform: scale(.6) rotate(18deg); }
+}
+
+@keyframes supersonic-flash {
+  0% { opacity: 0; }
+  8% { opacity: .9; }
+  30% { opacity: .35; }
+  38% { opacity: .85; }
+  70% { opacity: .15; }
+  100% { opacity: 0; }
+}
+
+@keyframes supersonic-ring {
+  0% { opacity: 1; transform: scale(.2); }
+  100% { opacity: 0; transform: scale(40); }
+}
+
+@keyframes supersonic-text {
+  0% { opacity: 0; transform: translate(-50%, -50%) scale(2.4); filter: blur(8px); }
+  18% { opacity: 1; transform: translate(-50%, -50%) scale(1); filter: blur(0); }
+  30% { transform: translate(-50%, -50%) scale(1.08); }
+  36% { transform: translate(-50%, -50%) scale(1); }
+  100% { opacity: 1; transform: translate(-50%, -50%) scale(1); }
+}
+
+@keyframes supersonic-away {
+  to { opacity: 0; transform: translate(-50%, -160%) scale(.7); filter: blur(4px); }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .supersonic__lines, .supersonic__ring {
+    display: none;
+  }
+}
+
 /* The free roam tricks offer. */
 #free-tricks-dialog {
   z-index: 60;

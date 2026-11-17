@@ -1913,6 +1913,9 @@ function showConnecting(visible) {
 async function startGame() {
     if (startInProgress) return;
     startInProgress = true;
+    // Taking up a cut run (competitive only).
+    const resume = GAME_SETTINGS.gameMode === 'linear' ? pendingResume : null;
+    pendingResume = null;
     flushPendingSubmission();
     crashSequence++;
     audio.prepare();
@@ -1924,7 +1927,9 @@ async function startGame() {
         const notice = setTimeout(() => showConnecting(true), 350);
         let check = null;
         try {
-            runToken = await takeWheelieRun();
+            runToken = resume
+                ? await Promise.race([createWheelieRun(resume), new Promise((_, reject) => setTimeout(() => reject(new Error('le serveur ne répond pas')), 6000))])
+                : await takeWheelieRun();
         } catch (error) {
             if (error instanceof HumanCheckRequired) check = error;
             else {
@@ -1958,7 +1963,7 @@ async function startGame() {
             if (result === 'passed') {
                 const notice = setTimeout(() => showConnecting(true), 350);
                 try {
-                    runToken = await Promise.race([createWheelieRun(),
+                    runToken = await Promise.race([createWheelieRun(resume),
                         new Promise((_, reject) => setTimeout(() => reject(new Error('le serveur ne répond pas')), 6000))]);
                 } catch (error) {
                     logEvent('Session classée indisponible après la vérification', { error: String(error && error.message || error) });
@@ -1975,6 +1980,13 @@ async function startGame() {
     try {
         resetGame();
         state.runToken = runToken;
+        // A resumed run starts at the cut run's score (the server's).
+        state.resume = resume && !resume.refused ? resume : null;
+        state.resumeBase = state.resume ? (Number.isInteger(state.resume.base) ? state.resume.base : state.resume.saved) : 0;
+        state.score = state.resumeBase;
+        if (resume && resume.refused) {
+            toast('REPRISE IMPOSSIBLE', 'Partie trop ancienne ou déjà reprise : ton score reste enregistré. Nouvelle partie !', { discreet: true, float: true });
+        }
         state.rankedRunUnavailable = GAME_SETTINGS.gameMode === 'linear' && !runToken;
         state.sessionError = humanCheckSkipped ? HUMAN_CHECK_SKIPPED : state.rankedRunUnavailable ? lastSessionError : null;
         if (state.rankedRunUnavailable) lateSession(crashSequence);
@@ -2012,7 +2024,8 @@ async function startGame() {
             speak('start', { force: true });
         }
         startAnimationLoop();
-        setTimeout(() => showKeyHints(9), 300);
+        if (state.resume) supersonicStart(state.resumeBase);
+        else setTimeout(() => showKeyHints(9), 300);
         startPresence();
         // Standing at the start: the 5HC intro on the bus shelter ahead.
         if (v2) setTimeout(() => v2.startAd(), 400);
@@ -5774,15 +5787,24 @@ async function apiFetch(url, options = {}, timeout = 7000) {
     }
 }
 
-async function createWheelieRun() {
+// `resume`: taking up a run the phone cut short (see offerResume). The
+// server refuses it (409) when it is too late or already taken up: then a
+// new run, and `resume.refused`.
+async function createWheelieRun(resume = null) {
     const response = await apiFetch(`${API_BASE_URL}/wheelie-sessions`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
             difficulty: GAME_SETTINGS.difficulty, version: IS_V2 ? 'v2' : 'v1', nickname: localStorage.getItem('wheelie_nickname') || undefined,
-            human_pass: storedPass() || undefined, human_check: 1
+            human_pass: storedPass() || undefined, human_check: 1,
+            resume_token: resume && !resume.refused ? resume.token : undefined
         })
     });
+    if (response.status === 409 && resume && !resume.refused) {
+        resume.refused = true;
+        logEvent('Reprise de partie refusée');
+        return createWheelieRun(resume);
+    }
 
     if (response.status === 403) {
         // No pass, or an expired one: the human check comes first.
@@ -5805,6 +5827,7 @@ async function createWheelieRun() {
     const data = await response.json();
     if (!data.run_token) throw new Error('L’API n’a pas fourni de jeton de partie');
     lastSessionError = null;
+    if (resume && !resume.refused && Number.isInteger(data.base_score)) resume.base = data.base_score;
     return data.run_token;
 }
 
@@ -5820,9 +5843,10 @@ async function lateSession(sequence) {
         if (sequence !== crashSequence || !state.isPlaying || state.runToken) return;
         if (state.gameTime > 24) break;
         try {
-            const token = await Promise.race([createWheelieRun(), new Promise((_, reject) => setTimeout(() => reject(new Error('timeout')), 6000))]);
+            const token = await Promise.race([createWheelieRun(state.resume), new Promise((_, reject) => setTimeout(() => reject(new Error('timeout')), 6000))]);
             if (sequence !== crashSequence || !state.isPlaying || state.gameTime > 26) return;
             state.runToken = token;
+            settleResumeScore();
             state.rankedRunUnavailable = false;
             state.sessionError = null;
             return;
@@ -6040,10 +6064,14 @@ const LIVE_RUN_KEY = 'wheelie_live_run';
 function noteLiveRun() {
     if (!state.isPlaying || GAME_SETTINGS.gameMode !== 'linear' || state.tricksOnly) return;
     try {
+        const saved = checkpoint.token === state.runToken ? checkpoint.savedScore || 0 : 0;
         localStorage.setItem(LIVE_RUN_KEY, JSON.stringify({
-            score: Math.floor(state.score), saved: checkpoint.token === state.runToken ? checkpoint.savedScore || 0 : 0,
+            score: Math.floor(state.score), saved,
             ranked: !!state.runToken, seconds: Math.round(state.gameTime), turns: state.turns || 0,
-            landscape: window.innerWidth > window.innerHeight, at: Date.now()
+            landscape: window.innerWidth > window.innerHeight, at: Date.now(),
+            // To take it up (once: not a run that was itself taken up).
+            token: saved > 0 && !state.resume ? state.runToken : null,
+            difficulty: GAME_SETTINGS.difficulty, version: IS_V2 ? 'v2' : 'v1', resumed: !!state.resume
         }));
     } catch {
         // No storage: nothing noted.
@@ -6069,13 +6097,115 @@ function checkCutRun() {
         level: run.score >= 300 && run.saved < run.score * 0.8 ? 'error' : 'warning',
         group: run.saved ? 'enregistrée' : 'perdue', details: run,
     });
-    if (run.saved > 0) {
+    if (run.saved > 0 && canResume(run)) {
+        // After the intro video, if it is still on.
+        const offer = () => {
+            const splash = document.getElementById('splash');
+            if (splash && !splash.classList.contains('hidden')) setTimeout(offer, 400);
+            else offerResume(run);
+        };
+        offer();
+    } else if (run.saved > 0) {
         welcome('Ta dernière partie a été coupée', `Le téléphone a rechargé la page, mais ton score est enregistré au classement : ${run.saved} points.`);
     } else if (run.ranked) {
         welcome('Ta dernière partie a été coupée', `Le téléphone a rechargé la page avant que ton score (${run.score} points) puisse être enregistré.`);
     }
 }
 setTimeout(checkCutRun, 2500);
+
+// Taking up a cut run: offered at the next visit when its score was saved
+// (a checkpoint), within 25 minutes (the server allows 30 after the last
+// checkpoint), once (not a run that was itself taken up). It starts again
+// at that score (the difficulty that goes with it), after a supersonic
+// start.
+const RESUME = { withinMs: 25 * 60 * 1000, pauseMs: 1700, showMs: 2300 };
+let pendingResume = null;
+function canResume(run) {
+    return !!run.token && !run.resumed && run.ranked && Date.now() - run.at < RESUME.withinMs
+        && (run.version || 'v2') === (IS_V2 ? 'v2' : 'v1') && ['easy', 'medium', 'hard'].includes(run.difficulty);
+}
+let resumeDialog = null;
+function offerResume(run) {
+    if (state.isPlaying || startInProgress) return;
+    report('ranking.resume_offered', `Reprise proposée : ${run.saved} points`, { level: 'info', once: true });
+    if (!resumeDialog) {
+        resumeDialog = document.createElement('div');
+        resumeDialog.id = 'resume-dialog';
+        resumeDialog.className = 'account-dialog';
+        resumeDialog.setAttribute('role', 'dialog');
+        resumeDialog.setAttribute('aria-modal', 'true');
+        resumeDialog.setAttribute('aria-labelledby', 'resume-title');
+        document.body.append(resumeDialog);
+    }
+    const points = run.saved.toLocaleString('fr-FR');
+    resumeDialog.innerHTML = `<div class="account-card resume-card">
+        <h2 id="resume-title">⚡ Partie coupée</h2>
+        <p class="account-text">Le téléphone a rechargé la page pendant ta partie. Ton score est enregistré : <b>${points} points</b>.</p>
+        <p class="account-text">Reprends-la : tu repars à ${points} points, avec la difficulté qui va avec. Une seule reprise par partie.</p>
+        <button type="button" class="account-btn account-btn--primary resume-go">⚡ REPRENDRE À ${points} POINTS</button>
+        <button type="button" class="account-btn account-btn--quiet resume-later">Non, garder mon score</button>
+    </div>`;
+    resumeDialog.hidden = false;
+    resumeDialog.querySelector('.resume-later').addEventListener('click', () => {
+        resumeDialog.hidden = true;
+        logEvent('Reprise de partie déclinée');
+    });
+    resumeDialog.querySelector('.resume-go').addEventListener('click', () => {
+        resumeDialog.hidden = true;
+        if (state.isPlaying || startInProgress) return;
+        // Too late meanwhile: the server says so, and it is a new run.
+        pendingResume = { token: run.token, saved: run.saved };
+        GAME_SETTINGS.difficulty = run.difficulty;
+        GAME_SETTINGS.gameMode = 'linear';
+        document.querySelectorAll('.screen.active').forEach((screen) => screen.classList.remove('active'));
+        logEvent('Reprise de partie', { saved: run.saved });
+        startGame();
+    });
+}
+
+// The session came late (or the server's score differs from the one the
+// phone had): the score follows the server's.
+function settleResumeScore() {
+    if (!state.resume) return;
+    const base = state.resume.refused ? 0 : Number.isInteger(state.resume.base) ? state.resume.base : state.resumeBase;
+    state.score = Math.max(0, state.score + base - state.resumeBase);
+    state.resumeBase = base;
+    if (state.resume.refused) state.resume = null;
+}
+
+// The supersonic start: the bike held still a moment (nothing recorded),
+// a flash, the shock wave, the score counting up to where the run stopped,
+// then off it goes.
+function supersonicStart(score) {
+    document.getElementById('supersonic')?.remove();
+    const pauseHere = !GAME_SETTINGS.autoRace;
+    if (pauseHere) state.isPaused = true;
+    const layer = document.createElement('div');
+    layer.id = 'supersonic';
+    layer.className = 'supersonic';
+    layer.setAttribute('aria-hidden', 'true');
+    layer.innerHTML = `<div class="supersonic__lines"></div><div class="supersonic__flash"></div>
+        <div class="supersonic__ring"></div><div class="supersonic__ring supersonic__ring--late"></div>
+        <div class="supersonic__text"><small>REPRISE</small><b>SUPERSONIQUE</b><span class="supersonic__score">0</span></div>`;
+    document.body.append(layer);
+    audio.play('whoosh', { volume: 0.8 });
+    const counter = layer.querySelector('.supersonic__score');
+    const started = performance.now();
+    const count = (now) => {
+        const k = Math.min(1, (now - started) / 1100);
+        counter.textContent = Math.round(score * (1 - (1 - k) ** 3)).toLocaleString('fr-FR');
+        if (k < 1 && layer.isConnected) requestAnimationFrame(count);
+    };
+    requestAnimationFrame(count);
+    setTimeout(() => audio.play('backfire', { volume: 0.9 }), 650);
+    const sequence = crashSequence;
+    setTimeout(() => {
+        audio.play('boost', { volume: 0.8 });
+        if (pauseHere && sequence === crashSequence && state.isPlaying) state.isPaused = false;
+        layer.classList.add('supersonic--go');
+    }, RESUME.pauseMs);
+    setTimeout(() => layer.remove(), RESUME.showMs);
+}
 
 setInterval(() => {
     if (checkpointWanted() && Date.now() - checkpoint.at >= CHECKPOINT.everySeconds * 1000) sendCheckpoint();
