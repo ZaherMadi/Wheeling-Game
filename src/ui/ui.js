@@ -104,13 +104,25 @@ function decorateModeSelect() {
                 ? `<p class="ui-garage__alert">Moto confisquée par la police : fais ${BIKE_RECOVERY_POINTS} points en compétitif pour la récupérer.</p>`
                 : '<p class="ui-garage__hint">Mode libre : approche-toi d’une voiture garée et appuie sur G (ou le bouton bleu).</p>')
             // Figures Land (src/v2/figures-land.js): the notice.
-            + '<p class="ui-garage__secret">🎡 <b>Figures Land</b> : le chemin pour cette map est top secret. Une seule chance sur 20 de la trouver en mode libre… Vous pensez qu’il y en a d’autres ????</p>';
+            + '<p class="ui-garage__secret">🎡 <b>Figures Land</b> : le chemin pour cette map est top secret. Une seule chance sur 20 de la trouver en mode libre… Vous pensez qu’il y en a d’autres ????</p>'
+            // Tricks in free roam: bought once (main.js buyFreeTricks).
+            + (freeTricksOn()
+                ? '<p class="ui-garage__tricks is-on">🤸 Figures en mode libre activées : FIGURE sur la moto, 2× les points.</p>'
+                : `<button type="button" class="ui-garage__buy" data-free-tricks ${points < 5000 ? 'aria-disabled="true"' : ''}>🤸 FIGURES EN MODE LIBRE · 5 000 pts<small>2× les points des figures + un code secret</small></button>`);
         const free = $('select-freemode')?.querySelector('.ui-btn__sub');
         if (free) free.textContent = `Ville ouverte · ${points} pts`;
     };
     refresh();
     $('start-btn')?.addEventListener('click', refresh);
     document.addEventListener('wheelie:points', refresh);
+}
+
+function freeTricksOn() {
+    try {
+        return localStorage.getItem('wheelie_free_tricks') === '1';
+    } catch {
+        return false;
+    }
 }
 
 function decorateRiderScreen() {

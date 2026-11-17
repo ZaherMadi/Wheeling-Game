@@ -20,6 +20,20 @@ export const SECRET_CODES = [
         where: 'En compétitif, dans les 10 premières secondes',
         does: 'Plus d’obstacles ni de police : tremplins et figures dès le départ. La partie n’est plus classée ; un dixième du score s’ajoute à tes points cumulés.',
         video: '/video/code-figures.mp4', poster: '/video/code-figures.jpg'
+    },
+    {
+        // Revealed by buying the free roam tricks (not by points).
+        key: 'land', name: 'Figures Land', v2Only: true, steps: [2, 2, 1, 3],
+        unlocked: () => {
+            try {
+                return localStorage.getItem('wheelie_free_tricks') === '1';
+            } catch {
+                return false;
+            }
+        },
+        locked: 'Code révélé en activant les figures en mode libre (5 000 points cumulés, dans le choix du mode libre).',
+        where: 'En mode libre, assis sur la moto',
+        does: 'Figures Land, le parc secret, t’attend dans une des prochaines rues : suis le panneau.'
     }
 ];
 
@@ -84,10 +98,10 @@ export function createSecretBird({ menu, points, newVersion }) {
 
     function renderCode(code, total) {
         const card = node('section', 'code-card');
-        if (total < code.points) {
+        if (code.unlocked ? !code.unlocked() : total < code.points) {
             card.classList.add('is-hidden');
             card.append(node('h3', 'code-card__name', '???'));
-            card.append(node('p', 'code-card__text', `Code révélé à ${code.points.toLocaleString('fr-FR')} points cumulés (il t’en manque ${(code.points - total).toLocaleString('fr-FR')}).`));
+            card.append(node('p', 'code-card__text', code.locked || `Code révélé à ${code.points.toLocaleString('fr-FR')} points cumulés (il t’en manque ${(code.points - total).toLocaleString('fr-FR')}).`));
             return card;
         }
         card.append(node('h3', 'code-card__name', code.name));
@@ -95,7 +109,7 @@ export function createSecretBird({ menu, points, newVersion }) {
         card.append(node('p', 'code-card__text', code.does));
         const steps = node('ol', 'code-steps');
         steps.setAttribute('aria-label', 'Le code, dans l’ordre');
-        STEPS.forEach(([label, picture, hint], index) => {
+        (code.steps || [0, 1, 2, 3]).map((step) => STEPS[step]).forEach(([label, picture, hint], index) => {
             const step = node('li', 'code-step');
             step.style.setProperty('--step', index);
             step.innerHTML = `<svg viewBox="0 0 24 24" width="26" height="26" aria-hidden="true">${picture}</svg>`;
@@ -103,6 +117,7 @@ export function createSecretBird({ menu, points, newVersion }) {
             steps.append(step);
         });
         card.append(steps);
+        if (!code.video) return card;
         const video = node('video', 'code-video');
         video.src = code.video;
         video.poster = code.poster;

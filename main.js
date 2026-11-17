@@ -5,7 +5,7 @@ import './src/style.css';
 import voiceLineGroups from './src/voice-lines.json';
 import soundEffects from './src/sound-effects.json';
 import { createAudioEngine } from './src/audio-engine.js';
-import { BIKE_RECOVERY_POINTS, addPoints, finePoints, releaseBike, syncPoints, totalPoints } from './src/v2/freeroam.js';
+import { BIKE_RECOVERY_POINTS, addPoints, finePoints, releaseBike, spendPoints, syncPoints, totalPoints } from './src/v2/freeroam.js';
 import { createPlayerVoice } from './src/player-voice.js';
 import { renderTrophyRoom } from './src/trophy-room.js';
 import { HumanCheckRequired, forgetPass, runHumanCheck, storedPass } from './src/human-check.js';
@@ -175,6 +175,9 @@ const AUTO_BRAKE = { byte: 51, limitKmh: 50, hopKmh: 10, hopFrames: 100, push: 8
 // Arrows: the wheelie button alone gives a short burst of throttle to lift
 // the front (stops once it is up).
 const WHEELIE_ASSIST = { burst: 179 / 255, burstFrames: 45, upAngle: 0.9 };
+// The brake button brakes 10 % more than the stick pulled back (the stick's
+// strength, as a recorded byte: the server reads it).
+const STICK_BRAKE = 232 / 255;
 const BAVETTE = {
     gentleAv: 0.02, fatalAv: 0.12, maxFrames: 45, minFrames: 4, releaseAv: -0.012,
     drag: 0.0015,
@@ -1383,6 +1386,58 @@ function driftEffects(dt, heading) {
     }
 }
 
+// Tricks in free roam (on the bike): bought once with 5000 cumulative
+// points; they pay twice the competitive ground rate (10 to 30 points a
+// second with the speed), straight into the cumulative points. Buying them
+// also gives the Figures Land code.
+const FREE_TRICKS = { cost: 5000, factor: 2, key: 'wheelie_free_tricks' };
+const freeTrick = { points: 0 };
+function freeTricksUnlocked() {
+    return readSetting(FREE_TRICKS.key) === '1';
+}
+const LAND_CODE_TEXT = 'WHEELIE, WHEELIE, FREIN, puis 3 touches sur le compteur (en mode libre, sur la moto)';
+function buyFreeTricks() {
+    if (freeTricksUnlocked()) return;
+    const points = totalPoints();
+    if (points < FREE_TRICKS.cost || !spendPoints(FREE_TRICKS.cost)) {
+        toast('FIGURES EN MODE LIBRE', `Il te manque ${(FREE_TRICKS.cost - points).toLocaleString('fr-FR')} points cumulés`, { discreet: true, float: true });
+        return;
+    }
+    try {
+        localStorage.setItem(FREE_TRICKS.key, '1');
+    } catch {
+        // Kept for this visit.
+    }
+    bumpStat('freeTricksBought');
+    audio.play('new_record', { volume: 0.6 });
+    document.dispatchEvent(new CustomEvent('wheelie:points'));
+    document.dispatchEvent(new CustomEvent('wheelie:notice', {
+        detail: {
+            title: '🤸 FIGURES EN MODE LIBRE',
+            text: `Activées : FIGURE sur la moto, 2× les points des figures. Et un cadeau, le code de Figures Land : ${LAND_CODE_TEXT}. Il est aussi dans l’oiseau doré.`,
+            seconds: 12
+        }
+    }));
+}
+document.addEventListener('click', (event) => {
+    if (event.target instanceof Element && event.target.closest('[data-free-tricks]')) buyFreeTricks();
+});
+
+function freeTrickStep(dt, roam) {
+    const can = freeTricksUnlocked() && roam.mode === 'bike' && !roam.frozen && !roamFall.active;
+    setTrick(can && !!state.keys.trick);
+    if (!state.trick.active) return;
+    const kmh = speedKmh();
+    if (kmh <= 10) return;
+    freeTrick.points += FREE_TRICKS.factor * groundTrickRate(Math.min(kmh, JUMP.groundToKmh)) * dt;
+    if (freeTrick.points >= 10) {
+        const whole = Math.floor(freeTrick.points);
+        freeTrick.points -= whole;
+        addPoints(whole);
+        scoreBonus(whole, 'FIGURE ×2');
+    }
+}
+
 function rideFreeBike(dt, roam) {
     if (roamFall.active) {
         updateRoamFall(dt);
@@ -1503,6 +1558,61 @@ function autoBrakeShown() {
     }
 }
 
+// Sideways in competitive (stick or arrows), `scale` of the usual grip.
+function steerLinear(scale = 1) {
+    const bike = state.bike;
+    if (GAME_SETTINGS.controlMode === 'analog' && analogData.active) {
+        const sensitivity = state.speed * 50 < 200 ? 0.5 : 1;
+        bike.lateralVelocity = analogData.x * CONFIG.maxLateralSpeed * sensitivity * scale;
+    } else {
+        if (state.keys.left) bike.lateralVelocity -= CONFIG.lateralAccel * scale;
+        if (state.keys.right) bike.lateralVelocity += CONFIG.lateralAccel * scale;
+    }
+    bike.lateralVelocity *= CONFIG.lateralFriction;
+    bike.lateralVelocity = Math.max(-CONFIG.maxLateralSpeed, Math.min(CONFIG.maxLateralSpeed, bike.lateralVelocity));
+    bikeGroup.position.x = Math.max(-9, Math.min(9, bikeGroup.position.x + bike.lateralVelocity));
+}
+
+// The police chase seen from above, as soon as the siren is heard: the road,
+// the bike, the patrol car and how far behind it is (discreet, top left).
+let policeMap = null;
+function updatePoliceMap() {
+    const police = state.police;
+    const on = state.isPlaying && GAME_SETTINGS.gameMode === 'linear' && !!police && !!police.siren &&
+        police.phase !== 'idle' && !police.gaveUp && !state.userPaused;
+    if (!on) {
+        if (policeMap && !policeMap.root.hidden) policeMap.root.hidden = true;
+        return;
+    }
+    if (!policeMap) {
+        const root = document.createElement('div');
+        root.id = 'police-map';
+        root.setAttribute('aria-label', 'Poursuite de police, vue de dessus');
+        root.innerHTML = '<div class="police-map__road"><i class="police-map__lane"></i><b class="police-map__bike"></b><b class="police-map__car"></b></div><span class="police-map__gap"></span>';
+        document.body.append(root);
+        policeMap = {
+            root,
+            bike: root.querySelector('.police-map__bike'),
+            car: root.querySelector('.police-map__car'),
+            gap: root.querySelector('.police-map__gap')
+        };
+    }
+    policeMap.root.hidden = false;
+    // 1: far behind (just heard), 0: alongside.
+    const far = police.phase === 'coming'
+        ? 1 - 0.35 * Math.min(1, police.t / police.appearAt)
+        : 0.65 * (1 - police.p);
+    const bikeX = bikeGroup.position.x;
+    const carX = police.phase === 'visible' ? police.x : bikeX + (bikeX > 0 ? 1 : -1) * POLICE.lane;
+    const across = (x) => `${((Math.max(-11, Math.min(11, x)) + 11) / 22 * 100).toFixed(1)}%`;
+    policeMap.bike.style.left = across(bikeX);
+    policeMap.car.style.left = across(carX);
+    policeMap.car.style.top = `${(16 + far * 74).toFixed(1)}%`;
+    policeMap.car.classList.toggle('is-near', far < 0.25);
+    policeMap.root.classList.toggle('is-hidden-car', !!police.hidden);
+    policeMap.gap.textContent = `${Math.round(far * 120)} m`;
+}
+
 function groundTrickRate(kmh) {
     const span = (kmh - JUMP.groundFromKmh) / (JUMP.groundToKmh - JUMP.groundFromKmh);
     return JUMP.groundMin + (JUMP.groundMax - JUMP.groundMin) * Math.max(0.0, Math.min(1.0, span));
@@ -1619,6 +1729,7 @@ function resetGame() {
     freeRide.slip = 0;
     if (v2) v2.skidmarks.clear();
     secretCode.step = 0;
+    secretCode.recent = [];
     state.bavette = { left: 0, total: 0, armed: true, savedAt: -1e9 };
     // The control type's rules, for the whole run.
     state.rules = rulesFor();
@@ -2699,6 +2810,9 @@ function groundTricksFrom() {
 // unranked, a tenth of the score added to the cumulative points). In free
 // roam, on the bike: a hang glider.
 const SECRET_SEQUENCE = ['gas', 'brake', 'wheelie', 'tap', 'tap', 'tap'];
+// Free roam, on the bike: Figures Land in one of the next side streets
+// (revealed by buying the free roam tricks).
+const LAND_SEQUENCE = ['wheelie', 'wheelie', 'brake', 'tap', 'tap', 'tap'];
 function secretInput(kind) {
     if (!state.isPlaying || state.userPaused) return;
     const competitive = GAME_SETTINGS.gameMode === 'linear';
@@ -2706,9 +2820,20 @@ function secretInput(kind) {
     // them (the golden bird on the menu, the trophy room).
     if (competitive && (state.gameTime > 10 || state.tricksOnly)) return;
     if (!competitive && !(v2 && v2.roam.mode === 'bike' && !roamFall.active)) return;
-    if (kind === SECRET_SEQUENCE[secretCode.step]) secretCode.step += 1;
-    else secretCode.step = kind === SECRET_SEQUENCE[0] ? 1 : 0;
-    if (secretCode.step < SECRET_SEQUENCE.length) return;
+    const recent = (secretCode.recent ||= []);
+    recent.push(kind);
+    if (recent.length > 6) recent.shift();
+    const typed = (sequence) => sequence.length === recent.length && sequence.every((step, index) => step === recent[index]);
+    if (!competitive && typed(LAND_SEQUENCE)) {
+        recent.length = 0;
+        v2.figuresLand.summon();
+        bumpStat('landCode');
+        audio.play('new_record', { volume: 0.5 });
+        toast('🎡 FIGURES LAND', 'Elle t’attend dans une des prochaines rues : suis le panneau', { float: true });
+        return;
+    }
+    if (!typed(SECRET_SEQUENCE)) return;
+    recent.length = 0;
     secretCode.step = 0;
     if (competitive) startTricksOnly();
     else {
@@ -3321,6 +3446,10 @@ function animate(timestamp = performance.now()) {
             // Rules 6 and 7: off the boost's gain first.
             if (ruleset().floor) state.boost.gain = Math.max(0, state.boost.gain - (beforeSkid - state.speed));
             bikeGroup.position.z -= state.speed;
+            // Still steering while it skids (a little less): room to get out
+            // of the way of the next one. Seen only (the server does not
+            // follow the bike sideways).
+            steerLinear(0.8);
             state.skidTimer -= dt;
             if (state.skidTimer <= 0) {
                 state.skidding = false;
@@ -3371,6 +3500,7 @@ function animate(timestamp = performance.now()) {
             if (roam) {
                 // V2: ridden like a bike (gas, brake, bars), see rideFreeBike().
                 state.freeMode.speed = rideFreeBike(dt, roam);
+                freeTrickStep(dt, roam);
             } else {
             bikeGroup.position.x += moveX;
             bikeGroup.position.z += moveZ;
@@ -3461,6 +3591,7 @@ function animate(timestamp = performance.now()) {
         } else {
             let isAccelerating = state.keys.up;
             let isBraking = state.keys.down;
+            let stickBrake = false;
             if (GAME_SETTINGS.controlMode === 'analog' && analogData.active) {
                 let sensitivity = 1.0;
                 const kmh = state.speed * 50;
@@ -3473,7 +3604,11 @@ function animate(timestamp = performance.now()) {
                     if (state.keys.down) isBraking = true;
                 } else {
                     if (analogData.y < -0.1) isAccelerating = true;
-                    if (analogData.y > 0.5) isBraking = true;
+                    if (analogData.y > 0.5) {
+                        // The stick alone: a little less than the button.
+                        if (!isBraking) stickBrake = true;
+                        isBraking = true;
+                    }
                 }
             } else {
                 if (state.keys.left) state.bike.lateralVelocity -= CONFIG.lateralAccel;
@@ -3611,7 +3746,7 @@ function animate(timestamp = performance.now()) {
             // Rules 4 and 5: without throttle, the byte is the brake's strength
             // (full, but for the automatic rear brake).
             if (autoBrake) accelerationScale = AUTO_BRAKE.byte / 255;
-            else if (!isAccelerating) accelerationScale = 1;
+            else if (!isAccelerating) accelerationScale = isBraking && stickBrake ? STICK_BRAKE : 1;
             // The lift effort (an option: the rider pulls the bike up).
             assist.effort = GAME_SETTINGS.liftAnimation && wheelieInput && isAccelerating && startAngle < 0.7;
             if (takeoff && manualFlips) {
@@ -4307,10 +4442,13 @@ function updateBoostState() {
 let lastTrickHint = '';
 function updateTrickButton() {
     const button = document.getElementById('analog-trick');
-    const available = state.isPlaying && GAME_SETTINGS.gameMode === 'linear' && state.frame >= JUMP.rampsFrom;
-    const ready = state.jump.airborne || (state.frame >= JUMP.groundTricksFrom && state.bike.angle < JUMP.groundTrickMaxAngle);
+    const freeTricks = state.isPlaying && GAME_SETTINGS.gameMode === 'free' && !!v2 && v2.roam.mode === 'bike' && freeTricksUnlocked();
+    const available = freeTricks || (state.isPlaying && GAME_SETTINGS.gameMode === 'linear' && state.frame >= JUMP.rampsFrom);
+    const ready = freeTricks || state.jump.airborne || (state.frame >= JUMP.groundTricksFrom && state.bike.angle < JUMP.groundTrickMaxAngle);
     if (button) {
         if (button.hidden === available) button.hidden = !available;
+        // Free roam: its own place (the action pad is where it usually is).
+        button.classList.toggle('ui-pad--free', freeTricks);
         button.classList.toggle('is-ready', available && ready);
     }
     // Computer: the F key reminder (the pad only exists on touch screens).
@@ -4333,6 +4471,7 @@ document.addEventListener('wheelie:controls', () => {
 
 function updateUI() {
     updateTrickButton();
+    updatePoliceMap();
     if (state.isPlaying) updateBoostState();
     const scoreEl = document.getElementById('score');
     if (scoreEl) scoreEl.innerText = Math.floor(state.score);

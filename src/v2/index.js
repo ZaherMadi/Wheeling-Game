@@ -584,6 +584,8 @@ export function createRealisticVersion({ scene, renderer, camera, mobile, audio,
     return {
         world, rider, fx, roam, frame, reset, setQuality, showroom, startAd, adScreen, policeStop,
         podium, podiumView, podiumLook, riderName, skidmarks,
+        // The Figures Land code: the park in one of the next side streets.
+        figuresLand: { summon: () => figuresLand.newRide(true) },
         get resolutionScale() { return resolution.scale; },
         smoke: () => fx.smoke(rider.bikeGroup.position, bikeVelocity),
         // Tyre smoke where the rear wheel slides (drift).

@@ -1511,6 +1511,41 @@ body.v2 .ui-livery__toggle--rainbow {
   text-shadow: 0 1px 0 rgba(255, 255, 255, 0.6);
 }
 
+body.v2 .ui-garage__buy {
+  display: block;
+  width: 100%;
+  margin: 10px 0 0;
+  padding: 10px 12px;
+  font-family: var(--display);
+  font-size: 13px;
+  letter-spacing: 0.04em;
+  color: #111;
+  background: linear-gradient(90deg, #b07bff, #f6c416);
+  border: 0;
+  border-radius: 10px;
+  cursor: pointer;
+}
+
+body.v2 .ui-garage__buy small {
+  display: block;
+  margin-top: 2px;
+  font-family: system-ui, sans-serif;
+  font-size: 11px;
+  letter-spacing: 0;
+  opacity: 0.85;
+}
+
+body.v2 .ui-garage__buy[aria-disabled="true"] {
+  filter: grayscale(0.7);
+  opacity: 0.6;
+}
+
+body.v2 .ui-garage__tricks {
+  margin: 8px 0 0;
+  font-size: 12px;
+  color: #d9c4ff;
+}
+
 body.v2 .ui-garage__secret {
   margin: 8px 0 0;
   font-size: 12px;
@@ -1827,6 +1862,11 @@ body.v2.ui-on-foot #analog-run {
   --tint: rgba(40, 120, 50, 0.75);
   right: calc(132px + var(--safe-r)) !important;
   bottom: calc(26px + var(--safe-b)) !important;
+}
+
+body.v2 #analog-trick.ui-pad--free {
+  right: calc(142px + var(--safe-r)) !important;
+  bottom: calc(214px + var(--safe-b)) !important;
 }
 
 body.v2.ui-in-car :is(#analog-wheelie, #analog-trick) {

@@ -238,6 +238,92 @@ button:focus-visible {
   color: #d8dbe0;
 }
 
+/* The police chase seen from above (as soon as the siren is heard). */
+#police-map {
+  position: fixed;
+  left: calc(16px + env(safe-area-inset-left));
+  top: calc(84px + env(safe-area-inset-top));
+  z-index: 25;
+  width: 52px;
+  pointer-events: none;
+  text-align: center;
+  font-family: 'Russo One', sans-serif;
+  opacity: 0.88;
+}
+
+#police-map[hidden] {
+  display: none;
+}
+
+.police-map__road {
+  position: relative;
+  height: 104px;
+  overflow: hidden;
+  background: linear-gradient(90deg, #2a2d33 0 12%, #3b3f47 12% 88%, #2a2d33 88%);
+  border: 1px solid rgba(255, 255, 255, 0.35);
+  border-radius: 8px;
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.45);
+}
+
+.police-map__lane {
+  position: absolute;
+  left: 50%;
+  top: 0;
+  bottom: 0;
+  width: 2px;
+  margin-left: -1px;
+  background: repeating-linear-gradient(180deg, rgba(255, 255, 255, 0.55) 0 8px, transparent 8px 16px);
+  animation: police-map-road 0.5s linear infinite;
+}
+
+@keyframes police-map-road {
+  to { background-position: 0 16px; }
+}
+
+.police-map__bike,
+.police-map__car {
+  position: absolute;
+  transform: translate(-50%, -50%);
+  border-radius: 3px;
+}
+
+.police-map__bike {
+  top: 16%;
+  width: 7px;
+  height: 13px;
+  background: #f6c416;
+  box-shadow: 0 0 6px rgba(246, 196, 22, 0.9);
+}
+
+.police-map__car {
+  width: 11px;
+  height: 17px;
+  background: linear-gradient(180deg, #f2f2f0 0 30%, #1a2b6b 30% 70%, #f2f2f0 70%);
+  animation: police-map-lights 0.5s steps(2) infinite;
+  transition: top 0.2s linear;
+}
+
+.police-map__car.is-near {
+  box-shadow: 0 0 10px #ff3d3d;
+}
+
+#police-map.is-hidden-car .police-map__car {
+  opacity: 0.35;
+}
+
+@keyframes police-map-lights {
+  0% { box-shadow: 0 -3px 6px #2f6bff; }
+  100% { box-shadow: 0 -3px 6px #ff3d3d; }
+}
+
+.police-map__gap {
+  display: block;
+  margin-top: 3px;
+  font-size: 11px;
+  color: #fff;
+  text-shadow: 0 1px 3px rgba(0, 0, 0, 0.9);
+}
+
 /* Settings: a slider row (custom controls). */
 .setting-range {
   display: flex;
