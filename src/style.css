@@ -238,6 +238,216 @@ button:focus-visible {
   color: #d8dbe0;
 }
 
+/* Settings: a slider row (custom controls). */
+.setting-range {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  width: 100%;
+  margin: 4px 0 8px;
+  font-size: 14px;
+  color: #d8dbe0;
+}
+
+.setting-range[hidden] {
+  display: none;
+}
+
+.setting-range input {
+  width: 100%;
+  accent-color: #f6c416;
+}
+
+/* Arrows (new version): two pads instead of the stick. */
+body.v2 .ui-pad--arrow {
+  display: none !important;
+}
+
+body.v2.controls-arrows .ui-pad--arrow {
+  display: block !important;
+  bottom: calc(40px + var(--safe-b, 0px)) !important;
+  width: 78px;
+  height: 78px;
+}
+
+body.v2.controls-arrows #pad-left {
+  left: calc(22px + var(--safe-l, 0px)) !important;
+}
+
+body.v2.controls-arrows #pad-right {
+  left: calc(112px + var(--safe-l, 0px)) !important;
+}
+
+body.v2.controls-arrows .ui-pad--arrow .ui-icon {
+  width: 40px;
+  height: 40px;
+  margin-top: 19px;
+}
+
+body.v2.controls-arrows #analog-stick-container {
+  display: none !important;
+}
+
+/* The automatic rear brake took over: the brake pad blinks once. */
+#analog-brake.is-auto,
+#btn-down.is-auto {
+  animation: auto-brake-blink 0.7s ease-out;
+}
+
+@keyframes auto-brake-blink {
+  0%, 60% { box-shadow: 0 0 0 4px #ff3d3d, 0 0 34px #ff3d3d; filter: brightness(1.8); }
+  30%, 100% { filter: none; }
+}
+
+/* Editing the custom pads. */
+#pad-editor {
+  position: fixed;
+  inset: 0;
+  z-index: 15;
+  background: rgba(8, 9, 12, 0.55);
+  pointer-events: none;
+}
+
+.pad-editor__bar {
+  position: absolute;
+  top: calc(10px + env(safe-area-inset-top));
+  left: 50%;
+  transform: translateX(-50%);
+  width: min(92vw, 420px);
+  padding: 12px 14px;
+  box-sizing: border-box;
+  color: #f2f2f0;
+  font-family: system-ui, -apple-system, 'Segoe UI', Roboto, sans-serif;
+  text-align: center;
+  background: #121318;
+  border: 1px solid rgba(246, 196, 22, 0.6);
+  border-radius: 12px;
+  pointer-events: auto;
+  z-index: 40;
+}
+
+.pad-editor__title {
+  margin: 0 0 4px !important;
+  font-family: 'Russo One', sans-serif;
+  font-size: 15px !important;
+  color: #f6c416;
+}
+
+.pad-editor__hint {
+  margin: 0 0 8px !important;
+  font-size: 12px !important;
+  color: #c9cdd3;
+}
+
+.pad-editor__size {
+  display: grid;
+  grid-template-columns: auto 1fr auto;
+  align-items: center;
+  gap: 8px;
+  font-size: 13px;
+}
+
+.pad-editor__size input {
+  width: 100%;
+  accent-color: #f6c416;
+}
+
+.pad-editor__actions {
+  display: flex;
+  gap: 8px;
+  margin-top: 10px;
+}
+
+.pad-editor__actions button {
+  flex: 1;
+  min-height: 40px;
+  font-family: 'Russo One', sans-serif;
+  font-size: 13px;
+  color: #f2f2f0;
+  background: #262830;
+  border: 1px solid rgba(255, 255, 255, 0.16);
+  border-radius: 8px;
+  box-shadow: none;
+  margin: 0;
+  padding: 8px;
+}
+
+.pad-editor__actions .pad-editor__done {
+  color: #111;
+  background: #f6c416;
+  border-color: #f6c416;
+}
+
+body.pad-editing #mobile-controls,
+body.pad-editing #analog-controls {
+  z-index: 20;
+}
+
+body.pad-editing .ui-pad,
+body.pad-editing #analog-stick-container {
+  outline: 2px dashed rgba(246, 196, 22, 0.55);
+  outline-offset: 4px;
+  cursor: grab;
+}
+
+body.pad-editing .is-picked {
+  outline: 3px solid #f6c416 !important;
+}
+
+/* "Mes stats" */
+.account-stats-btn {
+  margin: 4px 0 14px !important;
+  color: #f6c416 !important;
+  border-color: rgba(246, 196, 22, 0.45) !important;
+}
+
+.account-stats-btn[hidden] {
+  display: none !important;
+}
+
+.stats-group {
+  margin: 0 0 14px;
+}
+
+.stats-group h3 {
+  margin: 0 0 6px !important;
+  font-family: 'Russo One', sans-serif;
+  font-size: 12px !important;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  color: #f6c416;
+}
+
+.stats-group dl {
+  display: grid;
+  grid-template-columns: 1fr auto;
+  gap: 5px 14px;
+  margin: 0;
+  padding: 10px 12px;
+  background: #1a1c22;
+  border-radius: 8px;
+}
+
+.stats-group dt {
+  font-size: 14px;
+  color: #c9cdd3;
+}
+
+.stats-group dd {
+  margin: 0;
+  font-family: 'Russo One', sans-serif;
+  font-size: 14px;
+  text-align: right;
+  color: #fff;
+  font-variant-numeric: tabular-nums;
+}
+
+.stats-note {
+  margin: 0 0 12px !important;
+  font-size: 12px !important;
+  color: #9aa0a8;
+}
+
 .account-text--muted {
   color: #9aa0a8;
 }

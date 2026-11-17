@@ -10,10 +10,12 @@ import { createPlayerVoice } from './src/player-voice.js';
 import { renderTrophyRoom } from './src/trophy-room.js';
 import { HumanCheckRequired, forgetPass, runHumanCheck, storedPass } from './src/human-check.js';
 import { POSES, buyPose, choosePose, chosenPose, ownedPoses } from './src/v2/poses.js';
-import { DRIFT_POINTS, rewards } from './src/unlocks.js';
+import { DRIFT_POINTS, GLIDER_POINTS, TRICKS_CODE_POINTS, rewards } from './src/unlocks.js';
 import { createAccount, deviceToken } from './src/account.js';
 import { createSecretBird } from './src/secret-bird.js';
 import { SHIELD, createShields } from './src/shield.js';
+import { bestStat, bumpStat, renderStats } from './src/stats.js';
+import { applyPadLayout, openPadEditor } from './src/pad-layout.js';
 import { createSpeedLines } from './src/v2/speedlines.js';
 import riderVoices from './src/rider-voices.json';
 
@@ -136,15 +138,36 @@ const POLICE = {
 // (or key) is full throttle, the stick half at most; only full throttle
 // tips the bike over up there. The tail drags (drag off the speed each
 // frame it scrapes) and holds longer; the bike shakes before it lets go.
-// Sent with the run (server: RULES); games loaded before play rules 1 or 2.
-const RULES = 3;
-// The stick's throttle, of the gas button's.
-const STICK_THROTTLE = 0.5;
+// Rules 4 and 5 (2026-11-18), one per control type, sent with the run
+// (server: RULES):
+// - 4, the default controls (the stick): the bavette as it first was, the
+//   players preferred it (the wheelie button holds the tail, letting go
+//   saves it and pays every time; the throttle does nothing up there);
+// - 5, arrows and custom controls: rules 3 above (the gas button tips the
+//   bike over, the tail drags and holds longer, the points recharge).
+// Both: tricks on the ground pay with the speed, and a brake frame without
+// throttle carries its strength in the throttle byte (the automatic rear
+// brake below).
+const RULESETS = {
+    4: { tipFull: false, firm: false, recharge: false, noSecond: false, longest: 45, shake: 20 },
+    5: { tipFull: true, firm: true, recharge: true, noSecond: true, longest: 110, shake: 45 }
+};
+const rulesFor = () => (GAME_SETTINGS.controlMode === 'arrows' || GAME_SETTINGS.customControls ? 5 : 4);
+const ruleset = () => RULESETS[state.rules] || RULESETS[4];
+// Automatic rear brake (option, up to 50 km/h by default): a wheelie about
+// to go over, or a bavette about to let go, is brought back down: throttle
+// off and a touch of rear brake (strength `byte` / 255 on the speed, all of
+// it on the wheelie). Recorded like any input; the server sees it (an icon
+// by the score). At walking pace the rider hops off beside the bike, holds
+// it, jogs it back up to `hopKmh` and hops back on (`hopFrames`).
+// (Throttles given as recorded bytes: the server reads the byte.)
+const AUTO_BRAKE = { byte: 51, limitKmh: 50, hopKmh: 10, hopFrames: 100, push: 89 / 255, lookAhead: 70 };
+// Arrows: the wheelie button alone gives a short burst of throttle to lift
+// the front (stops once it is up).
+const WHEELIE_ASSIST = { burst: 179 / 255, burstFrames: 45, upAngle: 0.9 };
 const BAVETTE = {
-    gentleAv: 0.02, fatalAv: 0.12, maxFrames: 110, minFrames: 4, releaseAv: -0.012,
+    gentleAv: 0.02, fatalAv: 0.12, maxFrames: 45, minFrames: 4, releaseAv: -0.012,
     drag: 0.0015,
-    // The bike shakes for the last frames of the hold (seen only).
-    shakeFrames: 45,
     rearmAngle: 1.2, rechargeFrames: 300,
     // Points for each bavette saved (let go before it goes over), on top of
     // the wheelie's: 5 up to 50 km/h, rising to 30 at 150 km/h, whole points.
@@ -158,12 +181,33 @@ const PLATE = { wearFrames: 120, bonus: 20, unlockPoints: 4000 };
 // the takeoff speed. Judged on the bike's whole angle at touchdown.
 const FLIP_MANUAL = { brake: 0.6, good: [-0.45, 1.1], bad: [-0.8, 1.6] };
 
-function bavetteFrames(angularVelocity, kmh) {
+function bavetteFrames(angularVelocity, kmh, longest = BAVETTE.maxFrames) {
     if (angularVelocity >= BAVETTE.fatalAv) return 0;
     const softness = 1.0 - Math.max(0.0, angularVelocity - BAVETTE.gentleAv) / (BAVETTE.fatalAv - BAVETTE.gentleAv);
     const speedFactor = Math.max(0.5, Math.min(1.0, 1.25 - kmh / 200));
-    const frames = Math.floor(BAVETTE.maxFrames * softness * speedFactor);
+    const frames = Math.floor(longest * softness * speedFactor);
     return frames >= BAVETTE.minFrames ? frames : 0;
+}
+
+function wheelieLiftAt(kmh, angle) {
+    let lift = kmh > 110 ? CONFIG.wheelieLiftFast : kmh > 0 ? CONFIG.wheelieLift : CONFIG.wheelieLift * 0.5;
+    if (angle > CONFIG.balancePoint - CONFIG.sweetSpotWidth && angle < CONFIG.balancePoint + CONFIG.sweetSpotWidth) lift *= 0.5;
+    return lift;
+}
+
+// Whether the wheelie, kept as it is now and braked from frame `brakeFrom`
+// on, would still go over the top with nothing to hold it (no bavette).
+function wheelieWouldFall(angle, av, kmh, lifting, brakeFrom, armed) {
+    const rules = ruleset();
+    for (let i = 0; i < AUTO_BRAKE.lookAhead; i++) {
+        let lift = lifting && i < brakeFrom ? wheelieLiftAt(kmh, angle) : 0;
+        if (i >= brakeFrom) lift -= CONFIG.wheelieLift * 2;
+        av = (av + lift - CONFIG.gravity) * 0.98;
+        angle += av;
+        if (angle > CONFIG.maxAngle) return (rules.noSecond && !armed) || bavetteFrames(av, kmh, rules.longest) === 0;
+        if (av <= 0 && i >= brakeFrom) return false;
+    }
+    return false;
 }
 
 function bavetteBonus(kmh) {
@@ -230,7 +274,17 @@ const RAMP = { width: 4.4, length: 5.5 };
 // ahead on it, about 2 s away: no more than ~5 s there without one.
 const EDGE = { zone: 7.2, kerb: 9.3, share: 0.12, after: 150, leadSeconds: 2.2, minLead: 90, maxLead: 255 };
 const edgeBox = new THREE.Box3();
-const TRICK_TYPES = ['superman', 'nohander', 'cancan'];
+// Stunts (src/v2/rider.js TRICKS): one at random each time, never the same
+// twice running. In the air, the freestyle ones too; held through a jump
+// (a backflip above all) they follow one another.
+const GROUND_TRICKS = ['superman', 'nohander', 'cancan', 'heelclicker', 'nacnac', 'seatstand', 'surf'];
+const AIR_TRICKS = [...GROUND_TRICKS, 'handstand', 'nothing', 'lazyboy', 'seatgrab'];
+// Frames each one is shown in a combo (shorter in a backflip).
+const TRICK_COMBO = { frames: 44, flipFrames: 36 };
+function pickTrick(air, last) {
+    const list = (air ? AIR_TRICKS : GROUND_TRICKS).filter((type) => type !== last);
+    return list[Math.floor(Math.random() * list.length)];
+}
 const daytimeSky = new THREE.Color(0x87CEEB);
 const nighttimeSky = new THREE.Color(0x0a0a2e);
 const skyColor = new THREE.Color();
@@ -270,7 +324,7 @@ let state = {
     // Simulation frame of the run (the server counts the same frames).
     frame: 0,
     jump: { airborne: false, y: 0, vy: 0, trickFrames: 0, lastLanding: -1e9, pending: false, visualY: 0, flipActive: false, flipAngle: 0, flipRate: 0, flipKmh: 0 },
-    trick: { active: false, type: 'superman', was: false, spin: 0 },
+    trick: { active: false, type: 'superman', was: false, spin: 0, since: 0 },
     ramps: [],
     rampFreeZones: [],
     gantries: [],
@@ -320,6 +374,14 @@ let state = {
 const scene = new THREE.Scene();
 // Shields (src/shield.js), built with the first one.
 let shields = null;
+// "Mes stats" (src/stats.js): the run going on (its time is counted once,
+// when it ends or is left) and its top speed.
+const runStats = { counted: true, top: 0 };
+function countRunTime() {
+    if (runStats.counted) return;
+    runStats.counted = true;
+    bumpStat(GAME_SETTINGS.gameMode === 'free' ? 'freeSeconds' : 'seconds', Math.round(state.gameTime));
+}
 scene.background = new THREE.Color(0x87CEEB);
 
 const camera = new THREE.PerspectiveCamera(60, window.innerWidth / window.innerHeight, 0.1, 1000);
@@ -969,6 +1031,19 @@ function dropChunk(chunk) {
     else disposeObjectTree(chunk);
 }
 
+// Room between obstacles (2026-11-18, to be judged by the players): never
+// two one right after the other, and the gap grows with the speed, for the
+// time to see the next one and move (at 150 km/h about 90 m, 25 at 40).
+const OBSTACLE_GAP = { minUnits: 24, seconds: 0.55, depth: 3 };
+function obstacleRoomAt(z) {
+    const gap = Math.max(OBSTACLE_GAP.minUnits, state.speed * 60 * OBSTACLE_GAP.seconds) + OBSTACLE_GAP.depth;
+    return !state.obstacles.some((obs) => {
+        if (!obs.active) return false;
+        const away = z < obs.box.min.z ? obs.box.min.z - z : z > obs.box.max.z ? z - obs.box.max.z : 0;
+        return away < gap;
+    });
+}
+
 // side: -1 / 1 puts it against that kerb; otherwise now and then anyway.
 function spawnObstacle(zPos, side = 0) {
     const type = Math.random();
@@ -1128,10 +1203,7 @@ function init() {
         highScoreEl.innerText = `MEILLEUR: ${state.highScore}`;
         highScoreEl.style.display = 'block';
     }
-    GAME_SETTINGS.controlMode = 'analog';
-    document.querySelectorAll('.setting-btn').forEach(b => b.classList.remove('active'));
-    const analogBtn = document.getElementById('control-analog');
-    if (analogBtn) analogBtn.classList.add('active');
+    setControls(readSetting('wheelie_controls') || 'analog', { save: false });
     setVoiceEnabled(GAME_SETTINGS.voiceEnabled);
     setSfxEnabled(GAME_SETTINGS.sfxEnabled);
     updateLanguageButtons();
@@ -1391,10 +1463,29 @@ function bikeTremble() {
     let shake = 0;
     if (state.badLanding > 0) shake += Math.min(1, state.badLanding / 2.5) * 0.05;
     const left = state.bavette.left;
-    if (left > 0 && left <= BAVETTE.shakeFrames) shake += 0.015 + (1 - left / BAVETTE.shakeFrames) * 0.07;
+    const shakeFrames = ruleset().shake;
+    if (left > 0 && left <= shakeFrames) shake += 0.015 + (1 - left / shakeFrames) * 0.07;
     if (!shake) return 0;
     const t = state.gameTime;
     return (Math.sin(t * 47) + Math.sin(t * 31 + 1.3) * 0.6) * shake;
+}
+
+// The automatic rear brake took over: the brake pad blinks once (and the
+// first time in a run, a word on what happened).
+function autoBrakeShown() {
+    for (const id of ['analog-brake', 'btn-down']) {
+        const pad = document.getElementById(id);
+        if (!pad) continue;
+        pad.classList.remove('is-auto');
+        void pad.offsetWidth;
+        pad.classList.add('is-auto');
+        setTimeout(() => pad.classList.remove('is-auto'), 700);
+    }
+    audio.play('brake', { volume: 0.35, rate: 1.1 });
+    if (!state.assist.told) {
+        state.assist.told = true;
+        toast('FREIN AUTO', 'Frein arrière : la roue redescend (option dans Paramètres)', { discreet: true, float: true });
+    }
 }
 
 function groundTrickRate(kmh) {
@@ -1442,6 +1533,10 @@ function visualSnapshot() {
         footSpeed: free && v2 ? v2.roam.footSpeed : 0,
         wobble: free ? 0 : bikeTremble(),
         blink: false,
+        // Off beside the bike at walking pace (the automatic brake).
+        hop: !free && state.assist?.hop ? { t: (state.frame - state.assist.hop.start) / 60, side: state.assist.hop.side } : null,
+        // Pulling the bike up (the "animation wheeling" option).
+        liftEffort: !free && !!state.assist?.effort,
         carModel: free && v2 ? v2.roam.carModel : null,
         reversing: free && v2 ? v2.roam.reversing : false,
         airborne: !free && state.jump.airborne,
@@ -1510,6 +1605,11 @@ function resetGame() {
     if (v2) v2.skidmarks.clear();
     secretCode.step = 0;
     state.bavette = { left: 0, total: 0, armed: true, savedAt: -1e9 };
+    // The control type's rules, for the whole run.
+    state.rules = rulesFor();
+    // The assists: the arrows' wheelie burst, the automatic rear brake (and
+    // its hop off at walking pace), whether it helped this run.
+    state.assist = { burst: 0, braking: false, hop: null, used: false, told: false, effort: false };
     state.shield = { count: 0, nextAt: 0, graceUntil: -1, told: false };
     showShields();
     // The plate rides only on the V2 bike, once unlocked and switched on.
@@ -1671,6 +1771,9 @@ async function startGame() {
         setRankingStatus('');
         completedRankedRun = null;
         state.isPlaying = true;
+        runStats.counted = false;
+        runStats.top = 0;
+        bumpStat(GAME_SETTINGS.gameMode === 'free' ? 'freeSessions' : 'runs');
         state.speed = CONFIG.minSpeed;
         audio.startRun();
         audio.play('rev_blip', { volume: 0.4 });
@@ -1804,6 +1907,7 @@ function standRiderUp() {
 function quitToMenu() {
     // Left on purpose: not a run cut short.
     clearLiveRun();
+    countRunTime();
     state.shield.count = 0;
     showShields();
     state.userPaused = false;
@@ -2029,6 +2133,7 @@ function showShields() {
 
 function takeShield(pickup) {
     shields.take(pickup);
+    bumpStat('shields');
     state.shield.count = Math.min(SHIELD.max, state.shield.count + 1);
     showShields();
     audio.play('multiplier_up', { volume: 0.6 });
@@ -2043,6 +2148,7 @@ function takeShield(pickup) {
 function breakShield() {
     const shield = state.shield;
     shield.count -= 1;
+    bumpStat('shieldSaves');
     shield.graceUntil = state.frame + SHIELD.grace;
     shield.nextAt = Math.max(shield.nextAt, state.frame + SHIELD.afterBreakFrames);
     if (shields) shields.burst(shield.count);
@@ -2175,8 +2281,19 @@ function updateRamps() {
 function setTrick(active) {
     const trick = state.trick;
     if (active && !trick.active) {
-        trick.type = TRICK_TYPES[(TRICK_TYPES.indexOf(trick.type) + 1) % TRICK_TYPES.length];
+        trick.type = pickTrick(state.jump.airborne, trick.type);
+        trick.since = state.frame;
+        bumpStat('tricks');
         audio.play('whoosh', { volume: 0.4, rate: 1.2 });
+    } else if (active && state.jump.airborne) {
+        // Held through a jump: one stunt after the other (a freestyle combo).
+        const every = state.jump.flipActive ? TRICK_COMBO.flipFrames : TRICK_COMBO.frames;
+        if (state.frame - trick.since >= every) {
+            trick.type = pickTrick(true, trick.type);
+            trick.since = state.frame;
+            bumpStat('tricks');
+            audio.play('whoosh', { volume: 0.3, rate: 1.35 });
+        }
     }
     trick.active = active;
 }
@@ -2196,6 +2313,7 @@ function landFlip(frame) {
     if (outcome === 'clean') {
         const bonus = (jump.trickFrames > 0 ? FLIP.trickBonus : FLIP.bonus)[turns];
         state.score += bonus;
+        bumpStat(turns >= 2 ? 'doubleFlips' : 'flips');
         const flip = forwards ? 'FRONTFLIP' : 'BACKFLIP';
         const name = turns >= 2 ? `DOUBLE ${flip}` : flip;
         toast(`+${bonus}`, jump.trickFrames > 0 ? `${name} + FIGURE !` : `${name} !`, { float: true });
@@ -2220,12 +2338,13 @@ function startBavette() {
     // The tip once a run; after that the sparks and the grinding say it.
     if (state.bavette.tipped) return;
     state.bavette.tipped = true;
-    toast('BAVETTE !', `Lâche ${isMobile() ? 'WHEELIE' : 'le wheeling'} avant qu’elle lâche · pas de GAZ à fond`, { discreet: true, float: true });
+    toast('BAVETTE !', `Lâche ${isMobile() ? 'WHEELIE' : 'le wheeling'} avant qu’elle lâche${ruleset().tipFull ? ' · pas de GAZ à fond' : ''}`, { discreet: true, float: true });
 }
 
 // Saved: its points (5 to 30 with the speed, less right after another one)
 // beside the score.
 function endBavette(saved, bonus = 0) {
+    if (saved) bumpStat('bavettes');
     if (!saved || !bonus) return;
     const held = state.frame - (state.bavette.started ?? state.frame);
     scoreBonus(bonus, held >= 20 ? 'BELLE BAVETTE' : 'BAVETTE');
@@ -2252,6 +2371,7 @@ function scoreBonus(points, label) {
 }
 
 function plateTornOff() {
+    bumpStat('plates');
     toast(`+${PLATE.bonus}`, 'PLAQUE ARRACHÉE !', { float: true });
     audio.play('plate_snap', { volume: 0.7 });
     if (v2) {
@@ -2544,7 +2664,7 @@ function guardEdges() {
     if (pending && pending.active && pending.mesh.position.z < bikeGroup.position.z) return;
     const lead = Math.max(EDGE.minLead, Math.min(EDGE.maxLead, state.speed * 60 * EDGE.leadSeconds));
     const z = bikeGroup.position.z - lead;
-    if (inQuietZone(z) || state.rampFreeZones.some((zone) => z <= zone.from && z >= zone.to)) return;
+    if (inQuietZone(z) || state.rampFreeZones.some((zone) => z <= zone.from && z >= zone.to) || !obstacleRoomAt(z)) return;
     // Not while the obstacles are only just coming back (phase 3).
     if (obstacleDensity(z) < 0.6) return;
     edge.pending = spawnObstacle(z, Math.sign(x));
@@ -2576,7 +2696,10 @@ function secretInput(kind) {
     if (secretCode.step < SECRET_SEQUENCE.length) return;
     secretCode.step = 0;
     if (competitive) startTricksOnly();
-    else v2.roam.startGlide(bikeGroup);
+    else {
+        v2.roam.startGlide(bikeGroup);
+        bumpStat('gliders');
+    }
 }
 
 // Presses of gas, brake and wheelie (keyboard, pads, or the joystick pushed
@@ -2593,6 +2716,7 @@ function watchSecretKeys() {
 
 function startTricksOnly() {
     state.tricksOnly = true;
+    bumpStat('codeTricks');
     state.police.phase = 'idle';
     hidePoliceWarning();
     state.obstacles.forEach((obs) => {
@@ -2629,6 +2753,7 @@ function recordRankedInput(flags, accelerationScale = 1) {
 
 function startSkid() {
     state.skidding = true;
+    bumpStat('skids');
     state.skidTimer = 1.5;
     audio.play('skid', { volume: 0.6 });
     speak('skid');
@@ -2753,6 +2878,7 @@ const DEFEAT_REASONS = {
 function showDefeatReason(reason) {
     const element = document.getElementById('gameover-reason');
     let [label, detail] = DEFEAT_REASONS[reason] || [];
+    if (reason === 'bavette' && !ruleset().tipFull) detail = 'Resté appuyé trop longtemps sur la bavette : la moto est passée par-dessus.';
     if (reason === 'flip' && state.flipMode === 'manual') {
         detail = 'Posé trop penché : pose-toi à plat (wheeling = en arrière, frein = en avant).';
     }
@@ -2886,6 +3012,15 @@ async function gameOver(reason = 'crash') {
     clearLiveRun();
     speedLines?.hide();
     hidePoliceWarning();
+    if (!runStats.counted) {
+        bumpStat(reason === 'slow' ? 'arrests' : 'falls');
+        if (GAME_SETTINGS.gameMode === 'linear') {
+            bumpStat('score', Math.floor(state.score));
+            bestStat('bestScore', Math.floor(state.score));
+            bestStat('topKmh', Math.round(runStats.top));
+        }
+        countRunTime();
+    }
     state.shield.count = 0;
     showShields();
     showDefeatReason(reason);
@@ -2899,7 +3034,8 @@ async function gameOver(reason = 'crash') {
             runToken: state.runToken,
             inputLog: Uint8Array.from(state.inputLog),
             flipMode: state.flipMode,
-            plate: state.plate.on || state.plate.off
+            plate: state.plate.on || state.plate.off,
+            rules: state.rules
         };
     } else {
         completedRankedRun = null;
@@ -3330,15 +3466,20 @@ function animate(timestamp = performance.now()) {
             // keep the speed up without tipping the bike over on a bavette.
             // Driven with the exact value that is recorded (one byte), so the
             // server replay sees the same throttle as the game.
+            // The stick: full throttle on the default controls, part of it
+            // on custom controls (their setting).
+            const rules = ruleset();
             let accelerationScale = 1;
             if (!state.keys.up && GAME_SETTINGS.controlMode === 'analog' && analogData.active) {
-                if (GAME_SETTINGS.autoRace) accelerationScale = 254 / 255;
-                else if (analogData.y < -0.1) accelerationScale = Math.round(Math.min(1, Math.abs(analogData.y) * 1.5) * STICK_THROTTLE * 255) / 255;
+                const stickShare = GAME_SETTINGS.customControls ? GAME_SETTINGS.stickThrottle : 1;
+                if (GAME_SETTINGS.autoRace) accelerationScale = rules.tipFull ? 254 / 255 : 1;
+                else if (analogData.y < -0.1) accelerationScale = Math.round(Math.min(1, Math.abs(analogData.y) * 1.5) * stickShare * 255) / 255;
             }
             // Ramp takeoff and tricks, decided on the speed at the start of
             // the frame exactly as the server does.
             const frame = state.frame;
             const startKmh = state.speed * 50;
+            if (startKmh > runStats.top) runStats.top = startKmh;
             const jump = state.jump;
             const offTheLip = jump.pending && !jump.airborne;
             const takeoff = offTheLip && startKmh > JUMP.minKmh &&
@@ -3350,6 +3491,7 @@ function animate(timestamp = performance.now()) {
                 jump.vy = (10 + startKmh * 0.08) / 60;
                 jump.trickFrames = 0;
                 jump.hop = null;
+                bumpStat('jumps');
                 audio.play('rev_blip', { volume: 0.45, rate: 1.15 });
             } else if (offTheLip) {
                 // Too slow (or too soon) for a real jump: a little hop off
@@ -3370,6 +3512,7 @@ function animate(timestamp = performance.now()) {
             if (boostStart) {
                 boost.charges -= 1;
                 boost.frames = BOOST.frames;
+                bumpStat('boosts');
                 fireBoostEffects();
             }
             // No traction in the air; no throttle or wheelie during a stunt.
@@ -3381,7 +3524,78 @@ function animate(timestamp = performance.now()) {
             // (recorded; it does nothing else there, as on the server).
             const airBrake = manualFlips && !grounded && isBraking;
             isBraking = isBraking && grounded;
-            const wheelieInput = state.keys.space && !trickGround;
+            let wheelieInput = state.keys.space && !trickGround;
+            const assist = state.assist;
+            const startAngle = state.bike.angle;
+            // Arrows: the wheelie button alone lifts the front with a short
+            // burst of throttle, which stops once it is up.
+            if (GAME_SETTINGS.controlMode === 'arrows' && wheelieInput && !isAccelerating && !isBraking && grounded &&
+                state.bavette.left === 0 && !assist.hop) {
+                if (assist.burst < WHEELIE_ASSIST.burstFrames && startAngle < WHEELIE_ASSIST.upAngle) {
+                    assist.burst += 1;
+                    isAccelerating = true;
+                    accelerationScale = WHEELIE_ASSIST.burst;
+                }
+            } else if (!wheelieInput) {
+                assist.burst = 0;
+            }
+            // Hopped off at walking pace (the automatic brake): the rider
+            // holds the bike beside him, its front comes down, he jogs it
+            // back up to speed, then hops back on. The player's throttle and
+            // wheelie wait meanwhile.
+            let autoBrake = false;
+            if (assist.hop && grounded) {
+                if (frame - assist.hop.start >= AUTO_BRAKE.hopFrames) {
+                    assist.hop = null;
+                } else {
+                    wheelieInput = false;
+                    isAccelerating = false;
+                    if (startAngle > 0.02) {
+                        isBraking = true;
+                        autoBrake = true;
+                    } else if (startKmh < AUTO_BRAKE.hopKmh) {
+                        isAccelerating = true;
+                        accelerationScale = AUTO_BRAKE.push;
+                    }
+                }
+            }
+            // The automatic rear brake: only when it is needed now to keep the
+            // wheelie from going over (or on the last frame of a bavette).
+            const brakeLimit = GAME_SETTINGS.autoBrake === 'off' ? -1 : GAME_SETTINGS.autoBrake === 'always' ? Infinity : AUTO_BRAKE.limitKmh;
+            if (!autoBrake && !isBraking && grounded && startKmh <= brakeLimit && !assist.hop) {
+                const bav = state.bavette;
+                const holding = wheelieInput || (rules.tipFull && isAccelerating && accelerationScale === 1);
+                if (bav.left > 0) {
+                    autoBrake = bav.left === 1 && holding;
+                } else if (state.bike.angularVelocity > 0 && startAngle > 0.4) {
+                    const lifting = wheelieInput && isAccelerating;
+                    autoBrake = wheelieWouldFall(startAngle, state.bike.angularVelocity, startKmh, lifting, 1, bav.armed);
+                }
+                if (autoBrake) {
+                    isAccelerating = false;
+                    isBraking = true;
+                    if (!assist.braking) {
+                        assist.used = true;
+                        bumpStat('autoBrakes');
+                        // At walking pace: off beside the bike (the side the
+                        // stick or arrow points to, else up on the pegs).
+                        if (startKmh <= AUTO_BRAKE.hopKmh && v2) {
+                            const x = GAME_SETTINGS.controlMode === 'analog' && analogData.active ? analogData.x
+                                : (state.keys.right ? 1 : 0) - (state.keys.left ? 1 : 0);
+                            assist.hop = { start: frame, side: x > 0.3 ? -1 : x < -0.3 ? 1 : 0 };
+                            wheelieInput = false;
+                        }
+                        autoBrakeShown();
+                    }
+                }
+            }
+            assist.braking = autoBrake;
+            // Rules 4 and 5: without throttle, the byte is the brake's strength
+            // (full, but for the automatic rear brake).
+            if (autoBrake) accelerationScale = AUTO_BRAKE.byte / 255;
+            else if (!isAccelerating) accelerationScale = 1;
+            // The lift effort (an option: the rider pulls the bike up).
+            assist.effort = GAME_SETTINGS.liftAnimation && wheelieInput && isAccelerating && startAngle < 0.7;
             if (takeoff && manualFlips) {
                 jump.flipActive = true;
                 jump.flipKmh = startKmh;
@@ -3441,8 +3655,9 @@ function animate(timestamp = performance.now()) {
 
             let lift = 0;
             const bavette = state.bavette;
-            // Full throttle (the gas button) tips the bike over up there.
-            const fullThrottle = isAccelerating && accelerationScale === 1;
+            // Full throttle (the gas button) tips the bike over up there
+            // (rules 5).
+            const fullThrottle = rules.tipFull && isAccelerating && accelerationScale === 1;
             // Just out of a bavette (not back down yet), full throttle alone
             // lifts the bike.
             if ((wheelieInput || (!bavette.armed && fullThrottle)) && isAccelerating) {
@@ -3467,7 +3682,9 @@ function animate(timestamp = performance.now()) {
                     brakeEfficiency = Math.max(0.3, 1.0 - ((kmh - 100) / 200));
                 }
 
-                const brakePower = CONFIG.brakeForce * brakeEfficiency;
+                // Its strength (the throttle byte, without throttle).
+                const brakeStrength = isAccelerating ? 1 : Math.round(accelerationScale * 255) / 255;
+                const brakePower = CONFIG.brakeForce * brakeEfficiency * brakeStrength;
                 state.speed = Math.max(0, state.speed - brakePower);
             }
             const scraping = grounded && bavette.left > 0;
@@ -3475,7 +3692,7 @@ function animate(timestamp = performance.now()) {
                 // Bavette: the tail on the road, held at the top by the
                 // wheelie button or full throttle. It drags.
                 bavette.total += 1;
-                state.speed = Math.max(0, state.speed - BAVETTE.drag);
+                if (rules.firm) state.speed = Math.max(0, state.speed - BAVETTE.drag);
                 if ((wheelieInput || fullThrottle) && !isBraking) {
                     bavette.left -= 1;
                     if (bavette.left === 0) gameOver('bavette');
@@ -3486,7 +3703,7 @@ function animate(timestamp = performance.now()) {
                     state.bike.angle = CONFIG.maxAngle;
                     state.bike.angularVelocity = BAVETTE.releaseAv;
                     const recharged = Math.min(1.0, (frame - bavette.savedAt) / BAVETTE.rechargeFrames);
-                    const bonus = Math.floor(bavetteBonus(kmh) * recharged);
+                    const bonus = rules.recharge ? Math.floor(bavetteBonus(kmh) * recharged) : bavetteBonus(kmh);
                     bavette.savedAt = frame;
                     state.score += bonus;
                     endBavette(true, bonus);
@@ -3508,9 +3725,10 @@ function animate(timestamp = performance.now()) {
                 }
                 if (state.bike.angle > CONFIG.maxAngle) {
                     // Over again before coming back down: no second chance.
-                    bavette.left = bavette.armed ? bavetteFrames(state.bike.angularVelocity, kmh) : 0;
+                    const tooSoon = rules.noSecond && !bavette.armed;
+                    bavette.left = tooSoon ? 0 : bavetteFrames(state.bike.angularVelocity, kmh, rules.longest);
                     if (bavette.left === 0) {
-                        gameOver(bavette.armed ? 'loop' : 'earlyGas');
+                        gameOver(tooSoon ? 'earlyGas' : 'loop');
                     } else {
                         state.bike.angle = CONFIG.maxAngle;
                         state.bike.angularVelocity = 0;
@@ -3553,7 +3771,7 @@ function animate(timestamp = performance.now()) {
                 accel *= accelerationScale;
                 // While the tail scrapes, the stick's throttle does not push
                 // the bike (it only keeps it from coasting): it slows down.
-                if (state.speed < CONFIG.maxSpeed && !(scraping && !fullThrottle)) state.speed += accel;
+                if (state.speed < CONFIG.maxSpeed && !(rules.firm && scraping && !fullThrottle)) state.speed += accel;
             } else if (grounded && !isBraking) {
                 if (state.speed > CONFIG.minSpeed) state.speed -= CONFIG.deceleration;
             }
@@ -3783,7 +4001,8 @@ function animate(timestamp = performance.now()) {
                     const z = newZ + Math.random() * 100;
                     // Fewer while they come back (phase 3).
                     if (Math.random() < spawnChance * obstacleDensity(z)) {
-                        if (obstaclesAllowed() && !inQuietZone(z) && !state.rampFreeZones.some((zone) => z <= zone.from && z >= zone.to)) spawnObstacle(z);
+                        if (obstaclesAllowed() && !inQuietZone(z) && !state.rampFreeZones.some((zone) => z <= zone.from && z >= zone.to) &&
+                            obstacleRoomAt(z)) spawnObstacle(z);
                     }
                 }
             }
@@ -4203,7 +4422,16 @@ const GAME_SETTINGS = {
     // 'player': the voice talks to the player; 'self': the rider talks about himself.
     perspective: localStorage.getItem('wheelie_voice_perspective') === 'self' ? 'self' : 'player',
     // Backflips: 'auto' (hold through the jump) or 'manual' (turn it yourself).
-    flipMode: readSetting('wheelie_flip_mode') === 'manual' ? 'manual' : 'auto'
+    flipMode: readSetting('wheelie_flip_mode') === 'manual' ? 'manual' : 'auto',
+    // Custom controls: the stick (and the pads where the player put them)
+    // with the rules of the arrows; the stick gives this share of the throttle.
+    customControls: false,
+    stickThrottle: Math.max(0.3, Math.min(1, Number(readSetting('wheelie_stick_throttle')) || 0.5)),
+    // The rider pulls the bike up when the front lifts (seen only).
+    liftAnimation: readSetting('wheelie_lift_animation') !== 'off',
+    // Automatic rear brake on a wheelie about to go over: '50' (up to
+    // 50 km/h), 'always' or 'off'.
+    autoBrake: ['50', 'always', 'off'].includes(readSetting('wheelie_auto_brake')) ? readSetting('wheelie_auto_brake') : '50'
 };
 
 let audioManifestPromise;
@@ -4483,11 +4711,11 @@ function setupMobileControls() {
         gasEmoji.innerText = GAME_SETTINGS.gameMode === 'free' ? '⚡' : '💨';
     }
 
-    if (GAME_SETTINGS.controlMode === 'arrows') {
+    if (GAME_SETTINGS.controlMode === 'arrows' && !IS_V2) {
         mobileControls.style.display = 'block';
         arrowControls.style.display = 'block';
         analogControls.style.display = 'none';
-    } else if (GAME_SETTINGS.controlMode === 'analog') {
+    } else if (GAME_SETTINGS.controlMode === 'analog' || GAME_SETTINGS.controlMode === 'arrows') {
         mobileControls.style.display = 'block';
         arrowControls.style.display = 'none';
         analogControls.style.display = 'block';
@@ -4543,7 +4771,18 @@ function setupArrowControls() {
     });
 }
 
+// Arrows (new version): two pads where the stick is, the other pads as they are.
+const ARROW_ICON = (d) => `<svg class="ui-icon" viewBox="0 0 24 24" aria-hidden="true"><path d="${d}" fill="currentColor"/></svg>`;
+function ensureArrowPads() {
+    const analog = document.getElementById('analog-controls');
+    if (!analog || document.getElementById('pad-left')) return;
+    analog.insertAdjacentHTML('beforeend',
+        `<button class="action-btn ui-pad ui-pad--arrow" id="pad-left" type="button" aria-label="Gauche">${ARROW_ICON('M15.5 4 7.5 12l8 8 1.8-1.8L11.1 12l6.2-6.2z')}</button>` +
+        `<button class="action-btn ui-pad ui-pad--arrow" id="pad-right" type="button" aria-label="Droite">${ARROW_ICON('M8.5 4 6.7 5.8l6.2 6.2-6.2 6.2L8.5 20l8-8z')}</button>`);
+}
+
 function setupAnalogControls() {
+    ensureArrowPads();
     const analogBase = document.getElementById('analog-stick-base');
     const analogKnob = document.getElementById('analog-stick-knob');
     if (analogBase && analogKnob) {
@@ -4603,7 +4842,9 @@ function setupAnalogControls() {
         'analog-trick': 'trick',
         'analog-boost': 'boost',
         'analog-jump': 'space',
-        'analog-run': 'run'
+        'analog-run': 'run',
+        'pad-left': 'left',
+        'pad-right': 'right'
     };
     document.getElementById('analog-action')?.addEventListener('pointerdown', (event) => {
         event.preventDefault();
@@ -4889,17 +5130,111 @@ if (backBtn) {
     console.error('back-btn element not found!');
 }
 
-document.getElementById('control-arrows').addEventListener('click', () => {
-    GAME_SETTINGS.controlMode = 'arrows';
-    document.getElementById('control-arrows').classList.add('active');
-    document.getElementById('control-analog').classList.remove('active');
+// Control types: 'analog' (the default: the stick, the bavette as it first
+// was), 'arrows' (left / right, the gas button), 'custom' (the stick at the
+// share of throttle chosen, the pads where the player put them). Arrows and
+// custom play the firmer bavette (rules 5).
+const CONTROL_TEXT = {
+    analog: 'Joystick : il fait accélérer à fond, la bavette comme avant.',
+    arrows: 'Gauche / droite pour les obstacles, GAZ pour accélérer à fond. WHEELIE seul donne un petit coup de gaz pour lever la roue. Bavette : pas de GAZ à fond dessus.',
+    custom: 'Joystick à la part d’accélération choisie, GAZ à fond, les boutons où tu veux. Bavette : pas de GAZ à fond dessus.'
+};
+function setControls(type, { save = true } = {}) {
+    const kind = ['analog', 'arrows', 'custom'].includes(type) ? type : 'analog';
+    GAME_SETTINGS.controlMode = kind === 'arrows' ? 'arrows' : 'analog';
+    GAME_SETTINGS.customControls = kind === 'custom';
+    if (save) {
+        try {
+            localStorage.setItem('wheelie_controls', kind);
+        } catch {
+            // Kept for this visit.
+        }
+    }
+    for (const name of ['analog', 'arrows', 'custom']) {
+        document.getElementById(`control-${name}`)?.classList.toggle('active', name === kind);
+    }
+    const desc = document.getElementById('control-desc');
+    if (desc) desc.textContent = CONTROL_TEXT[kind];
+    const throttleRow = document.getElementById('custom-throttle-row');
+    if (throttleRow) throttleRow.hidden = kind !== 'custom';
+    document.body.classList.toggle('controls-arrows', kind === 'arrows' && IS_V2);
+    applyPadLayout(kind === 'custom' && IS_V2);
+}
+document.getElementById('control-analog')?.addEventListener('click', () => setControls('analog'));
+document.getElementById('control-arrows')?.addEventListener('click', () => setControls('arrows'));
+document.getElementById('control-custom')?.addEventListener('click', () => setControls('custom'));
+document.getElementById('control-layout')?.addEventListener('click', () => {
+    if (!IS_V2) {
+        toast('PERSONNALISER LES TOUCHES', 'Disponible dans la New Version (beta)', { discreet: true, float: true });
+        return;
+    }
+    // Editing the pads is the custom controls.
+    setControls('custom');
+    settingsScreen?.classList.remove('active');
+    openPadEditor({
+        onClose: () => {
+            settingsScreen?.classList.add('active');
+            setControls('custom');
+        }
+    });
 });
+const customThrottle = document.getElementById('custom-throttle');
+function showStickThrottle() {
+    const value = Math.round(GAME_SETTINGS.stickThrottle * 100);
+    if (customThrottle) customThrottle.value = String(value);
+    const output = document.getElementById('custom-throttle-value');
+    if (output) output.textContent = `${value} %`;
+}
+customThrottle?.addEventListener('input', () => {
+    GAME_SETTINGS.stickThrottle = Math.max(0.3, Math.min(1, Number(customThrottle.value) / 100));
+    try {
+        localStorage.setItem('wheelie_stick_throttle', String(GAME_SETTINGS.stickThrottle));
+    } catch {
+        // Kept for this visit.
+    }
+    showStickThrottle();
+});
+showStickThrottle();
 
-document.getElementById('control-analog').addEventListener('click', () => {
-    GAME_SETTINGS.controlMode = 'analog';
-    document.getElementById('control-analog').classList.add('active');
-    document.getElementById('control-arrows').classList.remove('active');
+// Wheeling aids: the lift animation, the automatic rear brake.
+const AUTOBRAKE_TEXT = {
+    '50': 'Jusqu’à 50 km/h, un wheeling qui allait passer par-dessus est rattrapé au frein arrière (le bouton FREIN clignote). Au pas, le pilote descend à côté de la moto puis remonte. Ces scores portent l’icône 🛟 sur la page du classement.',
+    always: 'À toute vitesse, un wheeling qui allait passer par-dessus est rattrapé au frein arrière. Ces scores portent l’icône 🛟 sur la page du classement.',
+    off: 'Pas d’aide : un wheeling trop haut fait tomber.'
+};
+function showWheelieAids() {
+    const lift = document.getElementById('option-lift-anim');
+    if (lift) {
+        lift.textContent = `🏋️ ANIMATION WHEELING : ${GAME_SETTINGS.liftAnimation ? 'ON' : 'OFF'}`;
+        lift.classList.toggle('active', GAME_SETTINGS.liftAnimation);
+    }
+    for (const value of ['50', 'always', 'off']) {
+        document.getElementById(`autobrake-${value}`)?.classList.toggle('active', GAME_SETTINGS.autoBrake === value);
+    }
+    const desc = document.getElementById('autobrake-desc');
+    if (desc) desc.textContent = AUTOBRAKE_TEXT[GAME_SETTINGS.autoBrake];
+}
+document.getElementById('option-lift-anim')?.addEventListener('click', () => {
+    GAME_SETTINGS.liftAnimation = !GAME_SETTINGS.liftAnimation;
+    try {
+        localStorage.setItem('wheelie_lift_animation', GAME_SETTINGS.liftAnimation ? 'on' : 'off');
+    } catch {
+        // Kept for this visit.
+    }
+    showWheelieAids();
 });
+for (const value of ['50', 'always', 'off']) {
+    document.getElementById(`autobrake-${value}`)?.addEventListener('click', () => {
+        GAME_SETTINGS.autoBrake = value;
+        try {
+            localStorage.setItem('wheelie_auto_brake', value);
+        } catch {
+            // Kept for this visit.
+        }
+        showWheelieAids();
+    });
+}
+showWheelieAids();
 
 document.getElementById('mode-linear').addEventListener('click', () => {
     GAME_SETTINGS.gameMode = 'linear';
@@ -5282,7 +5617,7 @@ async function sendCompletedRun(nickname) {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify({
-                    run_token: run.runToken, nickname, input_log: inputLog, flip_mode: run.flipMode, plate: run.plate, rules: RULES, look,
+                    run_token: run.runToken, nickname, input_log: inputLog, flip_mode: run.flipMode, plate: run.plate, rules: run.rules, look,
                     // A protected nickname: this device's token (src/account.js).
                     device_token: deviceToken(nickname)
                 })
@@ -5340,7 +5675,7 @@ async function sendCompletedRun(nickname) {
                 });
                 // Keep it: sent again at the next start (the session lasts 30 min).
                 savePendingSubmission({
-                    token: run.runToken, nickname, log: encodeInputLog(run.inputLog), at: Date.now(), flipMode: run.flipMode, plate: run.plate, rules: RULES
+                    token: run.runToken, nickname, log: encodeInputLog(run.inputLog), at: Date.now(), flipMode: run.flipMode, plate: run.plate, rules: run.rules
                 });
                 setRankingStatus('Score en attente : il sera envoyé dès que le serveur répond (' + error.message + ').');
                 return false;
@@ -5384,7 +5719,7 @@ async function sendCheckpoint({ keepalive = false } = {}) {
                 run_token: token, nickname: localStorage.getItem('wheelie_nickname') || undefined,
                 device_token: deviceToken(localStorage.getItem('wheelie_nickname')),
                 offset: from, chunk: encodeInputLog(state.inputLog.slice(from * 2, frames * 2)),
-                flip_mode: state.flipMode, plate: state.plate.on || state.plate.off, rules: RULES,
+                flip_mode: state.flipMode, plate: state.plate.on || state.plate.off, rules: state.rules,
                 look: v2 && from === 0 ? v2.podiumLook() : undefined
             })
         }, 8000);
@@ -5723,6 +6058,11 @@ const account = createAccount({
         method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(payload)
     }, 9000),
     nickname: () => localStorage.getItem('wheelie_nickname'),
+    // "Mes stats": the codes' own lines once the codes are revealed.
+    stats: (container) => renderStats(container, {
+        points: totalPoints(),
+        codes: { glider: IS_V2 && totalPoints() >= GLIDER_POINTS, tricks: totalPoints() >= TRICKS_CODE_POINTS }
+    }),
     onStatus: (status) => {
         const chip = document.getElementById('player-nickname');
         chip?.classList.toggle('is-protected', !!status?.protected && !!status?.trusted);

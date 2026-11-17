@@ -14,6 +14,47 @@ const STEERING_HEAD = new THREE.Vector3(0, 1.02, 0.5);
 const RAKE = Math.atan2(FRONT_AXLE_Z - STEERING_HEAD.z, STEERING_HEAD.y - FRONT_RADIUS);
 const FORK_LENGTH = Math.hypot(FRONT_AXLE_Z - STEERING_HEAD.z, STEERING_HEAD.y - FRONT_RADIUS);
 const PELVIS_REST = new THREE.Vector3(0, 1.0, -0.28);
+
+// Stunts: what each adds to the riding position at full blend.
+//   torso: the body leant (rad, + forwards); up / forward: the pelvis moved
+//   (m); yaw / roll: the pelvis turned.
+//   hands / feet: where they go instead of the grips / pegs. at: [x, y, z]
+//   for the rider's left (+x), mirrored for the right, or one point per
+//   side ([right, left]); in the pelvis's space (it follows the body) or
+//   the bike's ('rider': the seat, the tail). bend: the elbows / knees.
+//   side: only that hand / foot (-1 right, 1 left).
+// The first three were the only ones; the others came with the freestyle
+// (ground: any but `air: true`).
+export const TRICKS = {
+    superman: { torso: 0.62, up: 0.16, feet: { at: [0.14, 0.12, -0.95] } },
+    nohander: { torso: -0.2, up: 0.04, hands: { at: [0.5, 1.05, 0.05], bend: [1, 0.3, -0.2] } },
+    cancan: { yaw: 0.35, feet: { at: [0.34, -0.4, 0.32], side: -1, mirror: false } },
+    // Heels clicked together over the bars.
+    heelclicker: { torso: -0.22, up: 0.1, feet: { at: [0.05, 0.3, 0.78], bend: [1, 0.5, 0.2] } },
+    // A leg swung back over the tail to the other side.
+    nacnac: { torso: 0.15, yaw: -0.55, roll: 0.18, feet: { at: [-0.32, -0.25, -0.72], side: 1, mirror: false, bend: [0.4, 0.8, -0.3] } },
+    // Standing (crouched) on the seat, hands on the bars.
+    seatstand: { torso: 0.42, up: 0.4, forward: 0.06, feet: { at: [[-0.08, 0.93, -0.4], [0.08, 0.93, -0.2]], space: 'rider', bend: [0.5, 0.2, 1] } },
+    // Surfing: upright on the seat, sideways, arms out.
+    surf: {
+        torso: -0.32, up: 0.6, yaw: 1.05, forward: -0.02,
+        feet: { at: [[-0.02, 0.93, -0.5], [0.02, 0.93, -0.1]], space: 'rider', bend: [0.3, 0.1, 1] },
+        hands: { at: [0.6, 0.5, 0.02], bend: [1, -0.4, -0.3] }
+    },
+    // Air only -----------------------------------------------------------
+    // Only the hands on the bars, the body straight up over them.
+    handstand: { air: true, torso: 2.05, up: 0.72, forward: 0.5, feet: { at: [0.1, -0.9, 0.04], bend: [0.3, 0, 1] } },
+    // Nothing: hands and feet off, thrown wide.
+    nothing: { air: true, torso: -0.3, up: 0.28, hands: { at: [0.62, 0.78, 0.08], bend: [1, 0.2, -0.3] }, feet: { at: [0.5, -0.6, 0.36], bend: [1, 0.3, 0.6] } },
+    // Lying back on the seat, arms stretched behind the head.
+    lazyboy: { air: true, torso: -1.15, up: 0.02, forward: 0.1, hands: { at: [0.2, 1.02, -0.1], bend: [1, 0.2, 0.4] }, feet: { at: [0.17, -0.72, 0.5], bend: [0.6, 0.6, 0.6] } },
+    // Superman seat grab: the hands on the tail, the body flying behind.
+    seatgrab: {
+        air: true, torso: 1.2, up: 0.42, forward: -0.78,
+        hands: { at: [[-0.1, 0.96, -0.72], [0.1, 0.96, -0.72]], space: 'rider', bend: [1, -0.3, 0.2] },
+        feet: { at: [0.14, -0.88, -0.06], bend: [0.3, 0.2, 1] }
+    }
+};
 const UP = new THREE.Vector3(0, 1, 0);
 // The street is drawn at arcade scale (20-unit road), so the bike is too.
 const SCALE = 1.7;
@@ -530,6 +571,7 @@ export function createRider({ scene }) {
 
     const toRiderSpace = (object, out) => riderGroup.worldToLocal(object.getWorldPosition(out));
     const elbowHint = new THREE.Vector3();
+    const hopPelvis = new THREE.Vector3();
     const kneeHint = new THREE.Vector3();
     const footTarget = new THREE.Vector3();
     const groundFoot = new THREE.Vector3();
@@ -672,35 +714,73 @@ export function createRider({ scene }) {
         pose.throttle = damp(pose.throttle, throttle, 14, dt);
         // The throttle twist is a visible gesture (slower than the throttle itself).
         pose.twist = damp(pose.twist || 0, throttle, 7, dt);
-        // Stunts: superman (legs out behind), no hander (arms up), can-can
-        // (a leg swung over the tank). Blended in and out quickly.
-        if (frame.trick) pose.trickType = frame.trick;
-        pose.trick = damp(pose.trick, frame.trick ? 1 : 0, frame.trick ? 11 : 8, dt);
+        // Stunts (TRICKS), blended in and out quickly. Another one asked
+        // while one is shown: back to the riding position first, then out
+        // into the new one (never from one straight into the other).
+        const wanted = frame.trick && TRICKS[frame.trick] ? frame.trick : null;
+        if (wanted && wanted !== pose.trickType && pose.trick > 0.06) {
+            pose.trick = damp(pose.trick, 0, 17, dt);
+        } else {
+            if (wanted) pose.trickType = wanted;
+            pose.trick = damp(pose.trick, wanted ? 1 : 0, wanted ? 11 : 8, dt);
+        }
         pose.tuckAir = damp(pose.tuckAir, frame.airborne ? 1 : 0, 6, dt);
         // Free roam: crouched over the tank while the gas is held.
         pose.gasTuck = damp(pose.gasTuck || 0, frame.gasTuck || 0, 5, dt);
         const stunt = pose.trick;
-        const superman = pose.trickType === 'superman' ? stunt : 0;
-        const nohander = pose.trickType === 'nohander' ? stunt : 0;
-        const cancan = pose.trickType === 'cancan' ? stunt : 0;
+        const trick = TRICKS[pose.trickType] || TRICKS.superman;
+        // Pulling the bike up (the "animation wheeling" option): a short lean
+        // forward over the bars, then back, pulling on them.
+        if (frame.liftEffort && !pose.effortOn) {
+            pose.effortOn = true;
+            pose.effortTime = 0;
+        }
+        if (!frame.liftEffort) pose.effortOn = false;
+        if (pose.effortOn) pose.effortTime += dt;
+        const effortTime = pose.effortOn ? pose.effortTime : 9;
+        const leanIn = effortTime < 0.16 ? Math.sin(effortTime / 0.16 * Math.PI / 2) * 0.16
+            : effortTime < 0.3 ? 0.16 * (1 - (effortTime - 0.16) / 0.14) : 0;
+        const pullBack = effortTime < 0.16 ? 0
+            : Math.min(1, (effortTime - 0.16) / 0.18) * Math.max(0, 1 - Math.max(0, effortTime - 0.7) / 0.4) * 0.24;
+        pose.effort = damp(pose.effort || 0, leanIn - pullBack, 18, dt);
+        // Off beside the bike at walking pace (the automatic brake): on the
+        // side asked (or up on the pegs), hands on the bars, jogging, then
+        // back on. hop: how far off (0 on the seat).
+        pose.hop = damp(pose.hop || 0, frame.hop ? 1 : 0, frame.hop ? 10 : 8, dt);
+        if (frame.hop) {
+            pose.hopSide = frame.hop.side;
+            pose.hopTime = frame.hop.t;
+        }
+        const hop = pose.hop > 0.002 ? pose.hop : 0;
+        const hopSide = pose.hopSide || 0;
         const reach = Math.min(1, kmh / 50);
         const hang = pose.lean * reach * (airborne ? 0.5 : 1);
         const tuck = Math.max(0, Math.min(1, (kmh - 120) / 90));
         // Gas held in free roam: crouched over the tank (beats the push back).
         const crouch = pose.gasTuck;
         const torsoTarget = 0.42 + angle * 0.36 + tuck * 0.24 + crouch * 0.36 + (braking ? 0.12 : -0.07 * throttle * (1 - crouch)) - pose.stop * 0.12
-            - pose.surge * 0.13 * (1 - 0.75 * crouch) - pose.pump * 0.16 + superman * 0.62 - nohander * 0.2 + pose.tuckAir * 0.08;
-        pose.torso = damp(pose.torso, torsoTarget, 7, dt);
-        pelvis.rotation.x = pose.torso;
-        pelvis.rotation.z = hang * 0.45 - pose.stop * 0.05 + pose.skid * Math.sin(pose.time * 17) * 0.05;
-        pelvis.rotation.y = pose.steer * 0.3 + cancan * 0.35;
+            - pose.surge * 0.13 * (1 - 0.75 * crouch) - pose.pump * 0.16 + stunt * (trick.torso || 0) + pose.tuckAir * 0.08;
+        pose.torso = damp(pose.torso, torsoTarget + hop * (0.18 - torsoTarget), 7, dt);
+        pelvis.rotation.x = pose.torso + pose.effort;
+        pelvis.rotation.z = hang * 0.45 - pose.stop * 0.05 + pose.skid * Math.sin(pose.time * 17) * 0.05 + stunt * (trick.roll || 0);
+        pelvis.rotation.y = pose.steer * 0.3 + stunt * (trick.yaw || 0);
         pelvis.position.set(
             -hang * 0.2,
-            PELVIS_REST.y + angleRatio * 0.04 - tuck * 0.02 - crouch * 0.05 - pose.bounce * 0.4 + superman * 0.16 + nohander * 0.04,
-            PELVIS_REST.z - angleRatio * 0.13 - pose.surge * 0.025 + Math.max(0, -pose.surge) * 0.02
+            PELVIS_REST.y + angleRatio * 0.04 - tuck * 0.02 - crouch * 0.05 - pose.bounce * 0.4 + stunt * (trick.up || 0),
+            PELVIS_REST.z - angleRatio * 0.13 - pose.surge * 0.025 + Math.max(0, -pose.surge) * 0.02 + stunt * (trick.forward || 0)
         );
-        // The head stays level and looks where the bike is going.
-        head.rotation.x = -(pose.torso - 0.3) * 0.78 + tuck * 0.1;
+        if (hop) {
+            // Beside the bike (standing, a little behind the bars), or up on
+            // the pegs; a little jump on the way off and back on.
+            const off = hopSide !== 0;
+            hopPelvis.set(off ? hopSide * 0.6 : 0, off ? 0.93 : PELVIS_REST.y + 0.42, PELVIS_REST.z + 0.08);
+            pelvis.position.lerp(hopPelvis, hop);
+            pelvis.position.y += Math.sin(Math.PI * hop) * 0.16 + (off ? Math.abs(Math.sin((pose.hopTime || 0) * 11)) * 0.03 * hop : 0);
+            pelvis.rotation.y += -hopSide * 0.25 * hop;
+        }
+        // The head stays level and looks where the bike is going (as far
+        // as a neck goes, when the body is upside down).
+        head.rotation.x = Math.max(-0.95, Math.min(0.95, -(pose.torso - 0.3) * 0.78 + tuck * 0.1));
         head.rotation.y = pose.steer * 1.1;
         head.rotation.z = -(pose.lean + hang * 0.45) * 0.65;
 
@@ -723,7 +803,7 @@ export function createRider({ scene }) {
         for (let i = 0; i < 2; i++) {
             toRiderSpace(shoulders[i], root);
             toRiderSpace(grips[i], target);
-            if (nohander < 0.5) overreach = Math.max(overreach, root.distanceTo(target) - (arms[i].lengthA + arms[i].lengthB) * 0.97);
+            if (!(trick.hands && stunt > 0.5)) overreach = Math.max(overreach, root.distanceTo(target) - (arms[i].lengthA + arms[i].lengthB) * 0.97);
         }
         if (overreach > 0) {
             pelvis.position.z += overreach;
@@ -745,10 +825,11 @@ export function createRider({ scene }) {
                 -0.55 + tuck * 0.3 - pose.brake * 0.25 + pose.pump * 0.25 + twist * 0.55,
                 -0.35 - tuck * 0.25 + inside * 0.2 - twist * 0.15
             );
-            if (nohander > 0.001) {
-                // Arms thrown up in a V.
-                target.lerp(pelvisPoint(side * 0.5, 1.05, 0.05, footTarget), nohander);
-                elbowHint.set(side, 0.3, -0.2);
+            if (stunt > 0.001 && stuntPoint(trick.hands, side, i, footTarget)) {
+                // Off the grips (arms up, out, back to the seat...).
+                target.lerp(footTarget, stunt);
+                const bend = trick.hands.bend;
+                if (bend) elbowHint.set(side * bend[0], bend[1], bend[2]);
             }
             solveLimb(arms[i], elbowHint);
             hands[i].position.copy(target);
@@ -771,11 +852,22 @@ export function createRider({ scene }) {
                 footTarget.lerp(groundFoot, pose.skid);
             }
             target.copy(footTarget);
-            if (superman > 0.001) target.lerp(pelvisPoint(side * 0.14, 0.12, -0.95, groundFoot), superman);
-            if (cancan > 0.001 && side < 0) target.lerp(pelvisPoint(0.34, -0.4, 0.32, groundFoot), cancan);
             // The inside knee opens towards the turn.
             const knee = Math.max(0, -side * hang) * 2.4;
             kneeHint.set(side * (0.35 + knee), 0.4 - knee * 0.2, 1);
+            if (stunt > 0.001 && stuntPoint(trick.feet, side, i, groundFoot)) {
+                // Off the pegs (behind, over the bars, on the seat...).
+                target.lerp(groundFoot, stunt);
+                const bend = trick.feet.bend;
+                if (bend) kneeHint.lerp(segment.set(side * bend[0], bend[1], bend[2]), stunt);
+            }
+            if (hop && hopSide !== 0) {
+                // Jogging beside the bike.
+                const stride = Math.sin((pose.hopTime || 0) * 11 + i * Math.PI);
+                groundFoot.set(hopSide * 0.6 + side * 0.11, 0.05 + Math.max(0, stride) * 0.12, PELVIS_REST.z + 0.05 + stride * 0.24);
+                target.lerp(groundFoot, hop);
+                kneeHint.lerp(segment.set(0, 0.2, 1), hop);
+            }
             solveLimb(legs[i], kneeHint);
             shoes[i].position.copy(target);
             shoes[i].rotation.set(0, side * 0.12, 0);
@@ -854,6 +946,16 @@ export function createRider({ scene }) {
     // Arms and legs during the fall: flailing in the air, sprawled once down.
     function pelvisPoint(x, y, z, out) {
         return riderGroup.worldToLocal(pelvis.localToWorld(out.set(x, y, z)));
+    }
+
+    // Where a stunt puts this hand or foot (rider space), or null when it
+    // stays where it is. spec: TRICKS[...].hands or .feet; i: 0 right, 1 left.
+    function stuntPoint(spec, side, i, out) {
+        if (!spec || (spec.side && spec.side !== side)) return null;
+        const each = Array.isArray(spec.at[0]);
+        const at = each ? spec.at[i] : spec.at;
+        const x = each || spec.mirror === false ? at[0] : at[0] * side;
+        return spec.space === 'rider' ? out.set(x, at[1], at[2]) : pelvisPoint(x, at[1], at[2], out);
     }
 
     function animateLimbs(t) {
@@ -1138,6 +1240,8 @@ export function createRider({ scene }) {
         setLivery, dismount, updateWalk, mount, setRiderVisible, setBoost, exhaustPoint, setWorldScale, setFlip,
         tearPlate, platePoint, resetPlate: restPlate, finishCrash, riderPosition,
         get worldScale() { return worldScale; },
+        // How far into a stunt the rider is (0: the riding position).
+        get trickBlend() { return pose.trick; },
         bikeGroup, bikePivot, materials, update, reset, startCrash, updateCrash, slideSpeed, getHitBox,
         get crashing() { return crash.active; },
         get crashVariant() { return crash.variant; },

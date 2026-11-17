@@ -79,7 +79,8 @@ function actionButton(text, className = 'account-btn') {
 }
 
 // post(path, body) -> fetch Response; nickname() -> the player's nickname.
-export function createAccount({ post, nickname, onStatus = () => {} }) {
+// stats(container): fills "Mes stats" (src/stats.js).
+export function createAccount({ post, nickname, onStatus = () => {}, stats = null }) {
     let status = null;
     let pendingCode = null;
     // The nickname the password is asked for (not yet saved on a new device).
@@ -93,7 +94,8 @@ export function createAccount({ post, nickname, onStatus = () => {} }) {
     dialog.setAttribute('aria-modal', 'true');
     dialog.setAttribute('aria-labelledby', 'account-title');
     dialog.innerHTML = '<div class="account-card"><button type="button" class="account-close" aria-label="Fermer">✕</button>' +
-        '<h2 id="account-title">Mon compte</h2><p class="account-name"></p><div class="account-body"></div>' +
+        '<h2 id="account-title">Mon compte</h2><p class="account-name"></p>' +
+        '<button type="button" class="account-btn account-stats-btn">📊 MES STATS</button><div class="account-body"></div>' +
         '<p class="account-message" role="status" aria-live="polite"></p></div>';
     document.body.append(dialog);
     const body = dialog.querySelector('.account-body');
@@ -113,6 +115,25 @@ export function createAccount({ post, nickname, onStatus = () => {} }) {
         }
     }
     dialog.querySelector('.account-close').addEventListener('click', () => close(false));
+    // "Mes stats": in place of the account, with a way back. Not while a
+    // password is being asked for a score.
+    const statsButton = dialog.querySelector('.account-stats-btn');
+    const title = dialog.querySelector('#account-title');
+    const showStatsButton = (on) => {
+        statsButton.hidden = !on || !stats;
+        title.textContent = 'Mon compte';
+    };
+    statsButton.addEventListener('click', () => {
+        body.textContent = '';
+        say('');
+        statsButton.hidden = true;
+        title.textContent = 'Mes stats';
+        stats(body);
+        const back = actionButton('← Mon compte', 'account-btn account-btn--quiet');
+        back.addEventListener('click', () => open());
+        body.append(back);
+        dialog.querySelector('.account-card').scrollTop = 0;
+    });
     dialog.addEventListener('click', (event) => {
         if (event.target === dialog) close(false);
     });
@@ -286,6 +307,7 @@ export function createAccount({ post, nickname, onStatus = () => {} }) {
 
     async function open() {
         dialog.hidden = false;
+        showStatsButton(true);
         if (!nickname()) return render('none');
         render('loading');
         const data = await refresh();
@@ -302,6 +324,7 @@ export function createAccount({ post, nickname, onStatus = () => {} }) {
             pendingCode = resolve;
             codeName = name;
             dialog.hidden = false;
+            showStatsButton(false);
             render('code', { reason });
             focusFirst();
         });

@@ -1,0 +1,129 @@
+// "Mes stats": what the player has done, counted on this device since the
+// first time (bavettes, falls, backflips, minutes played...). Shown from
+// the account window. Kept in localStorage, written a moment after each
+// change and when the page is hidden.
+const KEY = 'wheelie_stats';
+
+function load() {
+    try {
+        const stored = JSON.parse(localStorage.getItem(KEY) || 'null');
+        if (stored && typeof stored === 'object') return stored;
+    } catch {
+        // Unreadable: start again.
+    }
+    return { since: new Date().toISOString() };
+}
+
+const stats = load();
+let pending = null;
+
+function save() {
+    pending = null;
+    try {
+        localStorage.setItem(KEY, JSON.stringify(stats));
+    } catch {
+        // Not kept (private browsing, storage full): still shown this visit.
+    }
+}
+
+function saveSoon() {
+    if (pending === null) pending = setTimeout(save, 1500);
+}
+
+document.addEventListener('visibilitychange', () => {
+    if (document.visibilityState === 'hidden' && pending !== null) {
+        clearTimeout(pending);
+        save();
+    }
+});
+
+export function bumpStat(name, amount = 1) {
+    if (!(amount > 0)) return;
+    stats[name] = (stats[name] || 0) + amount;
+    saveSoon();
+}
+
+export function bestStat(name, value) {
+    if (value > (stats[name] || 0)) {
+        stats[name] = value;
+        saveSoon();
+    }
+}
+
+export const statOf = (name) => stats[name] || 0;
+
+const whole = (value) => Math.floor(value || 0).toLocaleString('fr-FR');
+
+function duration(seconds) {
+    const minutes = Math.floor((seconds || 0) / 60);
+    if (minutes < 60) return `${minutes} min`;
+    return `${Math.floor(minutes / 60)} h ${String(minutes % 60).padStart(2, '0')} min`;
+}
+
+// points: the cumulative points now; codes: which secret codes the player
+// has been shown ({ glider, tricks }): their stats appear with them, or as
+// soon as they have been used.
+export function renderStats(container, { points = 0, codes = {} } = {}) {
+    const groups = [
+        ['Général', [
+            ['Parties classées', whole(stats.runs)],
+            ['Temps de jeu', duration((stats.seconds || 0) + (stats.freeSeconds || 0))],
+            ['Score cumulé', whole(stats.score)],
+            ['Meilleur score', whole(stats.bestScore)],
+            ['Points cumulés (à dépenser)', whole(points)],
+            ['Vitesse max', `${whole(stats.topKmh)} km/h`]
+        ]],
+        ['Wheeling', [
+            ['Bavettes réussies', whole(stats.bavettes)],
+            ['Plaques arrachées', whole(stats.plates)],
+            ['Chutes', whole(stats.falls)],
+            ['Arrêté par la police', whole(stats.arrests)],
+            ['Dérapages', whole(stats.skids)],
+            ['Rattrapés par le frein auto', whole(stats.autoBrakes)]
+        ]],
+        ['Sauts et figures', [
+            ['Sauts', whole(stats.jumps)],
+            ['Figures', whole(stats.tricks)],
+            ['Backflips', whole(stats.flips)],
+            ['Doubles backflips', whole(stats.doubleFlips)],
+            ['Boosts', whole(stats.boosts)]
+        ]],
+        ['Boucliers', [
+            ['Ramassés', whole(stats.shields)],
+            ['Obstacles encaissés', whole(stats.shieldSaves)]
+        ]],
+        ['Mode libre', [
+            ['Sorties', whole(stats.freeSessions)],
+            ['Temps', duration(stats.freeSeconds)]
+        ]]
+    ];
+    const secret = [];
+    if (codes.glider || stats.gliders) secret.push(['Séances de deltaplane', whole(stats.gliders)]);
+    if (codes.tricks || stats.codeTricks) secret.push(['Parties sans obstacles', whole(stats.codeTricks)]);
+    if (secret.length) groups.push(['Codes secrets', secret]);
+
+    const wrap = document.createElement('div');
+    wrap.className = 'stats';
+    for (const [title, rows] of groups) {
+        const section = document.createElement('section');
+        section.className = 'stats-group';
+        const heading = document.createElement('h3');
+        heading.textContent = title;
+        const list = document.createElement('dl');
+        for (const [label, value] of rows) {
+            const name = document.createElement('dt');
+            name.textContent = label;
+            const figure = document.createElement('dd');
+            figure.textContent = value;
+            list.append(name, figure);
+        }
+        section.append(heading, list);
+        wrap.append(section);
+    }
+    const note = document.createElement('p');
+    note.className = 'stats-note';
+    const since = new Date(stats.since || Date.now());
+    note.textContent = `Comptées sur cet appareil depuis le ${since.toLocaleDateString('fr-FR', { day: 'numeric', month: 'long', year: 'numeric' })}.`;
+    wrap.append(note);
+    container.append(wrap);
+}

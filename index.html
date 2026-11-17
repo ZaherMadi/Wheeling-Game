@@ -1397,9 +1397,26 @@
     <div id="submenu-controls" class="settings-submenu" style="display: none;">
       <h3>TYPE DE CONTRÔLES</h3>
       <div class="settings-group">
-        <button id="control-keyboard" class="setting-btn active">⌨️ CLAVIER</button>
+        <button id="control-analog" class="setting-btn active">🕹️ ANALOG (DÉFAUT)</button>
         <button id="control-arrows" class="setting-btn">➡️ FLÈCHES</button>
-        <button id="control-analog" class="setting-btn">🕹️ ANALOG</button>
+        <button id="control-custom" class="setting-btn">🎛️ PERSONNALISÉ</button>
+        <p class="setting-desc" id="control-desc"></p>
+        <button id="control-layout" class="setting-btn" type="button">✏️ PERSONNALISER LES TOUCHES</button>
+        <div id="custom-throttle-row" class="setting-range" hidden>
+          <label for="custom-throttle">Accélération du joystick : <output id="custom-throttle-value">50 %</output></label>
+          <input id="custom-throttle" type="range" min="30" max="100" step="10" value="50">
+        </div>
+        <p class="setting-desc">Le clavier marche toujours sur ordinateur.</p>
+      </div>
+      <h3>AIDES AU WHEELING</h3>
+      <div class="settings-group">
+        <button id="option-lift-anim" class="setting-btn" type="button">🏋️ ANIMATION WHEELING : ON</button>
+        <p class="setting-desc">Le pilote se penche puis tire la moto quand il lève la roue.</p>
+        <p class="setting-desc">Freinage wheeling automatique</p>
+        <button id="autobrake-50" class="setting-btn" type="button">🛟 JUSQU’À 50 KM/H</button>
+        <button id="autobrake-always" class="setting-btn" type="button">🛟 SANS LIMITE</button>
+        <button id="autobrake-off" class="setting-btn" type="button">✖ DÉSACTIVÉ</button>
+        <p class="setting-desc" id="autobrake-desc"></p>
       </div>
       <button class="back-to-main-btn">← RETOUR</button>
     </div>
