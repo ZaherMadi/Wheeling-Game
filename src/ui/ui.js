@@ -108,7 +108,7 @@ function decorateModeSelect() {
             // Tricks in free roam: bought once (main.js buyFreeTricks).
             + (freeTricksOn()
                 ? '<p class="ui-garage__tricks is-on">🤸 Figures en mode libre activées : FIGURE sur la moto, 2× les points.</p>'
-                : `<button type="button" class="ui-garage__buy" data-free-tricks ${points < 5000 ? 'aria-disabled="true"' : ''}>🤸 FIGURES EN MODE LIBRE · 5 000 pts<small>2× les points des figures + un code secret</small></button>`);
+                : `<button type="button" class="ui-garage__buy" data-free-tricks ${points < 10000 ? 'aria-disabled="true"' : ''}>🤸 FIGURES EN MODE LIBRE · 5 000 pts<small>${points < 10000 ? 'Dès 10 000 points cumulés · ' : ''}2× les points des figures + un code secret</small></button>`);
         const free = $('select-freemode')?.querySelector('.ui-btn__sub');
         if (free) free.textContent = `Ville ouverte · ${points} pts`;
     };

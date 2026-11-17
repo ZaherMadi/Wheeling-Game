@@ -480,6 +480,77 @@ body.pad-editing .is-picked {
   outline: 3px solid #f6c416 !important;
 }
 
+/* The free roam tricks offer. */
+#free-tricks-dialog {
+  z-index: 60;
+}
+
+.free-tricks-card h2 {
+  margin-bottom: 8px !important;
+}
+
+.free-tricks-pictures {
+  display: grid;
+  grid-template-columns: repeat(2, 1fr);
+  gap: 8px;
+  margin: 0 0 12px;
+}
+
+.free-tricks-pictures figure {
+  margin: 0;
+  overflow: hidden;
+  background: #1a1c22;
+  border-radius: 8px;
+}
+
+.free-tricks-pictures img {
+  display: block;
+  width: 100%;
+  aspect-ratio: 10 / 9;
+  object-fit: cover;
+}
+
+.free-tricks-pictures figcaption {
+  padding: 4px 6px;
+  font-size: 12px;
+  color: #d8dbe0;
+  text-align: center;
+}
+
+.free-tricks-deal {
+  display: grid;
+  gap: 6px;
+  margin: 0 0 10px;
+}
+
+.free-tricks-deal p {
+  display: grid;
+  grid-template-columns: 96px 1fr;
+  gap: 8px;
+  margin: 0 !important;
+  padding: 7px 10px;
+  font-size: 13px !important;
+  line-height: 1.35;
+  background: #1a1c22;
+  border-radius: 8px;
+}
+
+.free-tricks-deal b {
+  font-family: 'Russo One', sans-serif;
+  font-weight: 400;
+  color: #f6c416;
+}
+
+.free-tricks-note {
+  font-style: italic;
+}
+
+@media (min-width: 560px) {
+  .free-tricks-pictures {
+    grid-template-columns: repeat(4, 1fr);
+  }
+}
+
 /* "Mes stats" */
 .account-stats-btn {
   margin: 4px 0 14px !important;

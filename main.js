@@ -1386,11 +1386,13 @@ function driftEffects(dt, heading) {
     }
 }
 
-// Tricks in free roam (on the bike): bought once with 5000 cumulative
-// points; they pay twice the competitive ground rate (10 to 30 points a
-// second with the speed), straight into the cumulative points. Buying them
-// also gives the Figures Land code.
-const FREE_TRICKS = { cost: 5000, factor: 2, key: 'wheelie_free_tricks' };
+// Tricks in free roam (on the bike): an investment, offered from 10 000
+// cumulative points and costing 5000 once; they pay twice the competitive
+// ground rate (10 to 30 points a second with the speed), straight into the
+// cumulative points. Buying them also gives the Figures Land code. The
+// first time the player has enough, the offer opens by itself (the game
+// paused if a run is on).
+const FREE_TRICKS = { cost: 5000, need: 10000, factor: 2, key: 'wheelie_free_tricks', shownKey: 'wheelie_free_tricks_offered' };
 const freeTrick = { points: 0 };
 function freeTricksUnlocked() {
     return readSetting(FREE_TRICKS.key) === '1';
@@ -1420,8 +1422,74 @@ function buyFreeTricks() {
     }));
 }
 document.addEventListener('click', (event) => {
-    if (event.target instanceof Element && event.target.closest('[data-free-tricks]')) buyFreeTricks();
+    if (!(event.target instanceof Element) || !event.target.closest('[data-free-tricks]')) return;
+    const points = totalPoints();
+    if (points < FREE_TRICKS.need) {
+        toast('10 000 POINTS MINIMUM', `Figures en mode libre : il te manque ${(FREE_TRICKS.need - points).toLocaleString('fr-FR')} points cumulés`, { discreet: true, float: true });
+        return;
+    }
+    showFreeTricksOffer();
 });
+
+// The offer: what free roam tricks are, in pictures, and why they are worth
+// their price (an investment).
+const FREE_TRICK_PICTURES = [
+    ['seatstand', 'Debout sur la selle'], ['heelclicker', 'Heel clicker'], ['surf', 'Surf'], ['superman', 'Superman']
+];
+let freeTricksDialog = null;
+function showFreeTricksOffer() {
+    if (freeTricksUnlocked() || (freeTricksDialog && !freeTricksDialog.hidden)) return;
+    try {
+        localStorage.setItem(FREE_TRICKS.shownKey, '1');
+    } catch {
+        // Shown again next time.
+    }
+    // A run on: paused while the player reads.
+    const pausedHere = state.isPlaying && !state.userPaused;
+    if (pausedHere) pauseGame();
+    if (!freeTricksDialog) {
+        freeTricksDialog = document.createElement('div');
+        freeTricksDialog.id = 'free-tricks-dialog';
+        freeTricksDialog.className = 'account-dialog';
+        freeTricksDialog.setAttribute('role', 'dialog');
+        freeTricksDialog.setAttribute('aria-modal', 'true');
+        freeTricksDialog.setAttribute('aria-labelledby', 'free-tricks-title');
+        document.body.append(freeTricksDialog);
+    }
+    const pictures = FREE_TRICK_PICTURES.map(([name, label]) =>
+        `<figure><img src="/img/free-tricks/${name}.jpg" alt="${label}" loading="lazy"><figcaption>${label}</figcaption></figure>`).join('');
+    freeTricksDialog.innerHTML = `<div class="account-card free-tricks-card">
+        <h2 id="free-tricks-title">🤸 Figures en mode libre</h2>
+        <p class="account-text">Tu as assez de points : les figures du compétitif, maintenant dans la ville, sur ta moto (bouton FIGURE).</p>
+        <div class="free-tricks-pictures">${pictures}</div>
+        <div class="free-tricks-deal">
+            <p><b>Ça coûte</b><span>5 000 points, une seule fois</span></p>
+            <p><b>Ça rapporte</b><span>2× les points des figures du compétitif : 10 à 30 points par seconde de figure, selon la vitesse</span></p>
+            <p><b>Rentabilisé</b><span>en 4 minutes de figures à 100 km/h, puis tout est bonus</span></p>
+            <p><b>En cadeau</b><span>un code secret pour trouver Figures Land</span></p>
+        </div>
+        <p class="account-text free-tricks-note">C’est un investissement : tu dépenses maintenant, tu gagnes plus après.</p>
+        <button type="button" class="account-btn account-btn--primary free-tricks-buy">INVESTIR 5 000 POINTS</button>
+        <button type="button" class="account-btn account-btn--quiet free-tricks-later">Plus tard</button>
+    </div>`;
+    freeTricksDialog.hidden = false;
+    const close = () => {
+        freeTricksDialog.hidden = true;
+        if (pausedHere) resumeGame();
+    };
+    freeTricksDialog.querySelector('.free-tricks-buy').addEventListener('click', () => {
+        buyFreeTricks();
+        close();
+    });
+    freeTricksDialog.querySelector('.free-tricks-later').addEventListener('click', close);
+}
+// The first time the cumulative points reach the minimum: the offer, once
+// (after a run's points, free roam tricks, or any change of the points).
+function maybeOfferFreeTricks() {
+    if (!IS_V2 || freeTricksUnlocked() || readSetting(FREE_TRICKS.shownKey) === '1') return;
+    if (totalPoints() >= FREE_TRICKS.need) setTimeout(showFreeTricksOffer, 1200);
+}
+document.addEventListener('wheelie:points', maybeOfferFreeTricks);
 
 function freeTrickStep(dt, roam) {
     const can = freeTricksUnlocked() && roam.mode === 'bike' && !roam.frozen && !roamFall.active;
@@ -3228,6 +3296,7 @@ async function gameOver(reason = 'crash') {
     if (GAME_SETTINGS.gameMode === 'linear') {
         const before = totalPoints();
         addPoints(tricksOnly ? tricksPoints : currentScore);
+        maybeOfferFreeTricks();
         // Something new unlocked by this run? Said once the screen is up.
         announceUnlocks(before, totalPoints());
         document.dispatchEvent(new CustomEvent('wheelie:points'));
