@@ -16,6 +16,7 @@ import { createSecretBird } from './src/secret-bird.js';
 import { SHIELD, createShields } from './src/shield.js';
 import { bestStat, bumpStat, renderStats } from './src/stats.js';
 import { applyPadLayout, openPadEditor } from './src/pad-layout.js';
+import { startActivity } from './src/activity.js';
 import { createSpeedLines } from './src/v2/speedlines.js';
 import riderVoices from './src/rider-voices.json';
 
@@ -374,6 +375,11 @@ let state = {
 const scene = new THREE.Scene();
 // Shields (src/shield.js), built with the first one.
 let shields = null;
+// Figures Land reached (src/v2/figures-land.js).
+document.addEventListener('wheelie:figuresland', (event) => {
+    bumpStat('figuresLand');
+    logEvent(event.detail?.first ? 'Figures Land trouvée (moto arc-en-ciel débloquée)' : 'Figures Land retrouvée');
+});
 // "Mes stats" (src/stats.js): the run going on (its time is counted once,
 // when it ends or is left) and its top speed.
 const runStats = { counted: true, top: 0 };
@@ -5443,6 +5449,19 @@ const presenceId = (() => {
         return `t${Date.now().toString(36)}${Math.random().toString(36).slice(2, 10)}`;
     }
 })();
+// What the player is doing now (the sessions page, the stats page).
+const MENU_ACTIVITIES = {
+    'leaderboard-screen': 'menu-leaderboard', 'trophy-screen': 'menu-trophies', 'rider-screen': 'menu-rider',
+    'settings-screen': 'menu-settings', 'pose-screen': 'menu-poses', 'game-over-screen': 'menu-gameover'
+};
+function currentActivity() {
+    if (state.isPlaying) {
+        if (state.userPaused) return 'menu-pause';
+        if (GAME_SETTINGS.gameMode === 'free') return v2 ? `free-${v2.roam.mode}` : 'free-bike';
+        return state.tricksOnly ? 'tricks' : 'competitive';
+    }
+    return MENU_ACTIVITIES[document.querySelector('.screen.active')?.id] || 'menu';
+}
 function sendPresence() {
     if (document.hidden) return;
     const mode = !state.isPlaying ? 'menu' : GAME_SETTINGS.gameMode === 'free' ? 'free' : 'competitive';
@@ -5451,7 +5470,8 @@ function sendPresence() {
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
             client_id: presenceId, nickname: localStorage.getItem('wheelie_nickname') || undefined, mode,
-            version: IS_V2 ? 'v2' : 'v1', score: state.isPlaying && mode === 'competitive' ? Math.floor(state.score) : undefined
+            version: IS_V2 ? 'v2' : 'v1', score: state.isPlaying && mode === 'competitive' ? Math.floor(state.score) : undefined,
+            activity: currentActivity(), open_seconds: Math.round(performance.now() / 1000)
         })
     }, 6000).catch(() => {});
 }
@@ -5460,6 +5480,16 @@ function startPresence() {
     sendPresence();
     presenceTimer = setInterval(sendPresence, 30000);
 }
+// From the menu on (not only once a run has started).
+setTimeout(startPresence, 5000);
+// The owner's stats (API /stats): what is used, for how long.
+startActivity({
+    version: IS_V2 ? 'v2' : 'v1',
+    current: currentActivity,
+    send: (body, keepalive) => apiFetch(`${API_BASE_URL}/activity`, {
+        method: 'POST', headers: { 'Content-Type': 'application/json' }, keepalive, body: JSON.stringify(body)
+    }, 8000).catch(() => {})
+});
 // The player's nickname spoken in some lines (see src/player-voice.js).
 // Created here, after the API address: it registers the stored clips at once.
 const playerVoice = createPlayerVoice({ apiBase: () => API_BASE_URL, audio, apiFetch });

@@ -3,11 +3,15 @@
 const KEY = 'wheelie_rider_livery';
 
 import { ARAI_POINTS, PLATE_POINTS, SHOES_POINTS } from '../unlocks.js';
+import { rainbowUnlocked } from './figures-land.js';
+import { track } from '../activity.js';
 
 export const LIVERY_DEFAULT = {
     number: '51', hoodie: '#f6c416', helmet: '#0a0a0c', bike: '#f2c014', plate: true, plateText: '',
-    helmetStyle: 'classic', shoes: '#f2f2f0'
+    helmetStyle: 'classic', shoes: '#f2f2f0', bikeModel: 'standard'
 };
+// Bikes (the rainbow one is found in Figures Land).
+const BIKE_MODELS = [['standard', 'Classique'], ['rainbow', 'Arc-en-ciel ✨']];
 // Helmet shapes (the Arai from ARAI_POINTS).
 const HELMET_STYLES = [['classic', 'Classique'], ['arai', 'Arai']];
 const SHOE_COLORS = [
@@ -149,6 +153,32 @@ export function mountLiveryPanel(container, onChange, { points = () => 0 } = {})
         text.addEventListener('keydown', (event) => event.stopPropagation());
         show();
         row.append(toggle, text);
+        container.append(row);
+    }
+
+    // Choice of bike: once the rainbow one has been found.
+    if (rainbowUnlocked()) {
+        const row = document.createElement('div');
+        row.className = 'ui-livery__row';
+        row.innerHTML = '<span class="ui-livery__label ui-livery__label--long">Choix de moto</span>';
+        const choices = document.createElement('div');
+        choices.className = 'ui-livery__swatches';
+        for (const [model, name] of BIKE_MODELS) {
+            const choice = document.createElement('button');
+            choice.type = 'button';
+            choice.className = `ui-livery__toggle${model === 'rainbow' ? ' ui-livery__toggle--rainbow' : ''}`;
+            choice.textContent = name.toUpperCase();
+            choice.classList.toggle('active', (livery.bikeModel || 'standard') === model);
+            choice.addEventListener('click', () => {
+                if (model === 'rainbow' && livery.bikeModel !== 'rainbow') track('rainbowBike');
+                livery.bikeModel = model;
+                choices.querySelectorAll('button').forEach((other) => other.classList.toggle('active', other === choice));
+                saveLivery(livery);
+                onChange(livery);
+            });
+            choices.append(choice);
+        }
+        row.append(choices);
         container.append(row);
     }
 

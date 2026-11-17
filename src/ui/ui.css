@@ -1505,6 +1505,19 @@ body.v2 .ui-livery__toggle {
   cursor: pointer;
 }
 
+body.v2 .ui-livery__toggle--rainbow {
+  background: linear-gradient(90deg, #ff3b3b, #ff9a1f, #ffe14a, #3fd16b, #2f9bff, #8a5cff, #ff5cc8) !important;
+  color: #111 !important;
+  text-shadow: 0 1px 0 rgba(255, 255, 255, 0.6);
+}
+
+body.v2 .ui-garage__secret {
+  margin: 8px 0 0;
+  font-size: 12px;
+  line-height: 1.4;
+  color: #e7d9ff;
+}
+
 body.v2 .ui-livery__toggle.active {
   color: #0b0c0f;
   background: var(--y);

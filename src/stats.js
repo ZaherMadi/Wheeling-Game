@@ -2,6 +2,8 @@
 // first time (bavettes, falls, backflips, minutes played...). Shown from
 // the account window. Kept in localStorage, written a moment after each
 // change and when the page is hidden.
+import { track } from './activity.js';
+
 const KEY = 'wheelie_stats';
 
 function load() {
@@ -41,6 +43,8 @@ export function bumpStat(name, amount = 1) {
     if (!(amount > 0)) return;
     stats[name] = (stats[name] || 0) + amount;
     saveSoon();
+    // The owner's stats too (time is counted there on its own).
+    if (name !== 'seconds' && name !== 'freeSeconds') track(name, amount);
 }
 
 export function bestStat(name, value) {
@@ -94,7 +98,8 @@ export function renderStats(container, { points = 0, codes = {} } = {}) {
         ]],
         ['Mode libre', [
             ['Sorties', whole(stats.freeSessions)],
-            ['Temps', duration(stats.freeSeconds)]
+            ['Temps', duration(stats.freeSeconds)],
+            ['Figures Land trouvée', whole(stats.figuresLand)]
         ]]
     ];
     const secret = [];

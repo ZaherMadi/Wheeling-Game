@@ -659,6 +659,7 @@ export function createRider({ scene }) {
     function update(dt, frame) {
         pose.time += dt;
         stepLoosePlate(dt);
+        animateRainbow(pose.time);
         const { kmh, throttle, braking, steer, angle, angleRatio, skidding, linear } = frame;
         const speedRatio = Math.min(1, kmh / 200);
         const airborne = angleRatio > 0.015;
@@ -1191,11 +1192,68 @@ export function createRider({ scene }) {
         contactShadow.scale.set(1.5 * value, 1, 3 * value);
     }
 
+    // The rainbow bike (found in Figures Land): the paint a flowing rainbow,
+    // glowing a little, and sparkles twinkling on it.
+    let rainbow = null;
+    function rainbowParts() {
+        if (rainbow) return rainbow;
+        const canvas = document.createElement('canvas');
+        canvas.width = 256;
+        canvas.height = 8;
+        const ctx = canvas.getContext('2d');
+        const gradient = ctx.createLinearGradient(0, 0, 256, 0);
+        ['#ff3b3b', '#ff9a1f', '#ffe14a', '#3fd16b', '#2f9bff', '#8a5cff', '#ff5cc8', '#ff3b3b'].forEach((color, index, list) => {
+            gradient.addColorStop(index / (list.length - 1), color);
+        });
+        ctx.fillStyle = gradient;
+        ctx.fillRect(0, 0, 256, 8);
+        const texture = new THREE.CanvasTexture(canvas);
+        texture.colorSpace = THREE.SRGBColorSpace;
+        texture.wrapS = texture.wrapT = THREE.RepeatWrapping;
+        texture.repeat.set(2, 1);
+        const sparkleMaterial = new THREE.SpriteMaterial({
+            map: glowTexture, color: 0xffffff, transparent: true, depthWrite: false, blending: THREE.AdditiveBlending, toneMapped: false
+        });
+        const sparkles = [];
+        for (let i = 0; i < 12; i++) {
+            const sprite = new THREE.Sprite(sparkleMaterial);
+            sprite.position.set((Math.random() - 0.5) * 0.5, 0.45 + Math.random() * 0.55, -0.9 + Math.random() * 1.7);
+            sprite.userData.phase = Math.random() * Math.PI * 2;
+            sprite.userData.rate = 3 + Math.random() * 4;
+            sprite.visible = false;
+            chassis.add(sprite);
+            sparkles.push(sprite);
+        }
+        rainbow = { texture, sparkles, on: false };
+        return rainbow;
+    }
+    function setBikeModel(model) {
+        const on = model === 'rainbow';
+        if (!on && !rainbow) return;
+        const parts = rainbowParts();
+        parts.on = on;
+        paint.map = on ? parts.texture : null;
+        paint.emissiveMap = on ? parts.texture : null;
+        paint.emissive.set(on ? 0xffffff : 0x000000);
+        paint.emissiveIntensity = on ? 0.35 : 1;
+        paint.needsUpdate = true;
+        parts.sparkles.forEach((sprite) => { sprite.visible = on; });
+    }
+    function animateRainbow(time) {
+        if (!rainbow || !rainbow.on) return;
+        rainbow.texture.offset.x = (time * 0.22) % 1;
+        paint.emissiveIntensity = 0.32 + Math.sin(time * 7) * 0.12;
+        for (const sprite of rainbow.sparkles) {
+            const flash = Math.max(0, Math.sin(time * sprite.userData.rate + sprite.userData.phase));
+            sprite.scale.setScalar(0.02 + Math.pow(flash, 6) * 0.22);
+        }
+    }
+
     // Rider customisation: number, hoodie, helmet and bike colours.
     const luminance = (color) => 0.2126 * color.r + 0.7152 * color.g + 0.0722 * color.b;
     function setLivery({
         number = '51', hoodie = '#f6c416', helmet: helmetColor = '#0a0a0c', bike = '#f2c014', name = '', plate: withPlate = false, plateText: text = '',
-        helmetStyle = 'classic', shoes = '#f2f2f0'
+        helmetStyle = 'classic', shoes = '#f2f2f0', bikeModel = 'standard'
     } = {}) {
         sneaker.color.set(shoes);
         const araiOn = helmetStyle === 'arai';
@@ -1232,7 +1290,9 @@ export function createRider({ scene }) {
         helmet.map = helmetMap;
         helmet.needsUpdate = true;
         helmetShell.color.set(helmetColor);
-        paint.color.set(bike);
+        // The rainbow paint is its own colours.
+        paint.color.set(bikeModel === 'rainbow' ? '#ffffff' : bike);
+        setBikeModel(bikeModel);
     }
 
     reset();

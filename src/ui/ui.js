@@ -102,7 +102,9 @@ function decorateModeSelect() {
                     `${open ? '' : ` <em>${lock}</em>`}</span>`;
             }).join('') + '</div>' + (confiscated
                 ? `<p class="ui-garage__alert">Moto confisquée par la police : fais ${BIKE_RECOVERY_POINTS} points en compétitif pour la récupérer.</p>`
-                : '<p class="ui-garage__hint">Mode libre : approche-toi d’une voiture garée et appuie sur G (ou le bouton bleu).</p>');
+                : '<p class="ui-garage__hint">Mode libre : approche-toi d’une voiture garée et appuie sur G (ou le bouton bleu).</p>')
+            // Figures Land (src/v2/figures-land.js): the notice.
+            + '<p class="ui-garage__secret">🎡 <b>Figures Land</b> : le chemin pour cette map est top secret. Une seule chance sur 20 de la trouver en mode libre… Vous pensez qu’il y en a d’autres ????</p>';
         const free = $('select-freemode')?.querySelector('.ui-btn__sub');
         if (free) free.textContent = `Ville ouverte · ${points} pts`;
     };

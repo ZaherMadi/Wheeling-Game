@@ -12,6 +12,7 @@ import { ARAI_POINTS, PLATE_POINTS, SHOES_POINTS } from '../unlocks.js';
 import { createOfficer, decoratePoliceCar } from './police.js';
 import { createPodium } from './podium.js';
 import { createSkidMarks } from './skidmarks.js';
+import { RAINBOW_KEY, createFiguresLand, rainbowUnlocked } from './figures-land.js';
 import { chosenPose } from './poses.js';
 import { installRacingUI } from '../ui/ui.js';
 
@@ -40,6 +41,9 @@ export function createRealisticVersion({ scene, renderer, camera, mobile, audio,
     // Free roam drift: tyre marks on the road.
     const skidmarks = createSkidMarks(scene, { max: mobile ? 450 : 700 });
     const roam = createFreeRoam({ scene, world, rider, audio, onTurn, playerVoice });
+    // Figures Land: one free roam ride in 20 finds it.
+    const figuresLand = createFiguresLand({ scene });
+    let wasRoaming = false;
     // The player's nickname is printed above the number.
     const riderName = () => {
         try {
@@ -52,7 +56,8 @@ export function createRealisticVersion({ scene, renderer, camera, mobile, audio,
     // The Arai and the shoe colour only once unlocked.
     const unlockedLook = (livery) => ({
         helmetStyle: totalPoints() >= ARAI_POINTS && livery.helmetStyle === 'arai' ? 'arai' : 'classic',
-        shoes: totalPoints() >= SHOES_POINTS && livery.shoes ? livery.shoes : '#f2f2f0'
+        shoes: totalPoints() >= SHOES_POINTS && livery.shoes ? livery.shoes : '#f2f2f0',
+        bikeModel: rainbowUnlocked() && livery.bikeModel === 'rainbow' ? 'rainbow' : 'standard'
     });
     const riderLook = (livery = loadLivery()) => ({
         ...livery, name: riderName(), plate: !!livery.plate && totalPoints() >= PLATE_POINTS, plateText: livery.plateText || '',
@@ -344,6 +349,32 @@ export function createRealisticVersion({ scene, renderer, camera, mobile, audio,
         updatePatrol(dt, snapshot.linear ? snapshot.police : null);
         const roaming = snapshot.playing && !snapshot.linear;
         if (roaming) roam.update(dt, bike);
+        // Figures Land: rolled at the start of each free roam ride.
+        if (roaming && !wasRoaming) figuresLand.newRide(params.get('figuresland') === '1');
+        if (!roaming && wasRoaming) figuresLand.hide();
+        wasRoaming = roaming;
+        if (roaming) {
+            const mover = roam.mode === 'walk' ? roam.debug.walker : roam.mode === 'car' ? roam.debug.drive.group?.position
+                : roam.mode === 'bike' ? bike.position : null;
+            if (figuresLand.update(dt, roam.focus, world.crossings(), mover) === 'reached') {
+                const first = !rainbowUnlocked();
+                try {
+                    localStorage.setItem(RAINBOW_KEY, '1');
+                } catch {
+                    // Given for this visit.
+                }
+                audio.play('new_record', { volume: 0.7 });
+                document.dispatchEvent(new CustomEvent('wheelie:notice', {
+                    detail: {
+                        title: '🎡 FIGURES LAND',
+                        text: 'La map est encore en construction, on se reverra plus tard… Mais pour te consoler, voilà une moto inédite : la moto arc-en-ciel ! '
+                            + (first ? 'Choisis-la dans PERSONNAGE › Choix de moto.' : 'Tu l’as déjà : PERSONNAGE › Choix de moto.'),
+                        seconds: 11
+                    }
+                }));
+                document.dispatchEvent(new CustomEvent('wheelie:figuresland', { detail: { first } }));
+            }
+        }
         world.update(camera, roaming ? roam.focus : bike.position);
         renderer.getDrawingBufferSize(viewport);
         fx.update(dt, camera, viewport.y);
