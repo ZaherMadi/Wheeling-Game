@@ -10,7 +10,7 @@ import { createPlayerVoice } from './src/player-voice.js';
 import { renderTrophyRoom } from './src/trophy-room.js';
 import { HumanCheckRequired, forgetPass, runHumanCheck, storedPass } from './src/human-check.js';
 import { POSES, buyPose, choosePose, chosenPose, ownedPoses } from './src/v2/poses.js';
-import { DRIFT_POINTS, GLIDER_POINTS, TRICKS_CODE_POINTS, rewards } from './src/unlocks.js';
+import { DRIFT_POINTS, GLIDER_POINTS, JETPACK_POINTS, TRICKS_CODE_POINTS, rewards } from './src/unlocks.js';
 import { createAccount, deviceToken } from './src/account.js';
 import { createSecretBird } from './src/secret-bird.js';
 import { SHIELD, createShields } from './src/shield.js';
@@ -2749,6 +2749,10 @@ function land(trickFrames, difficulty) {
 function roamJet() {
     if (!v2 || !state.isPlaying || state.isPaused || GAME_SETTINGS.gameMode !== 'free') return;
     if (roamFall.active) return;
+    if (v2.roam.mode !== 'jet' && !jetUnlocked()) {
+        toast('JETPACK VERROUILLÉ', `${JETPACK_POINTS.toLocaleString('fr-FR')} points cumulés, ou le code secret`, { discreet: true, float: true });
+        return;
+    }
     if (v2.roam.toggleJet() && v2.roam.mode === 'jet') bumpStat('jetpacks');
 }
 
@@ -3025,6 +3029,13 @@ const SECRET_SEQUENCE = ['gas', 'brake', 'wheelie', 'tap', 'tap', 'tap'];
 // Free roam, on the bike: Figures Land in one of the next side streets
 // (revealed by buying the free roam tricks).
 const LAND_SEQUENCE = ['wheelie', 'wheelie', 'brake', 'tap', 'tap', 'tap'];
+// Free roam, on the bike: the jetpack (and it is the player's from then on).
+const JET_SEQUENCE = ['brake', 'gas', 'wheelie', 'tap', 'tap', 'tap'];
+const JET_CODE_KEY = 'wheelie_jetpack_code';
+// The jetpack: reached at JETPACK_POINTS, or its code typed once.
+function jetUnlocked() {
+    return totalPoints() >= JETPACK_POINTS || readSetting(JET_CODE_KEY) === '1';
+}
 function secretInput(kind) {
     if (!state.isPlaying || state.userPaused) return;
     const competitive = GAME_SETTINGS.gameMode === 'linear';
@@ -3042,6 +3053,19 @@ function secretInput(kind) {
         bumpStat('landCode');
         audio.play('new_record', { volume: 0.5 });
         toast('🎡 FIGURES LAND', 'Elle t’attend dans une des prochaines rues : suis le panneau', { float: true });
+        return;
+    }
+    if (!competitive && typed(JET_SEQUENCE)) {
+        recent.length = 0;
+        try {
+            localStorage.setItem(JET_CODE_KEY, '1');
+        } catch {
+            // Works for this visit.
+        }
+        bumpStat('jetCode');
+        audio.play('new_record', { volume: 0.5 });
+        toast('CODE SECRET', 'Jetpack ! Le bouton JETPACK (touche J) est à toi maintenant', { float: true });
+        if (v2.roam.startJet()) bumpStat('jetpacks');
         return;
     }
     if (!typed(SECRET_SEQUENCE)) return;
@@ -4734,7 +4758,7 @@ function updateJetHud() {
     document.body.classList.toggle('ui-jet', mode === 'jet');
     const pad = document.getElementById('analog-jet');
     if (pad) {
-        pad.hidden = !roaming || mode === 'car' || mode === 'glide' || roamFall.active || v2.roam.frozen;
+        pad.hidden = !roaming || mode === 'car' || mode === 'glide' || roamFall.active || v2.roam.frozen || (mode !== 'jet' && !jetUnlocked());
         const label = pad.querySelector('.ui-pad__label');
         if (label) label.textContent = mode === 'jet' ? 'ATTERRIR' : 'JETPACK';
     }

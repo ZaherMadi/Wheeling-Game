@@ -395,8 +395,8 @@ function installToasts() {
 // time the player changes vehicle; H shows them again.
 const KEY_SETS = {
     race: [['↑', 'Gaz'], ['Espace', 'Wheeling'], ['↓', 'Frein'], ['← →', 'Diriger'], ['F', 'Figure'], ['B', 'Boost'], ['Échap', 'Pause']],
-    bike: [['↑', 'Gaz'], ['↓', 'Frein'], ['← →', 'Tourner'], ['Espace', 'Wheeling'], ['B', 'Boost'], ['G', 'Descendre'], ['J', 'Jetpack'], ['Échap', 'Pause']],
-    walk: [['↑ ↓ ← →', 'Marcher'], ['Maj', 'Courir'], ['Espace', 'Sauter'], ['G', 'Monter / conduire'], ['J', 'Jetpack'], ['Échap', 'Pause']],
+    bike: [['↑', 'Gaz'], ['↓', 'Frein'], ['← →', 'Tourner'], ['Espace', 'Wheeling'], ['B', 'Boost'], ['G', 'Descendre'], ['Échap', 'Pause']],
+    walk: [['↑ ↓ ← →', 'Marcher'], ['Maj', 'Courir'], ['Espace', 'Sauter'], ['G', 'Monter / conduire'], ['Échap', 'Pause']],
     jet: [['↑ ↓', 'Avancer / freiner'], ['← →', 'Tourner'], ['Espace', 'Monter'], ['Maj / B', 'Turbo'], ['J / G', 'Atterrir'], ['Échap', 'Pause']],
     glide: [['← →', 'Diriger le deltaplane'], ['Échap', 'Pause']],
     car: [['↑', 'Avancer'], ['↓', 'Freiner / reculer'], ['← →', 'Tourner'], ['B', 'Boost'], ['G', 'Sortir'], ['Échap', 'Pause']]

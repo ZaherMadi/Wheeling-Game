@@ -2,7 +2,7 @@
 // secret codes the player's rank (cumulative points) has revealed: what each
 // does, the keys to press in pictures, and a short video. The codes work
 // for whoever knows them; the bird only tells them.
-import { GLIDER_POINTS, TRICKS_CODE_POINTS } from './unlocks.js';
+import { GLIDER_POINTS, JETPACK_POINTS, TRICKS_CODE_POINTS } from './unlocks.js';
 
 const EVERY_MS = 30000;
 const FIRST_MS = 12000;
@@ -12,8 +12,13 @@ export const SECRET_CODES = [
     {
         key: 'glider', points: GLIDER_POINTS, name: 'Deltaplane', v2Only: true,
         where: 'En mode libre, assis sur la moto',
-        does: 'Un deltaplane t’emmène au-dessus de la rue : gauche / droite pour te diriger, puis tu te poses en courant. La police vient le reprendre (une fois sur deux avec 50 points).',
+        does: 'Un deltaplane t’emmène au-dessus de la rue : gauche / droite pour te diriger. Pose-toi sur un toit et cours-y librement, SAUTER au bord pour repartir. Dans la rue, la police le reprend avec une amende (au moins 2,5 % de tes points) ; sur une voiture, amende ×3.',
         video: '/video/code-deltaplane.mp4', poster: '/video/code-deltaplane.jpg'
+    },
+    {
+        key: 'jetpack', points: JETPACK_POINTS, name: 'Jetpack', v2Only: true, steps: [1, 0, 2, 3],
+        where: 'En mode libre, assis sur la moto',
+        does: 'Un jetpack sur le dos : vole où tu veux au-dessus de la rue et des toits (MONTER, TURBO, ATTERRIR). Le carburant, ce sont tes points cumulés : 10 par seconde, 30 avec le turbo. Une fois le code tapé, le bouton JETPACK (touche J) reste à toi.'
     },
     {
         key: 'tricks', points: TRICKS_CODE_POINTS, name: 'Mode figures',

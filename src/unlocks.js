@@ -21,6 +21,10 @@ export const SHOES_POINTS = 10000;
 // 12 000: the cross (dirt bike), when it is in the game.
 export const GLIDER_POINTS = 14000;
 export const TRICKS_CODE_POINTS = 16000;
+export const JETPACK_POINTS = 18000;
+// The jetpack's code (free roam, on the bike): frein, gaz, wheeling, then
+// three taps on the speedometer. Typed once, the jetpack is the player's.
+export const JETPACK_CODE_TEXT = 'FREIN, GAZ, WHEELING, puis 3 touches sur le compteur (en mode libre, sur la moto)';
 
 // [{ points, name, kind, hint, how }] in order. `name` (and `how`, the way
 // to use it) shown once unlocked, `hint` before.
@@ -36,6 +40,8 @@ export function rewards() {
         { points: SHOES_POINTS, name: 'Chaussures personnalisables', kind: 'shoes', hint: '???', how: 'Personnage › Chaussures' },
         { points: GLIDER_POINTS, name: 'Deltaplane', kind: 'glider', hint: '???',
             how: 'En mode libre sur la moto : gaz, frein, wheeling, puis 3 touches sur le compteur' },
+        { points: JETPACK_POINTS, name: 'Jetpack', kind: 'jetpack', hint: '???',
+            how: `Mode libre : bouton JETPACK (touche J). Le code : ${JETPACK_CODE_TEXT}. Carburant : tes points cumulés` },
         { points: TRICKS_CODE_POINTS, name: 'Code du mode figures', kind: 'code', hint: '???',
             how: 'Dans les 10 premières secondes d’une partie compétitive : gaz, frein, wheeling, puis 3 touches sur le compteur (partie non classée)' }
     );

@@ -17,6 +17,7 @@ const FIRST_KEY = 'wheelie_profile_first';
 const PREFIX = 'wheelie_profile:';
 const FREE_TRICKS_KEY = 'wheelie_free_tricks';
 const POSES_KEY = 'wheelie_podium_poses';
+const JET_CODE_KEY = 'wheelie_jetpack_code';
 const BESTS = ['bestScore', 'topKmh'];
 
 const keyOf = (nickname) => String(nickname || '').normalize('NFKC').trim().toLowerCase();
@@ -146,6 +147,7 @@ function ownedHere() {
     const owned = [];
     try {
         if (localStorage.getItem(FREE_TRICKS_KEY) === '1') owned.push('freeTricks');
+        if (localStorage.getItem(JET_CODE_KEY) === '1') owned.push('jetpackCode');
     } catch {
         // Nothing to add.
     }
@@ -163,6 +165,13 @@ function applyOwned(owned) {
                 localStorage.setItem(FREE_TRICKS_KEY, '1');
                 changed = true;
             }
+        } catch {
+            // Not kept.
+        }
+    }
+    if (owned.includes('jetpackCode')) {
+        try {
+            if (localStorage.getItem(JET_CODE_KEY) !== '1') localStorage.setItem(JET_CODE_KEY, '1');
         } catch {
             // Not kept.
         }
