@@ -728,7 +728,7 @@ export function createLoveEvent(deps) {
         const t = performance.now() / 1000;
         const v2 = deps.v2();
         const camera = deps.camera;
-        for (const item of run.items) items.animate(item, t);
+        for (const item of run.items) items.animate(item, t, camera.position);
         const rainAmount = dt > 0 ? updateSky(dt) : 0;
         if (rain && dt > 0) rain.update(dt, camera, rainAmount, deps.speed() * 60, run.storm ? 26 + Math.min(30, run.storm.t * 10) : 0);
         puddles?.frame(dt, rain ? rain.amount : 0, deps.bike().position.z + 40, camera.position.z);
