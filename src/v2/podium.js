@@ -161,6 +161,22 @@ function poseOf(id, t) {
 
 const isJetpack = (look) => look?.pose === 'jetpack';
 
+let haloMap = null;
+function haloTexture() {
+    if (haloMap) return haloMap;
+    const canvas = document.createElement('canvas');
+    canvas.width = canvas.height = 64;
+    const ctx = canvas.getContext('2d');
+    const gradient = ctx.createRadialGradient(32, 32, 0, 32, 32, 32);
+    gradient.addColorStop(0, 'rgba(255,255,255,1)');
+    gradient.addColorStop(0.35, 'rgba(255,255,255,0.5)');
+    gradient.addColorStop(1, 'rgba(255,255,255,0)');
+    ctx.fillStyle = gradient;
+    ctx.fillRect(0, 0, 64, 64);
+    haloMap = new THREE.CanvasTexture(canvas);
+    return haloMap;
+}
+
 function createFigure(scene) {
     const parts = sharedParts();
     const root = new THREE.Group();
@@ -260,11 +276,18 @@ function createFigure(scene) {
         band.position.set(s * 0.1, 0.06, 0);
         const nozzle = new THREE.Mesh(new THREE.CylinderGeometry(0.05, 0.07, 0.08, 10), bandMaterial);
         nozzle.position.set(s * 0.1, -0.26, 0);
-        const flame = new THREE.Mesh(new THREE.ConeGeometry(0.075, 0.7, 10, 1, true).rotateX(Math.PI).translate(0, -0.35, 0),
-            new THREE.MeshBasicMaterial({ color: 0xff8a2a, transparent: true, opacity: 0.9, blending: THREE.AdditiveBlending, depthWrite: false }));
+        const flame = new THREE.Group();
+        const tongue = new THREE.Mesh(new THREE.ConeGeometry(0.11, 1.05, 12, 1, true).rotateX(Math.PI).translate(0, -0.52, 0),
+            new THREE.MeshBasicMaterial({ color: 0xff7a1a, transparent: true, opacity: 0.95, blending: THREE.AdditiveBlending, depthWrite: false }));
+        const core = new THREE.Mesh(new THREE.ConeGeometry(0.05, 0.55, 10, 1, true).rotateX(Math.PI).translate(0, -0.27, 0),
+            new THREE.MeshBasicMaterial({ color: 0xcfe8ff, transparent: true, opacity: 0.95, blending: THREE.AdditiveBlending, depthWrite: false }));
+        const halo = new THREE.Sprite(new THREE.SpriteMaterial({ map: haloTexture(), color: 0xffa040, blending: THREE.AdditiveBlending, depthWrite: false, transparent: true }));
+        halo.scale.setScalar(0.55);
+        halo.position.y = -0.12;
+        flame.add(tongue, core, halo);
         flame.position.set(s * 0.1, -0.3, 0);
         flame.visible = false;
-        own.push(flame.material);
+        own.push(tongue.material, core.material, halo.material);
         pack.add(tank, band, nozzle, flame);
         flames.push(flame);
     }
@@ -340,11 +363,16 @@ function createFigure(scene) {
 
     // Body: 'stand' (the pose), 'run', 'walk', 'air' or 'jet' (the jetpack
     // firing, legs together). phase: running cycle.
-    function animate(t, motion, phase) {
+    // power: the jetpack's flames, 0..1 (growing as it lights up, softer
+    // for the landing).
+    function animate(t, motion, phase, power = 1) {
         const pose = poseOf(look?.pose, t);
         flames.forEach((flame, i) => {
-            flame.visible = motion === 'jet';
-            if (flame.visible) flame.scale.set(1, 0.8 + Math.sin(t * 57 + i * 2) * 0.15 + Math.random() * 0.2, 1);
+            flame.visible = motion === 'jet' && power > 0.03;
+            if (flame.visible) {
+                const flicker = 0.85 + Math.sin(t * 57 + i * 2) * 0.12 + Math.random() * 0.18;
+                flame.scale.set(0.5 + power * 0.6, (0.15 + power * 0.95) * flicker, 0.5 + power * 0.6);
+            }
         });
         if (motion === 'walk') {
             // A walk: the run's cycle, shorter steps, no bounce.
@@ -579,7 +607,8 @@ export function createPodium({ scene }) {
             // the jetpack lifts him up and sets him down on it.
             go(entry, 'walk', groundFront(steps[rank].block.x), 3);
             go(entry, 'climb', steps[rank].top, 0.9, 0.3);
-            go(entry, 'jet', steps[rank].top, 1.8, 1.3);
+            go(entry, 'ignite', steps[rank].top, 0.9);
+            go(entry, 'jet', steps[rank].top, 2.8, 1.35);
             return;
         }
         go(entry, 'run', groundFront(steps[rank].block.x), 1.3);
@@ -698,12 +727,82 @@ export function createPodium({ scene }) {
         return longest;
     }
 
+    // The jetpack's flight on the podium, 0..1 of its height: quickly up,
+    // a hover, then down slower and slower to touch the step lightly.
+    function jetLift(k) {
+        if (k < 0.3) return Math.sin((k / 0.3) * Math.PI / 2);
+        if (k < 0.5) return 1 + Math.sin((k - 0.3) / 0.2 * Math.PI) * 0.04;
+        const u = (k - 0.5) / 0.5;
+        return 1 - u * u * (3 - 2 * u);
+    }
+
+    // Smoke: soft grey puffs rising and spreading, from where the jets were.
+    const smokeTexture = (() => {
+        const canvas = document.createElement('canvas');
+        canvas.width = canvas.height = 64;
+        const ctx = canvas.getContext('2d');
+        const gradient = ctx.createRadialGradient(32, 32, 0, 32, 32, 32);
+        gradient.addColorStop(0, 'rgba(255,255,255,0.9)');
+        gradient.addColorStop(0.5, 'rgba(255,255,255,0.35)');
+        gradient.addColorStop(1, 'rgba(255,255,255,0)');
+        ctx.fillStyle = gradient;
+        ctx.fillRect(0, 0, 64, 64);
+        return new THREE.CanvasTexture(canvas);
+    })();
+    const puffs = Array.from({ length: 56 }, () => {
+        const sprite = new THREE.Sprite(new THREE.SpriteMaterial({ map: smokeTexture, color: 0xa9abb0, transparent: true, opacity: 0, depthWrite: false }));
+        sprite.visible = false;
+        group.add(sprite);
+        return { sprite, life: 0, max: 1, velocity: new THREE.Vector3(), alive: false };
+    });
+    const smokers = [];
+    function smokeFrom(at, seconds, strength) {
+        smokers.push({ at: at.clone(), left: seconds, strength, debt: 0 });
+    }
+    function updateSmoke(dt) {
+        for (let i = smokers.length - 1; i >= 0; i--) {
+            const source = smokers[i];
+            source.left -= dt;
+            source.debt += dt * 16 * source.strength * Math.min(1, source.left + 0.3);
+            while (source.debt >= 1) {
+                source.debt -= 1;
+                const puff = puffs.find((item) => !item.alive) || puffs[0];
+                puff.alive = true;
+                puff.life = 0;
+                puff.max = 2 + Math.random() * 1.4;
+                puff.sprite.visible = true;
+                puff.sprite.position.set(source.at.x + (Math.random() - 0.5) * 0.4, source.at.y + 0.25 + Math.random() * 0.4, source.at.z - 0.15 + (Math.random() - 0.5) * 0.3);
+                // Out along the step first, then rising.
+                const angle = Math.random() * Math.PI * 2;
+                const out = 0.4 + Math.random() * 0.5;
+                puff.velocity.set(Math.cos(angle) * out, 0.3 + Math.random() * 0.4, Math.sin(angle) * out * 0.7);
+            }
+            if (source.left <= 0) smokers.splice(i, 1);
+        }
+        for (const puff of puffs) {
+            if (!puff.alive) continue;
+            puff.life += dt;
+            const k = puff.life / puff.max;
+            if (k >= 1) {
+                puff.alive = false;
+                puff.sprite.visible = false;
+                continue;
+            }
+            puff.sprite.position.addScaledVector(puff.velocity, dt);
+            puff.velocity.multiplyScalar(Math.exp(-dt * 0.6));
+            puff.sprite.scale.setScalar(0.45 + k * 2.1);
+            puff.sprite.material.opacity = 0.8 * Math.min(1, k * 6) * (1 - k) ** 1.2;
+        }
+    }
+
     const step = new THREE.Vector3();
     function update(dt) {
         time += dt;
+        updateSmoke(dt);
         for (const [key, entry] of figures) {
             const root = entry.figure.root;
             let motion = 'stand';
+            let power = 1;
             const move = entry.path[0];
             if (move) {
                 move.t += dt;
@@ -715,12 +814,30 @@ export function createPodium({ scene }) {
                     const eased = move.kind === 'run' || move.kind === 'walk' ? k : k * k * (3 - 2 * k);
                     root.position.lerpVectors(move.from, move.to, eased);
                     if (move.kind === 'jump' || move.kind === 'climb') root.position.y += 4 * move.height * k * (1 - k);
-                    // The jetpack: up, a hover, down softly onto the step.
-                    if (move.kind === 'jet') root.position.y += move.height * Math.sin(Math.PI * Math.min(1, k * 1.1)) ** 0.7;
-                    motion = move.kind === 'jump' || move.kind === 'climb' ? 'air' : move.kind === 'jet' ? 'jet' : move.kind === 'walk' ? 'walk' : 'run';
+                    // The jetpack lights up (flames growing, a puff of smoke
+                    // under it), takes off, hovers, then comes down slowly
+                    // and touches the step lightly.
+                    power = 1;
+                    if (move.kind === 'ignite') {
+                        power = k * k;
+                        if (!move.puffed && k > 0.7) {
+                            move.puffed = true;
+                            smokeFrom(root.position, 0.7, 0.9);
+                        }
+                    }
+                    if (move.kind === 'jet') {
+                        root.position.y += move.height * jetLift(k);
+                        power = k < 0.55 ? 1 : 1 - 0.55 * (k - 0.55) / 0.45;
+                    }
+                    motion = move.kind === 'jump' || move.kind === 'climb' ? 'air'
+                        : move.kind === 'jet' || move.kind === 'ignite' ? 'jet' : move.kind === 'walk' ? 'walk' : 'run';
                     step.subVectors(move.to, move.from);
                     if ((motion === 'run' || motion === 'walk') && step.lengthSq() > 1e-4) entry.facing = Math.atan2(step.x, step.z);
-                    if (move.kind === 'jet' && k >= 1) celebrate(1.5);
+                    if (move.kind === 'jet' && k >= 1) {
+                        // Down: the smoke the jets leave rises round him.
+                        celebrate(1.5);
+                        smokeFrom(root.position, 3.5, 1.2);
+                    }
                 }
                 if (k >= 1) entry.path.shift();
             } else if (entry.leaving) {
@@ -733,7 +850,7 @@ export function createPodium({ scene }) {
             if (motion === 'stand') entry.facing += (entry.figure.facing - entry.facing) * Math.min(1, dt * 6);
             root.rotation.y = entry.facing;
             entry.phase += dt * 11;
-            entry.figure.animate(time + key.length, motion, entry.phase);
+            entry.figure.animate(time + key.length, motion, entry.phase, power);
             // The pose screen: only the player, on the top step.
             if (solo) root.visible = false;
         }
