@@ -13,16 +13,26 @@ import { createInk } from './ink.js';
 import { createRain } from './rain.js';
 import { createItemFactory, ITEM_KINDS } from './items.js';
 import { createMusic, MUSIC_CREDIT } from './music.js';
+import { createPuddles } from './puddles.js';
 
 export const LOVE_CODE = '5HC';
 const UNLOCK_KEY = 'wheelie_love_event';
 const OUTFIT_KEY = 'wheelie_love_outfit';
+const BAND_KEY = 'wheelie_love_band';
 const BEST_KEY = 'wheelie_love_best';
 const FILES = '/event/love/';
 export const LOVE = { max: 20, start: 8, sun: 12 };
 // Placement on the road: one slot every `seconds` of riding, each one a
 // catch (good), a danger (bad, more as the run goes on) or nothing.
 const SPAWN = { seconds: 0.5, minGap: 22, maxGap: 80, good: 0.24, bad: 0.32, badMore: 0.14, badRampSeconds: 120, width: 7.2, height: 1.55, calm: 2.5 };
+// The blindfold's colour (a setting of the event's panel): cloth and ink.
+const BANDS = [
+    ['rouge', 'Rouge', '#c90025', '#ffffff'], ['noir', 'Noir', '#111111', '#f4ede9'], ['blanc', 'Blanc', '#f4ede9', '#c90025'],
+    ['rose', 'Rose', '#ff8fb1', '#7a0016'], ['bleu', 'Bleu', '#2f5fd0', '#ffffff'], ['or', 'Or', '#c9a45c', '#1a0e05']
+];
+// Puddles while it rains: one stretch of road in two or so; now and then a
+// big one.
+const PUDDLES = { chance: 0.55, big: 0.35 };
 const OUTFITS = [
     ['lva', 'For real lovers'],
     ['plva', 'Pour les vrais amoureux'],
@@ -116,6 +126,28 @@ function createChimes() {
             tone(1250, 0, 0.18, 0.16, 'sine', -700);
             tone(520, 0.12, 0.25, 0.06, 'sine', -200);
         },
+        splash(strength = 1) {
+            const c = ctx();
+            if (!c) return;
+            const length = 0.55;
+            const buffer = c.createBuffer(1, Math.floor(c.sampleRate * length), c.sampleRate);
+            const data = buffer.getChannelData(0);
+            for (let i = 0; i < data.length; i++) {
+                const t = i / data.length;
+                data[i] = (Math.random() * 2 - 1) * Math.pow(1 - t, 2.2) * (t < 0.02 ? t / 0.02 : 1);
+            }
+            const source = c.createBufferSource();
+            source.buffer = buffer;
+            const filter = c.createBiquadFilter();
+            filter.type = 'bandpass';
+            filter.frequency.setValueAtTime(1600, c.currentTime);
+            filter.frequency.exponentialRampToValueAtTime(700, c.currentTime + length);
+            filter.Q.value = 0.7;
+            const gain = c.createGain();
+            gain.gain.value = 0.55 * Math.min(1.2, strength);
+            source.connect(filter).connect(gain).connect(c.destination);
+            source.start();
+        },
         repaired() {
             [523, 659, 784, 1047, 1319].forEach((f, i) => tone(f, i * 0.12, 0.9, 0.14));
         }
@@ -183,6 +215,12 @@ export function createLoveEvent(deps) {
         const saved = readLocal(OUTFIT_KEY);
         return OUTFITS.some(([id]) => id === saved) ? saved : OUTFITS[0][0];
     };
+    const bandChoice = () => BANDS.find(([id]) => id === readLocal(BAND_KEY)) || BANDS[0];
+    const look = () => {
+        const [, , color, ink] = bandChoice();
+        return { print: outfit(), band: { color, ink } };
+    };
+    let puddles = null;
 
     // --- The bar --------------------------------------------------------------------
     function showBar() {
@@ -232,6 +270,9 @@ export function createLoveEvent(deps) {
             <h4 class="love-h4">Ta tenue Love&amp;Faith</h4>
             <div class="love-outfits">${OUTFITS.map(([id, name]) => `<button type="button" class="love-outfit ${id === chosen ? 'is-on' : ''}" data-outfit="${id}">
                 <img src="${FILES}icon-${id}.webp" alt=""><span>${esc(name)}</span></button>`).join('')}</div>
+            <h4 class="love-h4">Ton bandeau « L’amour rend aveugle »</h4>
+            <div class="love-bands">${BANDS.map(([id, name, color, ink]) => `<button type="button" class="love-band ${id === bandChoice()[0] ? 'is-on' : ''}" data-band="${id}"
+                style="--band:${color};--band-ink:${ink}" aria-label="Bandeau ${esc(name)}"><span>${esc(name)}</span></button>`).join('')}</div>
             <h4 class="love-h4">Musique · ${esc(MUSIC_CREDIT.name)} (au hasard)</h4>
             <div class="love-player" id="love-player-slot"></div>
             <button type="button" class="love-btn love-btn--primary" data-act="play">❤ JOUER</button>
@@ -301,6 +342,7 @@ export function createLoveEvent(deps) {
     function begin() {
         if (!items) items = createItemFactory();
         if (!rain) rain = createRain(deps.scene);
+        if (!puddles) puddles = createPuddles(deps.scene);
         clearRun();
         Object.assign(run, {
             on: true, love: LOVE.start, shownLove: LOVE.start, nextZ: null, time: 0, ended: false, caught: 0, hits: 0,
@@ -312,7 +354,7 @@ export function createLoveEvent(deps) {
         document.body.classList.add('love-on');
         showBar();
         const v2 = deps.v2();
-        v2?.setOutfit({ print: outfit() });
+        v2?.setOutfit(look());
         v2?.rider.setMood(0);
         updateSky(0, true);
         deps.stat('loveRuns');
@@ -328,6 +370,7 @@ export function createLoveEvent(deps) {
         tears.length = 0;
         for (const spark of sparks) deps.scene.remove(spark.sprite);
         sparks.length = 0;
+        puddles?.clear();
         ink.clear();
     }
 
@@ -339,6 +382,12 @@ export function createLoveEvent(deps) {
         const gap = Math.max(SPAWN.minGap, Math.min(SPAWN.maxGap, perSecond * SPAWN.seconds));
         if (run.nextZ === null) run.nextZ = Math.min(to, bike.position.z - perSecond * SPAWN.calm);
         const bad = SPAWN.bad + SPAWN.badMore * Math.min(1, run.time / SPAWN.badRampSeconds);
+        if (run.shownLove < LOVE.sun && Math.random() < PUDDLES.chance) {
+            const big = Math.random() < PUDDLES.big;
+            const width = big ? 5 + Math.random() * 3.5 : 2.6 + Math.random() * 2;
+            const length = big ? 10 + Math.random() * 8 : 4 + Math.random() * 4;
+            puddles.add((Math.random() * 2 - 1) * (8 - width / 2), from + Math.random() * (to - from), width, length);
+        }
         while (run.nextZ > from) {
             const z = run.nextZ;
             run.nextZ -= gap * (0.75 + Math.random() * 0.5);
@@ -360,6 +409,11 @@ export function createLoveEvent(deps) {
         if (!run.on || run.ended) return;
         run.time += dt;
         const bike = deps.bike().position;
+        const v2 = deps.v2();
+        if (v2 && puddles) {
+            const splash = puddles.step(dt, v2.rider, deps.speed() * 60);
+            if (splash > 0) chimes.splash(splash);
+        }
         const lastZ = run.lastZ ?? bike.z;
         run.lastZ = bike.z;
         for (const item of run.items) {
@@ -462,6 +516,7 @@ export function createLoveEvent(deps) {
         for (const item of run.items) items.animate(item, t);
         const rainAmount = dt > 0 ? updateSky(dt) : 0;
         if (rain && dt > 0) rain.update(dt, camera, rainAmount, deps.speed() * 60);
+        puddles?.frame(dt, rain ? rain.amount : 0, deps.bike().position.z + 40, camera.position.z);
         // The rider's mood.
         const sadness = run.outcome === 'repaired' ? 0 : Math.max(0, Math.min(1, (LOVE.sun - run.shownLove) / 8));
         v2?.rider.setMood(run.outcome === 'broken' ? 1 : sadness);
@@ -650,8 +705,13 @@ export function createLoveEvent(deps) {
     }
 
     root.addEventListener('click', (event) => {
-        const target = event.target instanceof Element ? event.target.closest('[data-act], [data-outfit]') : null;
+        const target = event.target instanceof Element ? event.target.closest('[data-act], [data-outfit], [data-band]') : null;
         if (!target) return;
+        if (target.dataset.band) {
+            writeLocal(BAND_KEY, target.dataset.band);
+            root.querySelectorAll('.love-band').forEach((b) => b.classList.toggle('is-on', b === target));
+            return;
+        }
         if (target.dataset.outfit) {
             writeLocal(OUTFIT_KEY, target.dataset.outfit);
             root.querySelectorAll('.love-outfit').forEach((b) => b.classList.toggle('is-on', b === target));
@@ -689,6 +749,14 @@ export function createLoveEvent(deps) {
             run,
             set love(value) { run.love = value; showBar(); },
             get rain() { return rain ? rain.amount : 0; },
+            get puddles() { return puddles ? puddles.count : 0; },
+            get drops() { return puddles ? puddles.drops : 0; },
+            get puddleSystem() { return puddles; },
+            // A puddle right in the bike's way.
+            puddleAhead(width = 6, length = 12) {
+                const bike = deps.bike().position;
+                puddles.add(bike.x, bike.z - Math.max(30, deps.speed() * 60 * 0.8), width, length);
+            },
             // One of these right in the bike's way.
             forceNext(kind) {
                 const bike = deps.bike().position;

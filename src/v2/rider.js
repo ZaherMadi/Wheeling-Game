@@ -791,6 +791,13 @@ export function createRider({ scene }) {
         head.rotation.x = Math.max(-0.95, Math.min(0.95, -(pose.torso - 0.3) * 0.78 + tuck * 0.1));
         head.rotation.y = pose.steer * 1.1;
         head.rotation.z = -(pose.lean + hang * 0.45) * 0.65;
+        // The blindfold's ends blown back by the ride.
+        if (outfit?.look) {
+            const t = performance.now() / 1000;
+            outfit.tails.forEach((pivot, i) => {
+                pivot.rotation.x = 0.95 + Math.sin(t * 13 + i * 1.9) * 0.16 + Math.sin(t * 5.3 + i) * 0.08;
+            });
+        }
         // Sad (the Love&Faith event): the head hangs, turns slowly, shakes.
         mood.level += (mood.target - mood.level) * Math.min(1, dt * 1.5);
         mood.shake = Math.max(0, mood.shake - dt * 0.7);
@@ -1387,39 +1394,80 @@ export function createRider({ scene }) {
             return texture;
         };
         const skin = standard(0x7a4524, 0.6);
-        const knit = new THREE.MeshStandardMaterial({ map: load('beanie.jpg'), roughness: 0.95 });
-        const decal = (name, roughness = 0.85) => new THREE.MeshStandardMaterial({
-            map: load(name), transparent: true, roughness, depthWrite: false, polygonOffset: true, polygonOffsetFactor: -2, polygonOffsetUnits: -2
+        const decal = (map, roughness = 0.85) => new THREE.MeshStandardMaterial({
+            map, transparent: true, roughness, depthWrite: false, polygonOffset: true, polygonOffsetFactor: -2, polygonOffsetUnits: -2
         });
-        const face = decal('face.png', 0.5);
-        const kiss = decal('beanie-kiss.png');
-        const nameDown = decal('beanie-back.png');
         const group = new THREE.Group();
         group.visible = false;
         head.add(group);
         const parts = new Parts();
         parts.add(skin, sphere, transform(0, 0.04, 0.005, 0.168, 0.19, 0.175));
         parts.add(skin, tube, transform(0, -0.12, -0.005, 0.075, 0.12, 0.075));
-        const crown = new THREE.SphereGeometry(1, 24, 12, 0, Math.PI * 2, 0, Math.PI * 0.52);
-        parts.add(knit, crown, transform(0, 0.085, 0, 0.188, 0.2, 0.195));
-        const band = new THREE.CylinderGeometry(1, 1.03, 1, 28, 1, true);
-        parts.add(knit, band, transform(0, 0.098, 0, 0.192, 0.07, 0.199));
         parts.build(group);
-        const patch = (material, geometry, matrix) => {
+        const patch = (parent, material, geometry, matrix) => {
             const mesh = new THREE.Mesh(geometry.applyMatrix4(matrix), material);
             mesh.renderOrder = 2;
-            group.add(mesh);
+            parent.add(mesh);
+            return mesh;
         };
-        // The face on the front of the head, the kiss on the beanie's front,
-        // LOVE&FAITH down its back.
-        patch(face, new THREE.SphereGeometry(1, 20, 12, Math.PI / 2 - 0.82, 1.64, Math.PI * 0.34, Math.PI * 0.4),
+        // The face (under the blindfold: the mouth shows).
+        patch(group, decal(load('face.png'), 0.5), new THREE.SphereGeometry(1, 20, 12, Math.PI / 2 - 0.82, 1.64, Math.PI * 0.34, Math.PI * 0.4),
             transform(0, 0.04, 0.005, 0.171, 0.193, 0.178));
-        patch(kiss, new THREE.SphereGeometry(1, 16, 8, Math.PI / 2 - 0.62, 1.1, Math.PI * 0.2, Math.PI * 0.27),
-            transform(0, 0.085, 0, 0.191, 0.203, 0.198));
-        patch(nameDown, new THREE.SphereGeometry(1, 6, 16, Math.PI * 1.5 - 0.13, 0.26, Math.PI * 0.05, Math.PI * 0.45),
-            transform(0, 0.085, 0, 0.191, 0.203, 0.198));
-        crown.dispose();
-        band.dispose();
+
+        // The beanie as on the figure: pulled down snug over the head and
+        // tilted back (low over the nape, the folded cuff just above the
+        // brows), its white stripe round the cuff, LOVE&FAITH down the back
+        // on a white band, the kiss on the front.
+        const knitMaps = beanieMaps();
+        const beanie = new THREE.Group();
+        beanie.position.set(0, 0.045, -0.004);
+        beanie.rotation.x = -0.22;
+        group.add(beanie);
+        const R = [0.184, 0.214, 0.192];
+        const crown = new THREE.Mesh(new THREE.SphereGeometry(1, 28, 14, 0, Math.PI * 2, 0, Math.PI * 0.5),
+            new THREE.MeshStandardMaterial({ map: knitMaps.crown, roughness: 0.95 }));
+        crown.scale.set(R[0], R[1], R[2]);
+        crown.castShadow = true;
+        beanie.add(crown);
+        const cuff = new THREE.Mesh(new THREE.CylinderGeometry(1, 1, 1, 32, 1, true),
+            new THREE.MeshStandardMaterial({ map: knitMaps.cuff, roughness: 0.95, side: THREE.DoubleSide }));
+        cuff.scale.set(R[0] * 1.045, 0.072, R[2] * 1.045);
+        cuff.position.y = 0.03;
+        cuff.castShadow = true;
+        beanie.add(cuff);
+        const over = transform(0, 0, 0, R[0] * 1.012, R[1] * 1.012, R[2] * 1.012);
+        patch(beanie, decal(load('beanie-kiss.png')), new THREE.SphereGeometry(1, 16, 8, Math.PI / 2 - 0.12, 0.95, Math.PI * 0.2, Math.PI * 0.25), over);
+        patch(beanie, decal(knitMaps.back), new THREE.SphereGeometry(1, 6, 18, Math.PI * 1.5 - 0.17, 0.34, Math.PI * 0.02, Math.PI * 0.48), over);
+
+        // The blindfold, "L'amour rend aveugle" across the eyes, knotted at
+        // the back, its two ends blown by the ride.
+        const bandCanvas = document.createElement('canvas');
+        bandCanvas.width = 2048;
+        bandCanvas.height = 128;
+        const bandMap = new THREE.CanvasTexture(bandCanvas);
+        bandMap.colorSpace = THREE.SRGBColorSpace;
+        bandMap.anisotropy = 8;
+        const bandMaterial = new THREE.MeshStandardMaterial({ map: bandMap, roughness: 0.72, side: THREE.DoubleSide });
+        const tie = new THREE.MeshStandardMaterial({ color: 0xc90025, roughness: 0.72, side: THREE.DoubleSide });
+        const blindfold = new THREE.Mesh(new THREE.CylinderGeometry(1, 1, 1, 48, 1, true, Math.PI, Math.PI * 2), bandMaterial);
+        blindfold.scale.set(0.179, 0.07, 0.187);
+        blindfold.position.set(0, 0.036, 0.005);
+        group.add(blindfold);
+        const knot = new THREE.Mesh(sphere, tie);
+        knot.scale.set(0.03, 0.03, 0.022);
+        knot.position.set(0, 0.036, -0.19);
+        group.add(knot);
+        const tails = [-1, 1].map((side) => {
+            const pivot = new THREE.Group();
+            pivot.position.set(side * 0.014, 0.03, -0.198);
+            const end = new THREE.Mesh(box, tie);
+            end.scale.set(0.034, 0.14, 0.006);
+            end.position.y = -0.07;
+            pivot.add(end);
+            pivot.rotation.z = side * 0.32;
+            group.add(pivot);
+            return pivot;
+        });
         // The creation on the chest (the back's own print takes the number's place).
         const frontMaterial = new THREE.MeshStandardMaterial({
             transparent: true, roughness: 0.86, depthWrite: false, polygonOffset: true, polygonOffsetFactor: -1, polygonOffsetUnits: -1
@@ -1429,7 +1477,83 @@ export function createRider({ scene }) {
         chest.visible = false;
         chest.renderOrder = 2;
         pelvis.add(chest);
-        return { group, chest, frontMaterial, skin, print: null, look: null, pictures: {} };
+        return { group, chest, frontMaterial, skin, print: null, look: null, pictures: {}, bandCanvas, bandMap, tie, tails, band: null };
+    }
+
+    // The beanie's knit (from the figure's own texture), its cuff with the
+    // white stripe, the white band with LOVE&FAITH for its back.
+    function beanieMaps() {
+        const make = (w, h) => {
+            const canvas = document.createElement('canvas');
+            canvas.width = w;
+            canvas.height = h;
+            const texture = new THREE.CanvasTexture(canvas);
+            texture.colorSpace = THREE.SRGBColorSpace;
+            texture.anisotropy = 4;
+            return { canvas, ctx: canvas.getContext('2d'), texture };
+        };
+        const crown = make(256, 256);
+        const cuff = make(256, 64);
+        const back = make(64, 360);
+        crown.texture.wrapS = crown.texture.wrapT = THREE.RepeatWrapping;
+        crown.texture.repeat.set(3, 1.3);
+        cuff.texture.wrapS = THREE.RepeatWrapping;
+        cuff.texture.repeat.set(5, 1);
+        for (const map of [crown, cuff]) {
+            map.ctx.fillStyle = '#2d5fd6';
+            map.ctx.fillRect(0, 0, map.canvas.width, map.canvas.height);
+        }
+        const stripe = () => {
+            cuff.ctx.fillStyle = '#f2f2f0';
+            cuff.ctx.fillRect(0, 10, cuff.canvas.width, 8);
+        };
+        stripe();
+        back.ctx.fillStyle = '#f4f4f2';
+        back.ctx.fillRect(10, 0, 44, 360);
+        const photo = new Image();
+        photo.onload = () => {
+            // Only the plain knit (the photo's left part: no seams there).
+            const sw = photo.width * 0.36;
+            const sh = photo.height * 0.48;
+            crown.ctx.drawImage(photo, 0, 0, sw, sh, 0, 0, 256, 256);
+            cuff.ctx.drawImage(photo, 0, sh * 0.5, sw, sh * 0.22, 0, 0, 256, 64);
+            stripe();
+            crown.texture.needsUpdate = true;
+            cuff.texture.needsUpdate = true;
+        };
+        photo.src = `${OUTFIT_FILES}beanie.jpg`;
+        // LOVE&FAITH down the band, bold enough to read on the road.
+        back.ctx.fillStyle = '#1d4fc4';
+        back.ctx.font = '900 30px Georgia, "Times New Roman", serif';
+        back.ctx.textAlign = 'center';
+        back.ctx.textBaseline = 'middle';
+        [...'LOVE&FAITH'].forEach((char, i) => back.ctx.fillText(char, 32, 30 + i * 32));
+        back.texture.needsUpdate = true;
+        return { crown: crown.texture, cuff: cuff.texture, back: back.texture };
+    }
+
+    // The blindfold's cloth and its words (the pen's font once loaded).
+    function drawBand(color, ink) {
+        const ctx = outfit.bandCanvas.getContext('2d');
+        const { width, height } = outfit.bandCanvas;
+        ctx.fillStyle = color;
+        ctx.fillRect(0, 0, width, height);
+        // The weave and the hems.
+        ctx.globalAlpha = 0.12;
+        ctx.fillStyle = ink;
+        for (let x = 0; x < width; x += 6) ctx.fillRect(x, 0, 1, height);
+        ctx.globalAlpha = 0.35;
+        ctx.fillRect(0, 6, width, 3);
+        ctx.fillRect(0, height - 9, width, 3);
+        ctx.globalAlpha = 1;
+        ctx.fillStyle = ink;
+        ctx.textAlign = 'center';
+        ctx.textBaseline = 'middle';
+        ctx.font = '70px "Parisienne", "Brush Script MT", cursive';
+        // On the front only (a quarter of the way round): it reads face on.
+        ctx.fillText('L’amour rend aveugle', width / 2, height / 2 + 6, width * 0.25);
+        outfit.bandMap.needsUpdate = true;
+        outfit.tie.color.set(color);
     }
 
     // A creation's print, on white fleece (back) or alone (chest).
@@ -1477,6 +1601,19 @@ export function createRider({ scene }) {
         jerseyDark.color.set('#dcdad5');
         sneaker.color.set('#f4f4f2');
         glove.color.set(0x7a4524);
+        const band = look.band || { color: '#c90025', ink: '#ffffff' };
+        const bandKey = `${band.color}/${band.ink}`;
+        if (outfit.band !== bandKey) {
+            outfit.band = bandKey;
+            drawBand(band.color, band.ink);
+            // Again once the pen's font has come.
+            const again = () => {
+                if (outfit.band === bandKey) drawBand(band.color, band.ink);
+            };
+            document.fonts?.load('84px "Parisienne"').then(again).catch(() => {});
+            setTimeout(again, 1500);
+            setTimeout(again, 4000);
+        }
         if (outfit.print === look.print) return;
         outfit.print = look.print;
         jerseyPrint.map.dispose();
@@ -1517,7 +1654,7 @@ export function createRider({ scene }) {
     }
     // Where a tear starts: under the left (-1) or right (1) eye.
     function eyePoint(out, side) {
-        out.set(side * 0.058, 0.035, 0.175);
+        out.set(side * 0.06, -0.004, 0.182);
         return head.localToWorld(out);
     }
 

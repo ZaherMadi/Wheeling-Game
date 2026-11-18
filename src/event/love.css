@@ -809,3 +809,68 @@ body.love-panel :is(#score-container, #speedometer, #pause-btn, #angle-multiplie
     top: calc(max(12px, env(safe-area-inset-top)) + 208px);
   }
 }
+
+/* The words with nothing behind them: the ink right on the picture. */
+#love-root .ink--love,
+#love-root .ink--sad,
+#love-root .ink--thought {
+  background: none;
+  border: 0;
+  box-shadow: none;
+}
+
+#love-root .ink--love .ink__dry {
+  color: #ff2546;
+  text-shadow: 0 1px 1px rgba(0, 0, 0, 0.55), 0 0 12px rgba(0, 0, 0, 0.32);
+}
+
+#love-root .ink--love .ink__wet {
+  color: #ff8aa0;
+  text-shadow: none;
+}
+
+#love-root .ink--sad .ink__dry,
+#love-root .ink--thought .ink__dry {
+  color: #e2e9f8;
+  text-shadow: 0 2px 4px rgba(4, 8, 24, 0.8), 0 0 14px rgba(4, 8, 24, 0.5);
+}
+
+#love-root .ink--sad .ink__wet,
+#love-root .ink--thought .ink__wet {
+  color: #ffffff;
+  text-shadow: none;
+}
+
+/* A thought: two little bubbles under it, nothing else. */
+#love-root .ink--thought::after {
+  width: 7px;
+  height: 7px;
+  bottom: -10px;
+  background: rgba(238, 242, 255, 0.75);
+  box-shadow: 8px 9px 0 -2px rgba(238, 242, 255, 0.55);
+}
+
+/* The blindfold's colours. */
+.love-bands {
+  display: grid;
+  grid-template-columns: repeat(6, 1fr);
+  gap: 6px;
+}
+
+#love-root .love-band {
+  display: grid;
+  place-items: center;
+  height: 40px;
+  padding: 0 !important;
+  border-radius: 10px;
+  border: 2px solid rgba(244, 237, 233, 0.15);
+  background: var(--band);
+  color: var(--band-ink);
+  font: italic 400 13px/1 var(--lf-ink);
+  cursor: pointer;
+}
+
+#love-root .love-band.is-on {
+  border-color: var(--lf-gold);
+  box-shadow: 0 0 12px rgba(201, 164, 92, 0.6) !important;
+}
