@@ -557,6 +557,12 @@ export function createLive(deps) {
             deps.setNickname(name);
         }
         const value = (wanted || $('live-code')?.value || '').toUpperCase();
+        // The Love&Faith event's code (testers): not a room.
+        if (!wanted && value === '5HC' && deps.loveCode) {
+            close();
+            deps.loveCode();
+            return;
+        }
         if (value.length < 3) {
             $('live-error').textContent = 'Le code fait 3 à 12 lettres ou chiffres.';
             return;

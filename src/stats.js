@@ -127,6 +127,16 @@ export function renderStats(container, { points = 0, codes = {}, all = null, ser
             ['Vols en jetpack', whole(stats.jetpacks)]
         ]]
     ];
+    // The Love&Faith event (testers), once played.
+    if (stats.loveRuns) {
+        groups.push(['Événement Love&Faith', [
+            ['Courses', whole(stats.loveRuns)],
+            ['Cœurs réparés', whole(stats.loveRepaired)],
+            ['Cœurs brisés', whole(stats.loveBroken)],
+            ['Attrapés (cœurs, câlins, lettres)', whole(stats.lovePickups)],
+            ['Touchés (cœurs brisés, larmes)', whole(stats.loveHits)]
+        ]]);
+    }
     if (stats.liveSessions || stats.liveTurns || stats.liveReactions) {
         const trophies = LIVE_TROPHIES.filter(([id]) => stats.liveTrophyCounts?.[id]).map(([id, label]) => [label, whole(stats.liveTrophyCounts[id])]);
         groups.push(['Sessions live', [

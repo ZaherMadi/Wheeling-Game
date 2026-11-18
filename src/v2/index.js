@@ -63,6 +63,9 @@ export function createRealisticVersion({ scene, renderer, camera, mobile, audio,
         ...livery, name: riderName(), plate: !!livery.plate && totalPoints() >= PLATE_POINTS, plateText: livery.plateText || '',
         ...unlockedLook(livery)
     });
+    // The event's sky ({ ambience, dusk }, or null: the day cycle).
+    let skyOverride = null;
+    let skyAmbience = 'golden';
     // Session live: someone else's look worn while watching him.
     let wornLook = null;
     const wearOwn = (livery) => rider.setLivery(wornLook || riderLook(livery));
@@ -288,9 +291,22 @@ export function createRealisticVersion({ scene, renderer, camera, mobile, audio,
         }
         lastPosition.copy(bike.position);
 
-        // Golden hour drifting to night and back.
-        const phase = (snapshot.gameTime % DAY_CYCLE_SECONDS) / DAY_CYCLE_SECONDS;
-        world.setDusk((0.5 - 0.5 * Math.cos(phase * Math.PI * 2)) * 0.9);
+        // Golden hour drifting to night and back (the Love&Faith event sets
+        // its own sky: the love bar's).
+        if (skyOverride) {
+            if (skyOverride.ambience !== skyAmbience) {
+                skyAmbience = skyOverride.ambience;
+                world.setAmbience(skyAmbience);
+            }
+            world.setDusk(skyOverride.dusk);
+        } else {
+            if (skyAmbience !== 'golden') {
+                skyAmbience = 'golden';
+                world.setAmbience('golden');
+            }
+            const phase = (snapshot.gameTime % DAY_CYCLE_SECONDS) / DAY_CYCLE_SECONDS;
+            world.setDusk((0.5 - 0.5 * Math.cos(phase * Math.PI * 2)) * 0.9);
+        }
 
         // Boost flames: from the bike's exhaust, or the back of the car.
         const roamCar = roam.carRear;
@@ -592,6 +608,14 @@ export function createRealisticVersion({ scene, renderer, camera, mobile, audio,
         world, rider, fx, roam, frame, reset, setQuality, showroom, startAd, adScreen, policeStop,
         podium, podiumView, podiumLook, riderName, skidmarks,
         // Session live: the rider watched wears his own look (null: ours).
+        // The Love&Faith event: its sky, its outfit ({ print } or null).
+        setSky(sky) {
+            skyOverride = sky || null;
+        },
+        setOutfit(look) {
+            rider.setEventLook(look || null);
+            if (!look) wearOwn();
+        },
         wearLook(look) {
             wornLook = look ? { ...look, name: look.name || '', plate: !!look.plate, plateText: look.plateText || '' } : null;
             wearOwn();

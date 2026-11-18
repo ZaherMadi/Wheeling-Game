@@ -21,6 +21,7 @@ import { startActivity } from './src/activity.js';
 import { createSpeedLines } from './src/v2/speedlines.js';
 import riderVoices from './src/rider-voices.json';
 import { createLive } from './src/live/live.js';
+import { createLoveEvent } from './src/event/love.js';
 
 // Two versions share the same simulation, scoring and ranked replay:
 // 'v2' (realistic city, new rider) and 'classic' (the original V1 look).
@@ -369,6 +370,8 @@ let state = {
     police: { phase: 'idle', lastSeen: -1e9, gaveUp: false },
     // Secret code: tricks only (no police, unranked, a tenth of the score).
     tricksOnly: false,
+    // The Love&Faith event's race (src/event/love.js): its own road, unranked.
+    loveEvent: false,
     // Time spent against a side of the road, and the obstacle put there.
     edge: { frames: 0, pending: null },
     // Bavette (frames left while held, and in all) and this run's plate.
@@ -1970,6 +1973,7 @@ function visualSnapshot() {
 function renderScene(dt, snapshot = visualSnapshot()) {
     cameraDt = dt > 0 ? Math.min(0.1, dt) : FIXED_STEP;
     updateCamera();
+    if (state.loveEvent && loveEvent) loveEvent.frame(dt);
     // Tests: where the bike and the camera were drawn.
     if (import.meta.env.DEV && bikeGroup) window.__drawn = { bike: bikeGroup.position.z, cam: camera.position.z };
     if (dt > 0) updateKnockedObstacles(dt);
@@ -2016,6 +2020,7 @@ function resetGame() {
     state.slow = { armed: false, frames: 0, policeFrames: 0 };
     state.police = { phase: 'idle', lastSeen: -1e9, gaveUp: false };
     state.tricksOnly = false;
+    state.loveEvent = false;
     state.edge = { frames: 0, pending: null };
     state.turns = 0;
     state.obstacleRamp = null;
@@ -2140,7 +2145,9 @@ async function startGame() {
     stopVoice();
     let runToken = null;
     let humanCheckSkipped = false;
-    if (GAME_SETTINGS.gameMode === 'linear') {
+    const love = lovePending && GAME_SETTINGS.gameMode === 'linear';
+    lovePending = false;
+    if (GAME_SETTINGS.gameMode === 'linear' && !love) {
         // Say so if the ranking server is slow to answer.
         const notice = setTimeout(() => showConnecting(true), 350);
         let check = null;
@@ -2197,6 +2204,10 @@ async function startGame() {
 
     try {
         resetGame();
+        if (love && loveEvent) {
+            state.loveEvent = true;
+            loveEvent.begin();
+        }
         state.runToken = runToken;
         // A resumed run starts at the cut run's score (the server's).
         state.resume = resume && !resume.refused ? resume : null;
@@ -2205,7 +2216,7 @@ async function startGame() {
         if (resume && resume.refused) {
             toast('REPRISE IMPOSSIBLE', 'Partie trop ancienne ou déjà reprise : ton score reste enregistré. Nouvelle partie !', { discreet: true, float: true });
         }
-        state.rankedRunUnavailable = GAME_SETTINGS.gameMode === 'linear' && !runToken;
+        state.rankedRunUnavailable = GAME_SETTINGS.gameMode === 'linear' && !runToken && !state.loveEvent;
         state.sessionError = humanCheckSkipped ? HUMAN_CHECK_SKIPPED : state.rankedRunUnavailable ? lastSessionError : null;
         if (state.rankedRunUnavailable) lateSession(crashSequence);
         setRankingStatus('');
@@ -2213,7 +2224,7 @@ async function startGame() {
         state.isPlaying = true;
         runStats.counted = false;
         runStats.top = 0;
-        bumpStat(GAME_SETTINGS.gameMode === 'free' ? 'freeSessions' : 'runs');
+        if (!state.loveEvent) bumpStat(GAME_SETTINGS.gameMode === 'free' ? 'freeSessions' : 'runs');
         state.speed = CONFIG.minSpeed;
         audio.startRun();
         audio.play('rev_blip', { volume: 0.4 });
@@ -2346,6 +2357,9 @@ function standRiderUp() {
 }
 
 function quitToMenu() {
+    // Out of the Love&Faith event.
+    if (state.loveEvent && loveEvent) loveEvent.leave();
+    state.loveEvent = false;
     // A session live turn left: the next one rides.
     if (liveRecording && live) {
         live.turnOver({ score: Math.floor(state.score), reason: 'left', seconds: Math.round(state.gameTime * 10) / 10, kmh: Math.round(runStats.top || 0) });
@@ -2955,8 +2969,11 @@ const PHASES = [
     // Past the full difficulty (EXTRA_PHASES).
     { title: 'PHASE 4', subtitle: 'EXTRÊME', color: '#6b1fa3' },
     { title: 'PHASE 5', subtitle: 'INFERNALE', color: '#9c0f16' },
-    { title: 'PHASE 6', subtitle: 'LÉGENDE', color: '#15161a' }
+    { title: 'PHASE 6', subtitle: 'LÉGENDE', color: '#15161a' },
+    // The Love&Faith event's start.
+    { title: 'LOVE&FAITH', subtitle: 'RÉPARE TON CŒUR', color: '#760000' }
 ];
+const LOVE_SIGN = 7;
 const gantryTextures = [];
 function gantryTexture(phase) {
     if (gantryTextures[phase]) return gantryTextures[phase];
@@ -3078,13 +3095,13 @@ function updatePhases(frame) {
     const calm = 120;
     const ahead = (frames) => bikeGroup.position.z - state.speed * frames - 20;
     if (frame === 1 && state.gantries.length === 0) {
-        spawnGantry(1, -45);
+        spawnGantry(state.loveEvent ? LOVE_SIGN : 1, -45);
         quietAfter(-45, 150);
     }
     // Tricks-only mode (secret code): no phases, no signs.
     if (state.tricksOnly) return;
     // Sign 2 crossed 2 s before the ramps start (phase 2 sign at 23 s).
-    if (frame === JUMP.rampsFrom - calm - lead) {
+    if (frame === JUMP.rampsFrom - calm - lead && !state.loveEvent) {
         const z = ahead(lead);
         spawnGantry(2, z);
         // Phase 2 is for tricks: clear the obstacles past its sign.
@@ -3098,7 +3115,7 @@ function updatePhases(frame) {
         });
         quietAfter(z, calm);
     }
-    if (frame === JUMP.groundTricksFrom - calm - lead) {
+    if (frame === JUMP.groundTricksFrom - calm - lead && !state.loveEvent) {
         const z = ahead(lead);
         spawnGantry(3, z);
         // Obstacles come back: nothing while the message is up and a moment
@@ -3110,7 +3127,7 @@ function updatePhases(frame) {
     // reached (and the last sign crossed: one at a time).
     const signs = state.extraSigns || 0;
     const nextPhase = EXTRA_PHASES[signs];
-    if (nextPhase && frame >= JUMP.groundTricksFrom && state.phase === 3 + signs && state.score >= nextPhase.from) {
+    if (nextPhase && !state.loveEvent && frame >= JUMP.groundTricksFrom && state.phase === 3 + signs && state.score >= nextPhase.from) {
         state.extraSigns = signs + 1;
         const z = ahead(lead);
         spawnGantry(4 + signs, z);
@@ -3121,8 +3138,12 @@ function updatePhases(frame) {
         if (!gantry.userData.announced && bikeGroup.position.z < gantry.position.z) {
             gantry.userData.announced = true;
             const { title, subtitle } = PHASES[gantry.userData.phase];
-            state.phase = gantry.userData.phase;
             const phase = gantry.userData.phase;
+            if (phase === LOVE_SIGN) {
+                toast(`${title} · ${subtitle}`, 'Lève la roue · attrape cœurs, câlins et lettres · évite les cœurs brisés et les larmes');
+                continue;
+            }
+            state.phase = phase;
             if (phase >= 4) audio.play('new_record', { volume: 0.4 });
             toast(`${title} · ${subtitle}`, phase === 2 ? `Tremplins : FIGURE${isMobile() ? '' : ' (F)'} en l’air · backflip : en wheeling à 130 km/h, garde ${isMobile() ? 'WHEELIE' : 'ESPACE'}`
                 : phase === 3 ? 'Un obstacle pendant une figure = chute' : phase >= 4 ? EXTRA_PHASES[phase - 4].text : 'Évite les obstacles');
@@ -3140,7 +3161,7 @@ function updatePhases(frame) {
 
 // Obstacles are dropped during phase 2 (tricks only), from its sign.
 function obstaclesAllowed() {
-    if (state.tricksOnly) return false;
+    if (state.tricksOnly || state.loveEvent) return false;
     return state.frame < JUMP.rampsFrom - 240 || state.frame >= JUMP.groundTricksFrom - 240;
 }
 
@@ -3244,6 +3265,7 @@ function watchSecretKeys() {
 }
 
 function startTricksOnly() {
+    if (state.loveEvent) return;
     state.tricksOnly = true;
     bumpStat('codeTricks');
     state.police.phase = 'idle';
@@ -3537,6 +3559,11 @@ function updatePoliceChase(kmh, dt) {
 
 async function gameOver(reason = 'crash') {
     if (!state.isPlaying) return;
+    // The Love&Faith event: its own end (nothing ranked).
+    if (state.loveEvent) {
+        loveCrash(reason);
+        return;
+    }
     // The run ends normally: nothing to report at the next visit.
     clearLiveRun();
     speedLines?.hide();
@@ -3712,6 +3739,72 @@ async function gameOver(reason = 'crash') {
     } else {
         await submitCompletedRun(nickname);
     }
+}
+
+// --- The Love&Faith event (src/event/love.js) -----------------------------------
+let loveEvent = null;
+let lovePending = false;
+function startLoveRun() {
+    if (!v2 || startInProgress) return;
+    if (state.isPlaying) {
+        state.isPlaying = false;
+        crashSequence++;
+        audio.stopRun();
+    }
+    lovePending = true;
+    GAME_SETTINGS.gameMode = 'linear';
+    document.querySelectorAll('.screen.active').forEach((screen) => screen.classList.remove('active'));
+    startGame();
+}
+
+// A fall in the event: the fall plays out, then the event's card.
+function loveCrash(reason) {
+    speedLines?.hide();
+    bumpStat('loveFalls');
+    countRunTime();
+    audio.stopRun();
+    audio.play('collision', { volume: 0.8 });
+    const crashKind = reason === 'loop' || reason === 'bavette' || reason === 'earlyGas' || state.bike.angle > CONFIG.maxAngle ? 'loop' : 'hit';
+    const crashSpeed = state.speed * 60;
+    const crashInfo = visualSnapshot();
+    state.isPlaying = false;
+    state.skidding = false;
+    const sequence = ++crashSequence;
+    if (v2) playCrashSequence(crashKind, crashSpeed, sequence, crashInfo);
+    hideRunControls();
+    loveEvent?.finish('fall', { seconds: state.gameTime });
+}
+
+// Mended (into the cloud, on at a cruise) or broken (rolling to a stop):
+// the race stops, the picture goes on until the card's answer.
+function loveFinish(kind) {
+    if (!state.isPlaying) return;
+    speedLines?.hide();
+    countRunTime();
+    audio.stopRun();
+    if (kind === 'repaired') audio.play('new_record', { volume: 0.6 });
+    state.isPlaying = false;
+    state.skidding = false;
+    hideRunControls();
+    const sequence = ++crashSequence;
+    let speed = state.speed * 60;
+    const start = performance.now();
+    let last = start;
+    const tick = (now) => {
+        if (sequence !== crashSequence || state.isPlaying || !state.loveEvent) return;
+        const dt = Math.min((now - last) / 1000, 0.05);
+        last = now;
+        const cruise = kind === 'repaired' ? 45 : 0;
+        speed += (cruise - speed) * Math.min(1, dt * (kind === 'repaired' ? 0.5 : 0.8));
+        bikeGroup.position.z -= speed * dt;
+        state.speed = speed / 60;
+        state.bike.angle *= Math.pow(0.4, dt);
+        bikePivot.rotation.x = -state.bike.angle;
+        renderScene(dt);
+        if (now - start < 60000) requestAnimationFrame(tick);
+    };
+    requestAnimationFrame(tick);
+    loveEvent?.finish(kind, { seconds: state.gameTime });
 }
 
 // V2 only: keep rendering after the run ends so the fall plays out.
@@ -4486,7 +4579,7 @@ function animate(timestamp = performance.now()) {
                 slow.frames += 1;
                 if (endKmh < POLICE.hideKmh) slow.policeFrames += 1;
             }
-            if (!state.tricksOnly) updatePoliceChase(endKmh, dt);
+            if (!state.tricksOnly && !state.loveEvent) updatePoliceChase(endKmh, dt);
             if (!IS_V2) {
                 state.trick.spin = state.trick.active ? state.trick.spin + dt * 7.5 : 0;
                 bikeGroup.rotation.z += state.trick.spin;
@@ -4571,8 +4664,11 @@ function animate(timestamp = performance.now()) {
                 state.animatedObjects = state.animatedObjects.filter((object) => object.parent !== old);
                 dropChunk(old);
             }
-            // Only spawn obstacles in linear mode
-            if (GAME_SETTINGS.gameMode === 'linear') {
+            // The Love&Faith event: its own things on the road (no ramps,
+            // no obstacles). Only spawn obstacles in linear mode.
+            if (GAME_SETTINGS.gameMode === 'linear' && state.loveEvent) {
+                loveEvent?.spawn(newZ, newZ + 100);
+            } else if (GAME_SETTINGS.gameMode === 'linear') {
                 // From about 20 s on, one block in two gets a ramp. In phase 3
                 // fewer ramps: each one clears ~300 m of obstacles, which left
                 // "figures + obstacles" almost without obstacles.
@@ -4614,6 +4710,7 @@ function animate(timestamp = performance.now()) {
         if (GAME_SETTINGS.gameMode === 'linear') {
             guardEdges();
             checkCollisions();
+            if (state.loveEvent && state.isPlaying) loveEvent?.step(dt);
         }
 
         // Performance: Clean up old obstacles periodically
@@ -6176,7 +6273,7 @@ function currentActivity() {
     if (state.isPlaying) {
         if (state.userPaused) return 'menu-pause';
         if (GAME_SETTINGS.gameMode === 'free') return v2 ? `free-${v2.roam.mode}` : 'free-bike';
-        return state.tricksOnly ? 'tricks' : 'competitive';
+        return state.loveEvent ? 'love-event' : state.tricksOnly ? 'tricks' : 'competitive';
     }
     return MENU_ACTIVITIES[document.querySelector('.screen.active')?.id] || 'menu';
 }
@@ -6512,7 +6609,7 @@ async function sendCheckpoint({ keepalive = false } = {}) {
 // the next visit to tell the player what was kept, and Sentry how often.
 const LIVE_RUN_KEY = 'wheelie_live_run';
 function noteLiveRun() {
-    if (!state.isPlaying || GAME_SETTINGS.gameMode !== 'linear' || state.tricksOnly) return;
+    if (!state.isPlaying || GAME_SETTINGS.gameMode !== 'linear' || state.tricksOnly || state.loveEvent) return;
     try {
         const saved = checkpoint.token === state.runToken ? checkpoint.savedScore || 0 : 0;
         localStorage.setItem(LIVE_RUN_KEY, JSON.stringify({
@@ -7331,7 +7428,24 @@ live = createLive({
     menu: () => {
         renderMenuBackdrop();
         document.getElementById('mode-select-screen')?.classList.add('active');
-    }
+    },
+    loveCode: () => loveEvent?.unlockFromCode()
+});
+
+loveEvent = createLoveEvent({
+    scene, camera,
+    v2: () => v2,
+    bike: () => bikeGroup,
+    speed: () => state.speed,
+    startRun: () => startLoveRun(),
+    end: (kind) => loveFinish(kind),
+    toMenu: () => {
+        quitToMenu();
+        renderMenuBackdrop();
+        document.querySelectorAll('.screen.active').forEach((screen) => screen.classList.remove('active'));
+        document.getElementById('mode-select-screen')?.classList.add('active');
+    },
+    stat: (name, n = 1) => bumpStat(name, n)
 });
 
 function updateLeaderboard(nickname, score) {
@@ -7910,6 +8024,7 @@ if (import.meta.env.DEV) {
         get roamFall() { return roamFall; },
         get live() { return live; },
         get spectator() { return spectator; },
-        spectate: { begin: (run) => spectateBegin(run), push: (batch) => spectatePush(batch) }
+        spectate: { begin: (run) => spectateBegin(run), push: (batch) => spectatePush(batch) },
+        get loveDebug() { return loveEvent?.debug; }
     };
 }

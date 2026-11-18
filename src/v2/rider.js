@@ -791,6 +791,15 @@ export function createRider({ scene }) {
         head.rotation.x = Math.max(-0.95, Math.min(0.95, -(pose.torso - 0.3) * 0.78 + tuck * 0.1));
         head.rotation.y = pose.steer * 1.1;
         head.rotation.z = -(pose.lean + hang * 0.45) * 0.65;
+        // Sad (the Love&Faith event): the head hangs, turns slowly, shakes.
+        mood.level += (mood.target - mood.level) * Math.min(1, dt * 1.5);
+        mood.shake = Math.max(0, mood.shake - dt * 0.7);
+        if (mood.level > 0.01 || mood.shake > 0) {
+            const t = performance.now() / 1000;
+            head.rotation.x += mood.level * (0.3 + Math.sin(t * 1.7) * 0.05);
+            head.rotation.y += mood.level * Math.sin(t * 0.7) * 0.3 + mood.shake * Math.sin(t * 10) * 0.28;
+            head.rotation.z += mood.level * Math.sin(t * 0.9 + 1) * 0.08;
+        }
 
         // Lights
         tailLight.color.setRGB(0.75 + pose.brake * 0.25, 0.06 + pose.brake * 0.12, 0.05 + pose.brake * 0.08);
@@ -1361,6 +1370,157 @@ export function createRider({ scene }) {
         }
     }
 
+    // --- The Love&Faith event's outfit (src/event/love.js) -----------------------
+    // As the partner's figure: a blue beanie with the kiss, the face showing,
+    // a white long sleeve with the chosen creation on the back and the chest,
+    // bare hands, white sneakers. Built (and its pictures loaded) the first
+    // time it is worn.
+    const OUTFIT_FILES = '/event/love/';
+    const mood = { level: 0, target: 0, shake: 0 };
+    let outfit = null;
+    function buildOutfit() {
+        const loader = new THREE.TextureLoader();
+        const load = (name) => {
+            const texture = loader.load(OUTFIT_FILES + name);
+            texture.colorSpace = THREE.SRGBColorSpace;
+            texture.anisotropy = 4;
+            return texture;
+        };
+        const skin = standard(0x7a4524, 0.6);
+        const knit = new THREE.MeshStandardMaterial({ map: load('beanie.jpg'), roughness: 0.95 });
+        const decal = (name, roughness = 0.85) => new THREE.MeshStandardMaterial({
+            map: load(name), transparent: true, roughness, depthWrite: false, polygonOffset: true, polygonOffsetFactor: -2, polygonOffsetUnits: -2
+        });
+        const face = decal('face.png', 0.5);
+        const kiss = decal('beanie-kiss.png');
+        const nameDown = decal('beanie-back.png');
+        const group = new THREE.Group();
+        group.visible = false;
+        head.add(group);
+        const parts = new Parts();
+        parts.add(skin, sphere, transform(0, 0.04, 0.005, 0.168, 0.19, 0.175));
+        parts.add(skin, tube, transform(0, -0.12, -0.005, 0.075, 0.12, 0.075));
+        const crown = new THREE.SphereGeometry(1, 24, 12, 0, Math.PI * 2, 0, Math.PI * 0.52);
+        parts.add(knit, crown, transform(0, 0.085, 0, 0.188, 0.2, 0.195));
+        const band = new THREE.CylinderGeometry(1, 1.03, 1, 28, 1, true);
+        parts.add(knit, band, transform(0, 0.098, 0, 0.192, 0.07, 0.199));
+        parts.build(group);
+        const patch = (material, geometry, matrix) => {
+            const mesh = new THREE.Mesh(geometry.applyMatrix4(matrix), material);
+            mesh.renderOrder = 2;
+            group.add(mesh);
+        };
+        // The face on the front of the head, the kiss on the beanie's front,
+        // LOVE&FAITH down its back.
+        patch(face, new THREE.SphereGeometry(1, 20, 12, Math.PI / 2 - 0.82, 1.64, Math.PI * 0.34, Math.PI * 0.4),
+            transform(0, 0.04, 0.005, 0.171, 0.193, 0.178));
+        patch(kiss, new THREE.SphereGeometry(1, 16, 8, Math.PI / 2 - 0.62, 1.1, Math.PI * 0.2, Math.PI * 0.27),
+            transform(0, 0.085, 0, 0.191, 0.203, 0.198));
+        patch(nameDown, new THREE.SphereGeometry(1, 6, 16, Math.PI * 1.5 - 0.13, 0.26, Math.PI * 0.05, Math.PI * 0.45),
+            transform(0, 0.085, 0, 0.191, 0.203, 0.198));
+        crown.dispose();
+        band.dispose();
+        // The creation on the chest (the back's own print takes the number's place).
+        const frontMaterial = new THREE.MeshStandardMaterial({
+            transparent: true, roughness: 0.86, depthWrite: false, polygonOffset: true, polygonOffsetFactor: -1, polygonOffsetUnits: -1
+        });
+        const chestProfile = [[0.18, 0.24], [0.188, 0.38], [0.178, 0.46]].map(([r, y]) => new THREE.Vector2(r * 1.014, y));
+        const chest = new THREE.Mesh(new THREE.LatheGeometry(chestProfile, 12, -0.56, 1.12).applyMatrix4(transform(0, 0.02, 0, 1.22, 1, 0.9)), frontMaterial);
+        chest.visible = false;
+        chest.renderOrder = 2;
+        pelvis.add(chest);
+        return { group, chest, frontMaterial, skin, print: null, look: null, pictures: {} };
+    }
+
+    // A creation's print, on white fleece (back) or alone (chest).
+    function printTexture(image, back) {
+        const canvas = document.createElement('canvas');
+        canvas.width = 512;
+        canvas.height = back ? 512 : 448;
+        const ctx = canvas.getContext('2d');
+        if (back) {
+            ctx.fillStyle = '#f1f0ec';
+            ctx.fillRect(0, 0, canvas.width, canvas.height);
+        }
+        if (image) {
+            // The back's lathe is wider than tall: drawn taller to look right.
+            const stretch = back ? 1.15 : 1.1;
+            const room = back ? 0.86 : 0.92;
+            const k = Math.min(canvas.width * room / image.width, canvas.height * room / (image.height * stretch));
+            const w = image.width * k;
+            const h = image.height * k * stretch;
+            ctx.drawImage(image, (canvas.width - w) / 2, (canvas.height - h) / 2 + (back ? 16 : 0), w, h);
+        }
+        const texture = new THREE.CanvasTexture(canvas);
+        texture.colorSpace = THREE.SRGBColorSpace;
+        texture.anisotropy = 4;
+        return texture;
+    }
+
+    function loadPicture(name) {
+        if (outfit.pictures[name]) return outfit.pictures[name];
+        outfit.pictures[name] = new Promise((resolve) => {
+            const image = new Image();
+            image.onload = () => resolve(image);
+            image.onerror = () => resolve(null);
+            image.src = OUTFIT_FILES + name;
+        });
+        return outfit.pictures[name];
+    }
+
+    function dressOutfit() {
+        const look = outfit.look;
+        classicHead.visible = false;
+        araiHead.visible = false;
+        jersey.color.set('#f1f0ec');
+        jerseyAccent.set('#f1f0ec');
+        jerseyDark.color.set('#dcdad5');
+        sneaker.color.set('#f4f4f2');
+        glove.color.set(0x7a4524);
+        if (outfit.print === look.print) return;
+        outfit.print = look.print;
+        jerseyPrint.map.dispose();
+        jerseyPrint.map = printTexture(null, true);
+        jerseyPrint.needsUpdate = true;
+        const wanted = look.print;
+        Promise.all([loadPicture(`print-${wanted}-back.webp`), loadPicture(`print-${wanted}-front.webp`)]).then(([back, front]) => {
+            if (!outfit.look || outfit.print !== wanted) return;
+            jerseyPrint.map.dispose();
+            jerseyPrint.map = printTexture(back, true);
+            jerseyPrint.needsUpdate = true;
+            outfit.frontMaterial.map?.dispose();
+            outfit.frontMaterial.map = printTexture(front, false);
+            outfit.frontMaterial.needsUpdate = true;
+        });
+    }
+
+    // look: { print: 'lva' | 'plva' | 'world-love' | 'fabulous-love-and-faith' }, or null.
+    function setEventLook(look) {
+        if (look && !outfit) outfit = buildOutfit();
+        if (!outfit) return;
+        outfit.look = look || null;
+        outfit.group.visible = !!look;
+        outfit.chest.visible = !!look;
+        if (look) dressOutfit();
+        else {
+            outfit.print = null;
+            glove.color.set(0x0e0e10);
+        }
+    }
+
+    // 0 (fine) to 1 (heartbroken).
+    function setMood(level) {
+        mood.target = Math.max(0, Math.min(1, level));
+    }
+    function shakeHead() {
+        mood.shake = 1;
+    }
+    // Where a tear starts: under the left (-1) or right (1) eye.
+    function eyePoint(out, side) {
+        out.set(side * 0.058, 0.035, 0.175);
+        return head.localToWorld(out);
+    }
+
     // Rider customisation: number, hoodie, helmet and bike colours.
     const luminance = (color) => 0.2126 * color.r + 0.7152 * color.g + 0.0722 * color.b;
     function setLivery({
@@ -1405,11 +1565,17 @@ export function createRider({ scene }) {
         // The rainbow paint is its own colours.
         paint.color.set(bikeModel === 'rainbow' ? '#ffffff' : bike);
         setBikeModel(bikeModel);
+        // The event's outfit stays on over any livery change.
+        if (outfit?.look) {
+            outfit.print = null;
+            dressOutfit();
+        }
     }
 
     reset();
     return {
         setLivery, dismount, updateWalk, mount, setRiderVisible, setBoost, exhaustPoint, setWorldScale, setFlip,
+        setEventLook, setMood, shakeHead, eyePoint,
         tearPlate, platePoint, resetPlate: restPlate, finishCrash, riderPosition, startGetUp, updateGetUp,
         get worldScale() { return worldScale; },
         // How far into a stunt the rider is (0: the riding position).
