@@ -113,10 +113,64 @@ function createBackTexture(number, color, ink, name) {
 // Hands (left, right) in pelvis space for a figure facing +z (its left is
 // +x), the elbows' bend, the head, for each pose. t: seconds, for life.
 // front: the figure turns to face the people (the others show their back).
-function poseOf(id, t) {
+// look.target: the side of the one to make fun of (session podium), in the
+// figure's own frame (+1 its left).
+function poseOf(id, t, look = null) {
     const hip = (s) => ({ hand: [s * 0.235, 0.09, -0.02], pole: [s, 0, -0.45] });
     const sway = Math.sin(t * 2.1);
+    const toward = look?.target === -1 ? -1 : 1;
+    const shake = Math.sin(t * 18);
     switch (id) {
+        // Session podium: making fun of the one beside.
+        case 'mock': {
+            // Points at him and laughs, the other hand on the belly.
+            const point = { hand: [toward * 0.62, 0.6 + shake * 0.01, 0.22], pole: [toward, -0.2, 0] };
+            const belly = { hand: [-toward * 0.1, 0.2 + shake * 0.02, 0.19], pole: [-toward, -0.5, 0.3] };
+            return { sides: toward > 0 ? [point, belly] : [belly, point], head: [-0.18 + shake * 0.05, toward * 0.75, 0], finger: toward < 0 };
+        }
+        case 'loser': {
+            // The L on the forehead, turned to him.
+            const forehead = { hand: [-0.02, 0.88, 0.14], pole: [-1, 0.2, 0.4] };
+            return { sides: [hip(1), forehead], head: [-0.05, toward * 0.55, 0], finger: true };
+        }
+        case 'tears': {
+            // Pretends to cry for him, fists rubbing the eyes.
+            const rub = Math.sin(t * 10) * 0.015;
+            return {
+                sides: [1, -1].map((s) => ({ hand: [s * 0.06, 0.77 + rub * s, 0.17], pole: [s, -0.3, 0.2] })),
+                head: [0.16 + Math.sin(t * 10) * 0.04, toward * 0.35, 0]
+            };
+        }
+        case 'champion': return {
+            sides: [1, -1].map((s) => ({ hand: [s * 0.32, 1.2 + Math.sin(t * 5 + s) * 0.04, 0.05], pole: [s, -0.3, 0] })),
+            head: [-0.2, 0, 0]
+        };
+        case 'yawn': return {
+            // Bored by the others: a yawn, an arm stretched up.
+            sides: [{ hand: [0.03, 0.7, 0.2], pole: [1, -0.2, 0.3] }, { hand: [-0.25, 1.16 + Math.sin(t * 1.5) * 0.03, 0], pole: [-1, -0.3, 0] }],
+            head: [-0.28, 0, 0]
+        };
+        // Reactions in a session (src/live/reactor.js), facing the screen.
+        case 'r_laugh': return {
+            sides: [1, -1].map((s) => ({ hand: [s * 0.14, 0.18 + shake * 0.025, 0.2], pole: [s, -0.5, 0.3] })),
+            head: [-0.3 + shake * 0.08, 0, 0]
+        };
+        case 'r_boo': return {
+            sides: [1, -1].map((s) => ({ hand: [s * 0.075, 0.68, 0.22], pole: [s, -0.3, 0.2] })),
+            head: [0.08 + Math.sin(t * 7) * 0.03, 0, 0]
+        };
+        case 'r_cheer': return {
+            sides: [1, -1].map((s) => ({ hand: [s * 0.34, 1.08 + Math.max(0, Math.sin(t * 9 + (s > 0 ? 0 : 1.6))) * 0.14, 0.05], pole: [s, -0.3, 0] })),
+            head: [-0.15, 0, 0]
+        };
+        case 'r_clap': {
+            const open = 0.04 + Math.abs(Math.sin(t * 12)) * 0.12;
+            return { sides: [1, -1].map((s) => ({ hand: [s * open, 0.45, 0.3], pole: [s, -0.6, 0] })), head: [0.05, 0, 0] };
+        }
+        case 'r_talk': return {
+            sides: [{ hand: [0.3, 0.45 + Math.sin(t * 6) * 0.08, 0.3], pole: [1, -0.4, 0] }, hip(-1)],
+            head: [Math.sin(t * 5) * 0.06, Math.sin(t * 2) * 0.12, 0]
+        };
         case 'victoire': return {
             sides: [1, -1].map((s) => ({ hand: [s * 0.5, 1.12 + Math.sin(t * 3 + s) * 0.03, 0.06], pole: [s, -0.3, 0] }))
         };
@@ -177,7 +231,7 @@ function haloTexture() {
     return haloMap;
 }
 
-function createFigure(scene) {
+export function createFigure(scene) {
     const parts = sharedParts();
     const root = new THREE.Group();
     root.scale.setScalar(FIGURE_SCALE);
@@ -366,7 +420,7 @@ function createFigure(scene) {
     // power: the jetpack's flames, 0..1 (growing as it lights up, softer
     // for the landing).
     function animate(t, motion, phase, power = 1) {
-        const pose = poseOf(look?.pose, t);
+        const pose = poseOf(look?.pose, t, look);
         flames.forEach((flame, i) => {
             flame.visible = motion === 'jet' && power > 0.03;
             if (flame.visible) {

@@ -27,6 +27,8 @@ const STREETS = [
     'Boulevard de l’Ariane', 'Avenue des Pâquerettes', 'Avenue du Général Obry', 'Rue Pierre Séguran'
 ];
 const SIDE_STREET_HALF = 4.4;
+// Counted for "Mes stats" and the owner's stats (main.js bumpStat).
+const stat = (name) => document.dispatchEvent(new CustomEvent('wheelie:stat', { detail: { name } }));
 // On foot at life size (the rider used to be 1.7x bigger and faster).
 // Units are metres: about 11 km/h walking, 26 km/h sprinting.
 const WALK_SPEED = 0.05;
@@ -503,6 +505,7 @@ export function createFreeRoam({ scene, world, rider, audio, onTurn, playerVoice
                     glide.t = 0;
                     dropGlider(roof.y);
                     audio.play('landing', { volume: 0.5 });
+                    stat('roofLandings');
                     toast('SUR LE TOIT !', 'Cours où tu veux · SAUTER au bord pour repartir en deltaplane');
                     return;
                 }
@@ -520,6 +523,7 @@ export function createFreeRoam({ scene, world, rider, audio, onTurn, playerVoice
             rider.updateWalk(dt, glide.x, glide.z, glide.yaw, 0, Math.max(0.05, glide.y), false, false, { ground: glide.y - 1 });
             if (glide.y <= 0) {
                 // Touchdown in the street: a few running steps, the glider stays behind.
+                stat('streetLandings');
                 glide.phase = 'run';
                 glide.t = 0;
                 dropGlider(0);
@@ -586,6 +590,7 @@ export function createFreeRoam({ scene, world, rider, audio, onTurn, playerVoice
     // --- Landing on a car ------------------------------------------------
     function landOnCar(car) {
         glide.car = car;
+        stat('carLandings');
         glide.phase = 'car';
         glide.t = 0;
         glide.y = car.group.userData.height;
@@ -661,6 +666,7 @@ export function createFreeRoam({ scene, world, rider, audio, onTurn, playerVoice
         if (!on()) return;
         const factor = stage.kind === 'car' ? GLIDE.carFactor : 1;
         const lost = finePoints(glideFine(factor));
+        stat('gliderFines');
         toast(lost ? `-${lost.toLocaleString('fr-FR')} PTS` : 'AMENDE', stage.kind === 'car' ? 'Atterrissage sur une voiture · amende ×3' : 'Trouble à l’ordre public');
         stage.step = 'take';
         stage.t = 0;
@@ -810,7 +816,10 @@ export function createFreeRoam({ scene, world, rider, audio, onTurn, playerVoice
         audio.play('boost', { volume: 0.8, rate: 0.85 });
         audio.play('backfire', { volume: 0.6, delay: 0.08 });
         audio.play('whoosh', { volume: 0.7, rate: 0.6, delay: 0.1 });
-        toast('🚀 JETPACK', `Carburant : tes ${totalPoints().toLocaleString('fr-FR')} points · ${JET.burn} pts/s, turbo ${JET.boostBurn} pts/s`);
+        // Small: the jetpack is what is to be seen (its fuel gauge says the rest).
+        document.dispatchEvent(new CustomEvent('wheelie:toast', {
+            detail: { title: '🚀 JETPACK', text: `${JET.burn} pts/s · turbo ${JET.boostBurn}`, discreet: true }
+        }));
         document.dispatchEvent(new CustomEvent('wheelie:jet', { detail: { on: true } }));
         return true;
     }

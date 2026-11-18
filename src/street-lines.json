@@ -109,6 +109,58 @@
     ],
     "sorry": [
       "Pardon…"
+    ],
+    "live_laugh": [
+      "Hahaha ! Mort de rire !",
+      "Ptdr ! Hahahaha !"
+    ],
+    "live_boo": [
+      "Bouuuuuh !",
+      "Bouuuh ! Nul !"
+    ],
+    "live_cheer": [
+      "Allez, allez, allez !",
+      "Ouaaais, vas-y !"
+    ],
+    "live_clap": [
+      "Bravo !",
+      "Bien joué !"
+    ],
+    "live_e1": [
+      "Allez, t’es chaud !"
+    ],
+    "live_e2": [
+      "Lâche rien, frérot !"
+    ],
+    "live_e3": [
+      "Quelle bavette, la classe !"
+    ],
+    "live_e4": [
+      "C’est carré, continue !"
+    ],
+    "live_e5": [
+      "Le boss de la route !"
+    ],
+    "live_e6": [
+      "Respect, t’es trop fort !"
+    ],
+    "live_d1": [
+      "Ça sent la chute…"
+    ],
+    "live_d2": [
+      "Attention l’obstacle ! … Non j’rigole."
+    ],
+    "live_d3": [
+      "T’as les mains qui tremblent ?"
+    ],
+    "live_d4": [
+      "Même ma grand-mère roule mieux !"
+    ],
+    "live_d5": [
+      "Bouuuh, la honte !"
+    ],
+    "live_d6": [
+      "Tu vas tomber, tu vas tomber…"
     ]
   },
   "police": {

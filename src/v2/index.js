@@ -463,7 +463,9 @@ export function createRealisticVersion({ scene, renderer, camera, mobile, audio,
         const width = window.innerWidth;
         const height = window.innerHeight;
         const poseOpen = document.getElementById('pose-screen')?.classList.contains('active');
-        const stage = document.getElementById(poseOpen ? 'pose-stage' : 'podium-stage')?.getBoundingClientRect();
+        // The session live's results (src/live/live.js) have their own stage.
+        const liveStage = document.querySelector('#live-screen.is-results:not([hidden]) #live-stage');
+        const stage = (liveStage || document.getElementById(poseOpen ? 'pose-stage' : 'podium-stage'))?.getBoundingClientRect();
         if (!stage || stage.width < 40 || stage.height < 40) return { width, height, x0: 0, x1: width, y0: 0, y1: height };
         return { width, height, x0: stage.left, x1: stage.right, y0: stage.top, y1: stage.bottom };
     }

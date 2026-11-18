@@ -372,6 +372,7 @@ export function createPolicePatrol({ scene, world, traffic, audio, talk, onFine,
         car.chasing = true;
         car.ghost = true;
         stop = { phase: 'cut', t: 0, speaker: 0, context: 'wheelie', fined: 0, token: 0, hits: 0, side: player.x > 0 ? -1 : 1 };
+        document.dispatchEvent(new CustomEvent('wheelie:stat', { detail: { name: 'policeCuts' } }));
         audio.play('police_siren', { volume: 0.7 });
         audio.play('brake', { volume: 0.5, delay: 0.6 });
         document.dispatchEvent(new CustomEvent('wheelie:toast', { detail: { title: 'QUEUE DE POISSON !', text: 'La police te coupe la route' } }));
@@ -417,6 +418,7 @@ export function createPolicePatrol({ scene, world, traffic, audio, talk, onFine,
                 });
                 // Until the line is over, the countdown waits (at most 6 s).
                 warn.deadline = clock + WHEELIE_POLICE.seconds + 6;
+                document.dispatchEvent(new CustomEvent('wheelie:stat', { detail: { name: 'policeWarnings' } }));
                 document.dispatchEvent(new CustomEvent('wheelie:toast', {
                     detail: { title: 'DERNIER AVERTISSEMENT', text: `Roue avant au sol dans les ${WHEELIE_POLICE.seconds} s` }
                 }));

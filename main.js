@@ -20,6 +20,7 @@ import { applyPadLayout, openPadEditor } from './src/pad-layout.js';
 import { startActivity } from './src/activity.js';
 import { createSpeedLines } from './src/v2/speedlines.js';
 import riderVoices from './src/rider-voices.json';
+import { createLive } from './src/live/live.js';
 
 // Two versions share the same simulation, scoring and ranked replay:
 // 'v2' (realistic city, new rider) and 'classic' (the original V1 look).
@@ -38,6 +39,11 @@ const createRealisticVersion = IS_V2
     ? (await import('./src/v2/index.js')).createRealisticVersion
     : null;
 let v2 = null;
+// Session live (src/live/live.js): created further down; while riding a
+// live turn the run is recorded for the others (liveRecordFrame).
+let live = null;
+let liveRecording = false;
+let liveLastFrame = -1e9;
 
 const CONFIG = {
     laneWidth: 10,
@@ -1086,21 +1092,22 @@ function obstacleRoomAt(z) {
 function spawnObstacle(zPos, side = 0) {
     const type = Math.random();
     let obs;
+    let kind = null;
     if (v2) {
         // Same odds, footprints and placement as the classic obstacles.
         if (type < 0.15) {
-            obs = v2.world.createObstacle('construction');
+            obs = v2.world.createObstacle(kind = 'construction');
             obs.position.set((Math.random() - 0.5) * 14, 0, zPos);
         } else if (type < 0.3) {
-            obs = v2.world.createObstacle('sign');
+            obs = v2.world.createObstacle(kind = 'sign');
             obs.position.set((Math.random() - 0.5) * 14, 0, zPos);
             obs.rotation.y = (Math.random() - 0.5) * 0.5;
         } else if (type < 0.45) {
-            obs = v2.world.createObstacle('barrier');
+            obs = v2.world.createObstacle(kind = 'barrier');
             obs.position.set((Math.random() - 0.5) * 14, 0, zPos);
             obs.rotation.y = (Math.random() - 0.5) * 0.5;
         } else {
-            obs = v2.world.createObstacle(type < 0.6 ? 'crate' : type < 0.8 ? 'bag' : 'cone');
+            obs = v2.world.createObstacle(kind = type < 0.6 ? 'crate' : type < 0.8 ? 'bag' : 'cone');
             obs.position.set((Math.random() - 0.5) * 16, 0.5, zPos);
             obs.rotation.y = Math.random() * Math.PI;
         }
@@ -1136,6 +1143,25 @@ function spawnObstacle(zPos, side = 0) {
         const outer = EDGE.kerb - Math.random() * 0.35;
         obs.position.x += side > 0 ? outer - edgeBox.max.x : -outer - edgeBox.min.x;
     }
+    obs.castShadow = true;
+    obs.updateMatrixWorld(true);
+    scene.add(obs);
+    const record = { mesh: obs, box: new THREE.Box3().setFromObject(obs), active: true };
+    state.obstacles.push(record);
+    if (liveRecording && kind) {
+        const p = obs.position;
+        live.recordSpawn(['o', state.frame, kind, Math.round(p.x * 100) / 100, Math.round(p.y * 100) / 100, Math.round(p.z * 100) / 100,
+            Math.round(obs.rotation.y * 1000) / 1000]);
+    }
+    return record;
+}
+
+// An obstacle seen in a session: where the rider's game put it.
+function placeObstacle(kind, x, y, z, rotY) {
+    if (!v2) return null;
+    const obs = v2.world.createObstacle(kind);
+    obs.position.set(x, y, z);
+    obs.rotation.y = rotY;
     obs.castShadow = true;
     obs.updateMatrixWorld(true);
     scene.add(obs);
@@ -1303,6 +1329,7 @@ function roamImpact(hit, v, roam) {
 
 function startRoamFall(v, skidding, roam, kind = 'hit') {
     if (!v2) return;
+    bumpStat('roamFalls');
     roamFall.active = true;
     roamFall.t = 0;
     roamFall.phase = 'crash';
@@ -1550,6 +1577,7 @@ function freeWheelieStep(dt, roam) {
             addPoints(bonus);
             state.score += bonus;
             bumpStat('bavettes');
+            bumpStat('freeBavettes');
             scoreBonus(bonus, 'BAVETTE');
             audio.play('new_record', { volume: 0.3, rate: 1.4 });
         }
@@ -1873,6 +1901,7 @@ function renderScene(dt, snapshot = visualSnapshot()) {
     updateRampArrows();
     if (v2) v2.frame(dt, snapshot);
     renderer.render(scene, camera);
+    if (live) live.renderReactors(renderer);
 }
 
 function resetGame() {
@@ -2235,6 +2264,11 @@ function standRiderUp() {
 }
 
 function quitToMenu() {
+    // A session live turn left: the next one rides.
+    if (liveRecording && live) {
+        live.turnOver({ score: Math.floor(state.score), reason: 'left', seconds: Math.round(state.gameTime * 10) / 10, kmh: Math.round(runStats.top || 0) });
+        liveRecording = false;
+    }
     // Left on purpose: not a run cut short.
     clearLiveRun();
     countRunTime();
@@ -2542,9 +2576,16 @@ function updateRampArrows() {
 
 function spawnRamp(z) {
     const x = (Math.random() - 0.5) * 12;
-    const mesh = createRampMesh();
     // A little wider than it was (5 to 10 %, each its own): seen from further.
     const wider = 1.05 + Math.random() * 0.05;
+    placeRamp(x, z, wider, true);
+    if (liveRecording) live.recordSpawn(['r', state.frame, Math.round(x * 100) / 100, Math.round(z * 100) / 100, Math.round(wider * 1000) / 1000]);
+}
+
+// withShield: maybe a shield on it (the rider's game; not in a session's
+// replay, where only what is seen matters).
+function placeRamp(x, z, wider, withShield = false) {
+    const mesh = createRampMesh();
     mesh.scale.x = wider;
     mesh.position.set(x, 0, z);
     const arrows = rampArrowParts();
@@ -2552,7 +2593,7 @@ function spawnRamp(z) {
     scene.add(mesh);
     const ramp = { mesh, x, z, half: RAMP.width / 2 * wider, front: z + RAMP.length / 2, lip: z - RAMP.length / 2, launched: false };
     state.ramps.push(ramp);
-    maybeShield(ramp);
+    if (withShield) maybeShield(ramp);
     // Not stretched with its ramp.
     if (ramp.shield) ramp.shield.scale.x = SHIELD.size / wider;
     // Clear the run-up and the landing zone of obstacles (less road as the
@@ -2804,6 +2845,7 @@ function fireBoostEffects() {
 
 function toast(title, text, { discreet = false, float = false } = {}) {
     document.dispatchEvent(new CustomEvent('wheelie:toast', { detail: { title, text, discreet, float } }));
+    if (liveRecording && float) live.recordMark(state.frame, title, text);
 }
 
 // Phases of a competitive run, each opened by an overhead motorway sign:
@@ -3458,6 +3500,11 @@ async function gameOver(reason = 'crash') {
     const screenDelay = new Promise((resolve) => setTimeout(resolve, v2 ? (reason === 'slow' ? 3800 : 1150) : 0));
     const currentScore = Math.floor(state.score);
     const previousBest = state.highScore;
+    // A session live turn: the others are told (src/live/live.js).
+    const liveTurn = liveRecording && !!live && live.turnOver({
+        score: currentScore, reason, seconds: Math.round(state.gameTime * 10) / 10, kmh: Math.round(runStats.top || 0)
+    });
+    liveRecording = false;
     // Tricks only: a tenth of the score, for free roam.
     const tricksPoints = Math.floor(currentScore / 10);
     if (GAME_SETTINGS.gameMode === 'linear') {
@@ -3516,6 +3563,11 @@ async function gameOver(reason = 'crash') {
         }, 900);
     }
 
+    if (liveTurn) {
+        // The session shows what follows; the run is still ranked.
+        if (nickname && !tricksOnly) await submitCompletedRun(nickname);
+        return;
+    }
     const finalScore = document.getElementById('final-score');
     const gameOverScreen = document.getElementById('game-over-screen');
     const bestScore = document.getElementById('best-score-gameover');
@@ -4443,6 +4495,7 @@ function animate(timestamp = performance.now()) {
 
     // The run may have just ended in this frame: the crash sequence renders it.
     if (!state.isPlaying) return;
+    if (liveRecording) liveRecordFrame();
     const snapshot = visualSnapshot();
     audio.update(elapsed, snapshot);
     if (GAME_SETTINGS.gameMode === 'free' && v2) updateIdleVoice(elapsed);
@@ -4728,6 +4781,11 @@ function showKeyHints(seconds = 8) {
 }
 document.addEventListener('wheelie:controls', () => {
     if (GAME_SETTINGS.gameMode === 'free') setTimeout(() => showKeyHints(7), 0);
+});
+
+// What free roam counts (src/v2/freeroam.js, police.js).
+document.addEventListener('wheelie:stat', (event) => {
+    if (event.detail?.name) bumpStat(event.detail.name);
 });
 
 // Free roam: the police's last warning (a wheelie in front of them): the
@@ -5929,6 +5987,8 @@ const MENU_ACTIVITIES = {
     'settings-screen': 'menu-settings', 'pose-screen': 'menu-poses', 'game-over-screen': 'menu-gameover'
 };
 function currentActivity() {
+    const inLive = live?.activity();
+    if (inLive) return inLive;
     if (state.isPlaying) {
         if (state.userPaused) return 'menu-pause';
         if (GAME_SETTINGS.gameMode === 'free') return v2 ? `free-${v2.roam.mode}` : 'free-bike';
@@ -6695,10 +6755,13 @@ const account = createAccount({
     // same on every device of the player (src/profile.js): drawn at once,
     // again when the sync answers.
     stats: (container) => {
+        // What the server knows of the player (games since the very first).
+        let server = null;
+        const nickname = localStorage.getItem('wheelie_nickname');
         const draw = () => {
             const holder = document.createElement('div');
             renderStats(holder, {
-                points: totalPoints(), all: profileStats(),
+                points: totalPoints(), all: profileStats(), server,
                 codes: { glider: IS_V2 && totalPoints() >= GLIDER_POINTS, tricks: totalPoints() >= TRICKS_CODE_POINTS }
             });
             const drawn = container.querySelector('.stats');
@@ -6709,6 +6772,13 @@ const account = createAccount({
         syncProfile({ force: true }).then((synced) => {
             if (synced && container.isConnected) draw();
         });
+        if (nickname) {
+            getPlayerStats(nickname).then((found) => {
+                if (!found || !container.isConnected) return;
+                server = found;
+                draw();
+            });
+        }
     },
     onStatus: (status) => {
         const chip = document.getElementById('player-nickname');
@@ -6757,6 +6827,290 @@ setInterval(() => {
 }, 120000);
 document.addEventListener('visibilitychange', () => {
     if (document.hidden) syncProfile({ keepalive: true });
+});
+
+// --- Session live (src/live/live.js) ---------------------------------------
+// The rider's game records what it shows: a snapshot every LIVE_EVERY frames
+// (frame, x, z, height, lean, wheelie angle, flip, speed, score, multiplier,
+// flags, trick, sideways speed). The others play it back LIVE_DELAY frames
+// late (it comes a second at a time), with the obstacles and ramps where
+// the rider's game put them, the bonuses it showed, and the fall at the end.
+const LIVE_EVERY = 6;
+const LIVE_DELAY = 150;
+const LIVE_FLAGS = { bavette: 1, boost: 2, skid: 4, plate: 8, air: 16, trick: 32, brake: 64, flip: 128 };
+
+function liveRecordFrame() {
+    if (state.frame - liveLastFrame < LIVE_EVERY) return;
+    liveLastFrame = state.frame;
+    const jump = state.jump;
+    const r = (value, scale) => Math.round((value || 0) * scale) / scale;
+    const flags = (state.bavette.left > 0 ? LIVE_FLAGS.bavette : 0) | (state.boost.frames > 0 ? LIVE_FLAGS.boost : 0)
+        | (state.skidding ? LIVE_FLAGS.skid : 0) | (state.plate.on ? LIVE_FLAGS.plate : 0) | (jump.airborne ? LIVE_FLAGS.air : 0)
+        | (state.trick.active ? LIVE_FLAGS.trick : 0) | (state.keys.down ? LIVE_FLAGS.brake : 0) | (jump.flipActive ? LIVE_FLAGS.flip : 0);
+    const flip = jump.flipActive ? (state.flipMode === 'manual' ? state.bike.angle + jump.flipAngle : jump.flipAngle) : 0;
+    live.recordFrame([state.frame, r(bikeGroup.position.x, 100), r(bikeGroup.position.z, 100), r(jump.visualY, 100), r(bikeGroup.rotation.z, 1000),
+        r(state.bike.angle, 1000), r(flip, 1000), r(state.speed, 1000), Math.floor(state.score), r(state.currentMultiplier || 1, 100), flags,
+        Math.max(0, AIR_TRICKS.indexOf(state.trick.type)), r(state.bike.lateralVelocity, 1000)]);
+}
+
+const spectator = {
+    active: false, run: null, frames: [], spawns: [], marks: [], playhead: null, last: 0, raf: 0,
+    result: null, crashAt: 0, crashed: false, done: false, audio: false
+};
+
+function hideRunControls() {
+    for (const id of ['mobile-controls', 'analog-controls']) {
+        const element = document.getElementById(id);
+        if (element) element.style.display = 'none';
+    }
+}
+
+function spectateStop() {
+    if (!spectator.active) return;
+    spectator.active = false;
+    cancelAnimationFrame(spectator.raf);
+    if (spectator.audio) audio.stopRun();
+    spectator.audio = false;
+}
+
+function spectateBegin(run) {
+    spectateStop();
+    // A fresh run's scene: nothing left from the last one, no fall playing.
+    crashSequence++;
+    if (v2) v2.podiumView(false);
+    GAME_SETTINGS.gameMode = 'linear';
+    resetGame();
+    if (v2) v2.rider.reset();
+    state.isPlaying = false;
+    document.querySelectorAll('.screen.active').forEach((screen) => screen.classList.remove('active'));
+    hideRunControls();
+    Object.assign(spectator, { active: true, run, frames: [], spawns: [], marks: [], playhead: null, result: null, crashAt: 0, crashed: false, done: false });
+    try {
+        audio.prepare();
+        audio.startRun();
+        spectator.audio = true;
+    } catch {
+        spectator.audio = false;
+    }
+    spectator.last = performance.now();
+    spectator.raf = requestAnimationFrame(spectateTick);
+}
+
+function spectatePush(batch) {
+    for (const frame of batch.f || []) {
+        if (!spectator.frames.length || frame[0] > spectator.frames[spectator.frames.length - 1][0]) spectator.frames.push(frame);
+    }
+    for (const item of batch.s || []) spectator.spawns.push(item);
+    for (const item of batch.m || []) spectator.marks.push(item);
+    // Kept short: what is far behind the playhead goes.
+    if (spectator.frames.length > 400) spectator.frames.splice(0, spectator.frames.length - 400);
+}
+
+function spectateApply(a, b, k) {
+    const mix = (i) => (a[i] ?? 0) + ((b[i] ?? 0) - (a[i] ?? 0)) * k;
+    const near = k < 0.5 ? a : b;
+    const flags = near[10] || 0;
+    bikeGroup.position.set(mix(1), mix(3), mix(2));
+    bikeGroup.rotation.set(0, Math.PI, mix(4));
+    state.bike.angle = mix(5);
+    state.bike.lateralVelocity = mix(12);
+    state.speed = mix(7);
+    state.score = near[8] || 0;
+    state.currentMultiplier = mix(9) || 1;
+    state.jump.visualY = mix(3);
+    state.jump.airborne = !!(flags & LIVE_FLAGS.air);
+    state.jump.flipActive = !!(flags & LIVE_FLAGS.flip);
+    state.bavette.left = flags & LIVE_FLAGS.bavette ? 10 : 0;
+    state.boost.frames = flags & LIVE_FLAGS.boost ? 1 : 0;
+    state.skidding = !!(flags & LIVE_FLAGS.skid);
+    state.plate.on = !!(flags & LIVE_FLAGS.plate);
+    state.trick.active = !!(flags & LIVE_FLAGS.trick);
+    state.trick.type = AIR_TRICKS[near[11]] || 'superman';
+    const flip = state.jump.flipActive ? mix(6) : 0;
+    if (v2) v2.rider.setFlip(flip);
+    bikePivot.rotation.x = -(state.jump.flipActive && !v2 ? flip : state.bike.angle);
+}
+
+function spectateTick(now) {
+    if (!spectator.active) return;
+    spectator.raf = requestAnimationFrame(spectateTick);
+    const dt = Math.min(0.05, Math.max(0, (now - spectator.last) / 1000));
+    spectator.last = now;
+    const frames = spectator.frames;
+    if (frames.length && !spectator.crashed) {
+        const newest = frames[frames.length - 1][0];
+        if (spectator.playhead === null) spectator.playhead = Math.max(frames[0][0], newest - LIVE_DELAY);
+        // About LIVE_DELAY behind: a little faster when far behind, a little
+        // slower when catching up; once the run is over, to its end.
+        const lag = newest - spectator.playhead;
+        if (lag > LIVE_DELAY * 5) spectator.playhead = newest - LIVE_DELAY;
+        const rate = spectator.result ? 1.15 : lag > LIVE_DELAY * 1.6 ? 1.25 : lag > LIVE_DELAY * 1.15 ? 1.08 : lag < LIVE_DELAY * 0.35 ? 0.8 : 1;
+        spectator.playhead = Math.min(newest, spectator.playhead + dt * 60 * rate);
+        let index = frames.findIndex((frame) => frame[0] > spectator.playhead);
+        if (index === -1) index = frames.length - 1;
+        const b = frames[index];
+        const a = frames[Math.max(0, index - 1)];
+        const span = b[0] - a[0];
+        spectateApply(a, b, span > 0 ? Math.max(0, Math.min(1, (spectator.playhead - a[0]) / span)) : 1);
+        // What appeared on the road, and the bonuses, when the rider saw them.
+        while (spectator.spawns.length && spectator.spawns[0][1] <= spectator.playhead) {
+            const item = spectator.spawns.shift();
+            if (item[0] === 'o') placeObstacle(item[2], item[3], item[4], item[5], item[6]);
+            else if (item[0] === 'r') placeRamp(item[2], item[3], item[4]);
+        }
+        while (spectator.marks.length && spectator.marks[0][0] <= spectator.playhead) {
+            const [, title, text] = spectator.marks.shift();
+            toast(title, text, { float: true });
+        }
+        // Behind the bike: gone.
+        const behind = bikeGroup.position.z + 40;
+        state.obstacles = state.obstacles.filter((obs) => {
+            if (obs.mesh.position.z <= behind) return true;
+            scene.remove(obs.mesh);
+            disposeObjectTree(obs.mesh);
+            return false;
+        });
+        state.ramps = state.ramps.filter((ramp) => {
+            if (ramp.z <= behind) return true;
+            scene.remove(ramp.mesh);
+            return false;
+        });
+        live.watchFrame({ score: state.score, kmh: speedKmh() });
+        // The end of the run reached: the fall.
+        if (spectator.result && spectator.playhead >= newest - 0.5) spectateCrash();
+    } else if (spectator.result && !spectator.crashed && !frames.length) {
+        spectator.done = true;
+    }
+    if (spectator.crashed && v2) {
+        const moving = v2.rider.updateCrash(dt);
+        if (!moving || now - spectator.crashAt > 3800) spectator.done = true;
+    }
+    try {
+        if (spectator.audio) audio.update(dt, visualSnapshot());
+    } catch {
+        // Sound is a bonus.
+    }
+    updateUI();
+    renderScene(dt);
+}
+
+function spectateCrash() {
+    if (spectator.crashed) return;
+    spectator.crashed = true;
+    spectator.crashAt = performance.now();
+    const reason = spectator.result?.reason || 'crash';
+    if (spectator.audio) {
+        audio.stopRun();
+        spectator.audio = false;
+    }
+    if (reason === 'absent' || reason === 'left' || reason === 'skipped') {
+        spectator.done = true;
+        return;
+    }
+    audio.play(reason === 'slow' ? 'police_siren' : 'collision', { volume: 0.8 });
+    if (!v2) {
+        spectator.done = true;
+        return;
+    }
+    const kind = ['loop', 'flip', 'bavette', 'earlyGas'].includes(reason) || state.bike.angle > CONFIG.maxAngle * 0.95 ? 'loop' : 'hit';
+    const unitsPerSecond = Math.max(4, state.speed * 60);
+    audio.play(unitsPerSecond * 3.6 / 1.7 > 90 ? 'bike_fall_fast' : 'bike_fall', { volume: 0.6, delay: 0.12 });
+    v2.rider.startCrash(kind, unitsPerSecond, visualSnapshot());
+}
+
+// The street behind the menus, as when the game opens.
+function renderMenuBackdrop() {
+    spectateStop();
+    crashSequence++;
+    resetGame();
+    if (v2) {
+        v2.rider.reset();
+        bikeGroup.rotation.set(0, Math.PI, 0);
+        camera.position.set(3.2, 2.5, 7.6);
+        camera.lookAt(3.9, 1.7, -10);
+        v2.frame(0, visualSnapshot());
+        renderer.render(scene, camera);
+    }
+}
+
+let livePodiumOn = false;
+live = createLive({
+    post: async (path, body) => {
+        const response = await apiFetch(`${API_BASE_URL}/${path}`, {
+            method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body)
+        }, 8000);
+        const data = await response.json().catch(() => ({}));
+        if (!response.ok) {
+            const error = new Error(typeof data.detail === 'string' ? data.detail : `HTTP ${response.status}`);
+            error.status = response.status;
+            error.data = data;
+            throw error;
+        }
+        return data;
+    },
+    identity: () => {
+        const nickname = localStorage.getItem('wheelie_nickname');
+        return {
+            nickname, device_token: nickname ? deviceToken(nickname) : undefined,
+            look: v2 ? v2.podiumLook() : {}, voice: riderVoiceKey()
+        };
+    },
+    setNickname: (name) => setNickname(name),
+    points: () => totalPoints(),
+    spend: (amount) => spendPoints(amount),
+    stat: (name, amount = 1) => bumpStat(name, amount),
+    toast: (title, text) => toast(title, text, { discreet: true }),
+    say: (clipId) => {
+        try {
+            audio.say(clipId, { volume: 1 });
+        } catch {
+            // No voice: the bubble says it.
+        }
+    },
+    voiceOn: () => GAME_SETTINGS.voiceEnabled,
+    game: {
+        ride: () => {
+            spectateStop();
+            liveRecording = true;
+            liveLastFrame = -1e9;
+            GAME_SETTINGS.gameMode = 'linear';
+            document.querySelectorAll('.screen.active').forEach((screen) => screen.classList.remove('active'));
+            startGame();
+        },
+        watch: {
+            begin: (run) => spectateBegin(run),
+            push: (batch) => spectatePush(batch),
+            end: (result) => { spectator.result = result; },
+            stop: () => spectateStop(),
+            done: () => !spectator.active || spectator.done
+        },
+        podium: (entries) => {
+            if (!v2) return;
+            if (!entries) {
+                if (livePodiumOn) v2.podiumView(false);
+                livePodiumOn = false;
+                return;
+            }
+            spectateStop();
+            if (!livePodiumOn) {
+                // The last fall's rider is not left lying beside the podium.
+                crashSequence++;
+                resetGame();
+                v2.rider.reset();
+            }
+            v2.podium.setSolo(false);
+            v2.podium.setStandings(entries, null);
+            if (!livePodiumOn) v2.podiumView(true);
+            livePodiumOn = true;
+        },
+        stopAll: () => {
+            document.querySelectorAll('.screen.active').forEach((screen) => screen.classList.remove('active'));
+        }
+    },
+    menu: () => {
+        renderMenuBackdrop();
+        document.getElementById('mode-select-screen')?.classList.add('active');
+    }
 });
 
 function updateLeaderboard(nickname, score) {
@@ -7332,6 +7686,8 @@ if (import.meta.env.DEV) {
         get v2() { return v2; },
         // Free roam fall at `kmh` (skidding: the side-impact kind).
         fallTest(kmh, skidding = false) { startRoamFall(kmh / 3.6, skidding, v2.roam); },
-        get roamFall() { return roamFall; }
+        get roamFall() { return roamFall; },
+        get live() { return live; },
+        get spectator() { return spectator; }
     };
 }

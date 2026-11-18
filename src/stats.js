@@ -69,12 +69,27 @@ function duration(seconds) {
     return `${Math.floor(minutes / 60)} h ${String(minutes % 60).padStart(2, '0')} min`;
 }
 
+// Session live trophies (the API's live_rooms.py TROPHIES).
+const LIVE_TROPHIES = [['winner', '🏆 Vainqueur'], ['best_run', '⚡ Meilleure partie'], ['clown', '😂 Le comique'], ['booed', '👎 Le plus hué'],
+    ['darling', '🔥 Le chouchou'], ['mouth', '💬 La grande gueule'], ['express', '💥 Chute express']];
+
 // points: the cumulative points now; codes: which secret codes the player
 // has been shown ({ glider, tricks }): their stats appear with them, or as
 // soon as they have been used. all: the stats of every device the player
-// uses (src/profile.js), else this device's.
-export function renderStats(container, { points = 0, codes = {}, all = null } = {}) {
-    const stats = all || statsSnapshot();
+// uses (src/profile.js), else this device's. server: what the server knows
+// of the player (ranked games, total, best, sessions live): it counts since
+// the very first game, the game's own stats only since they exist.
+export function renderStats(container, { points = 0, codes = {}, all = null, server = null } = {}) {
+    const stats = { ...(all || statsSnapshot()) };
+    if (server) {
+        stats.runs = Math.max(stats.runs || 0, server.games_played || 0);
+        stats.score = Math.max(stats.score || 0, server.total_score || 0);
+        stats.bestScore = Math.max(stats.bestScore || 0, server.best_score || 0);
+        const liveStats = server.live || {};
+        stats.liveSessions = Math.max(stats.liveSessions || 0, liveStats.sessions || 0);
+        stats.liveWins = Math.max(stats.liveWins || 0, liveStats.wins || 0);
+        stats.liveTrophyCounts = liveStats.trophies || {};
+    }
     const groups = [
         ['Général', [
             ['Parties classées', whole(stats.runs)],
@@ -110,6 +125,17 @@ export function renderStats(container, { points = 0, codes = {}, all = null } = 
             ['Vols en jetpack', whole(stats.jetpacks)]
         ]]
     ];
+    if (stats.liveSessions || stats.liveTurns || stats.liveReactions) {
+        const trophies = LIVE_TROPHIES.filter(([id]) => stats.liveTrophyCounts?.[id]).map(([id, label]) => [label, whole(stats.liveTrophyCounts[id])]);
+        groups.push(['Sessions live', [
+            ['Sessions jouées', whole(stats.liveSessions)],
+            ['Sessions gagnées', whole(stats.liveWins)],
+            ['Tours joués', whole(stats.liveTurns)],
+            ['Réactions envoyées', whole(stats.liveReactions)],
+            ['Trophées de session', whole(stats.liveTrophies || trophies.reduce((sum, [, n]) => sum + Number(String(n).replace(/\D/g, '')), 0))],
+            ...trophies
+        ]]);
+    }
     const secret = [];
     if (codes.glider || stats.gliders) secret.push(['Séances de deltaplane', whole(stats.gliders)]);
     if (codes.tricks || stats.codeTricks) secret.push(['Parties sans obstacles', whole(stats.codeTricks)]);

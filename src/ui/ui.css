@@ -2912,13 +2912,13 @@ body.v2 #ui-jet-fuel {
   flex-direction: column;
   align-items: center;
   gap: 2px;
-  padding: 6px 16px;
+  padding: 5px 14px;
   font-family: var(--display);
   font-style: italic;
   color: #ffd27a;
-  background: rgba(8, 9, 12, 0.62);
-  border: 1px solid rgba(255, 138, 42, 0.55);
-  box-shadow: 0 0 18px rgba(255, 120, 30, 0.25);
+  /* Light: the jetpack shows through. */
+  background: linear-gradient(90deg, rgba(8, 9, 12, 0), rgba(8, 9, 12, 0.32) 20%, rgba(8, 9, 12, 0.32) 80%, rgba(8, 9, 12, 0));
+  text-shadow: 0 1px 3px rgba(0, 0, 0, 0.85);
   pointer-events: none;
   white-space: nowrap;
 }
@@ -2991,4 +2991,36 @@ body.v2:has(.screen.active) #ui-police-warn {
 
 @keyframes police-warn-blink {
   50% { box-shadow: 0 0 34px rgba(60, 100, 255, 0.7); }
+}
+
+/* Phone, on the jetpack: the fuel above the buttons on the right, the top
+   kept small (no ATTERRIR chip: its pad is there; no score; a small toast). */
+@media (pointer: coarse) {
+  body.v2.ui-jet #ui-jet-fuel {
+    left: auto;
+    right: calc(22px + var(--safe-r));
+    bottom: calc(128px + var(--safe-b));
+    transform: skewX(var(--slant));
+    align-items: flex-end;
+    padding: 3px 8px;
+    background: none;
+  }
+
+  body.v2.ui-jet #ui-jet-fuel b {
+    font-size: 16px;
+  }
+
+  body.v2.ui-jet #ui-jet-fuel span {
+    font-size: 10px;
+  }
+
+  body.v2.ui-jet #ui-prompt,
+  body.v2.ui-jet #score-container {
+    display: none !important;
+  }
+
+  body.v2.ui-jet #ui-toast {
+    transform-origin: 50% 0;
+    scale: 0.72;
+  }
 }
