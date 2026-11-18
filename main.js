@@ -107,9 +107,13 @@ const BOOST_FLAG = 0x80;
 // far the bike is from a whole turn: `clean`, `bad` (fragile 4 s), else on
 // its back (the run ends).
 const FLIP = {
-    minAngle: 0.35, kmh: 130, doubleKmh: 150, settle: 0.04, clean: 0.1, bad: 0.3,
-    bonus: [0, 100, 200], trickBonus: [0, 150, 300], badFrames: 240
+    minAngle: 0.35, kmh: 130, doubleKmh: 150, tripleKmh: 200, settle: 0.04, clean: 0.1, bad: 0.3,
+    bonus: [0, 100, 200, 400], trickBonus: [0, 150, 300, 600], badFrames: 240
 };
+// Rules 10 and 11 (wheelie_replay.py TRICK_HOLD_*): a trick landed earns
+// bonus[1] more when the trick button was held for at least share[0] /
+// share[1] of the flight's frames, else bonus[0] (let go too soon).
+const TRICK_HOLD = { share: [6, 10], bonus: [50, 100] };
 // In the air the wheelie no longer pivots on the rear wheel: the bike
 // levels out (it can no longer go over the top in mid-air).
 const AIR_LEVEL_RATE = 0.03;
@@ -171,9 +175,13 @@ const RULESETS = {
     6: { tipFull: false, firm: false, recharge: false, noSecond: false, longest: 45, shake: 20, floor: true, gentle: true },
     7: { tipFull: true, firm: true, recharge: true, noSecond: true, longest: 110, shake: 45, floor: true },
     8: { tipFull: false, firm: false, recharge: false, noSecond: false, longest: 45, shake: 20, floor: true, gentle: true, keepBoost: true },
-    9: { tipFull: true, firm: true, recharge: true, noSecond: true, longest: 110, shake: 45, floor: true, keepBoost: true }
+    9: { tipFull: true, firm: true, recharge: true, noSecond: true, longest: 110, shake: 45, floor: true, keepBoost: true },
+    // 8 and 9, the triple backflip (from FLIP.tripleKmh) and the trick's hold
+    // bonus (TRICK_HOLD) (server: rules 10 and 11).
+    10: { tipFull: false, firm: false, recharge: false, noSecond: false, longest: 45, shake: 20, floor: true, gentle: true, keepBoost: true, triple: true, holdBonus: true },
+    11: { tipFull: true, firm: true, recharge: true, noSecond: true, longest: 110, shake: 45, floor: true, keepBoost: true, triple: true, holdBonus: true }
 };
-const rulesFor = () => (GAME_SETTINGS.controlMode === 'arrows' || GAME_SETTINGS.customControls ? 9 : 8);
+const rulesFor = () => (GAME_SETTINGS.controlMode === 'arrows' || GAME_SETTINGS.customControls ? 11 : 10);
 const ruleset = () => RULESETS[state.rules] || RULESETS[4];
 // Automatic rear brake (option, up to 50 km/h by default): a wheelie about
 // to go over, or a bavette about to let go, is brought back down: throttle
@@ -245,11 +253,11 @@ function manualFlipRate(kmh) {
     return Math.min(0.16, 0.085 + (kmh - 115) * 0.0012);
 }
 
-function manualFlipLanding(totalAngle) {
+function manualFlipLanding(totalAngle, most = 2) {
     const whole = Math.floor(totalAngle / (2 * Math.PI) + 0.5);
     const off = totalAngle - 2 * Math.PI * whole;
     if (off >= FLIP_MANUAL.good[0] && off <= FLIP_MANUAL.good[1]) {
-        return whole !== 0 ? ['clean', Math.min(Math.abs(whole), 2), whole < 0] : ['none', 0];
+        return whole !== 0 ? ['clean', Math.min(Math.abs(whole), most), whole < 0] : ['none', 0];
     }
     if (off >= FLIP_MANUAL.bad[0] && off <= FLIP_MANUAL.bad[1]) return ['bad', 0];
     return ['crash', 0];
@@ -267,6 +275,7 @@ function flightFrames(vy) {
 }
 
 function flipTurnsFor(kmh) {
+    if (ruleset().triple && kmh >= FLIP.tripleKmh) return 3;
     return kmh >= FLIP.doubleKmh ? 2 : 1;
 }
 
@@ -277,14 +286,14 @@ function flipSettle(flipAngle) {
     return Math.max(target, flipAngle - FLIP.settle);
 }
 
-function flipLanding(flipAngle) {
+function flipLanding(flipAngle, most = 2) {
     const turns = flipAngle / (2 * Math.PI);
     const whole = Math.floor(turns + 0.5);
     const off = Math.abs(turns - whole);
     if (off > FLIP.bad) return ['crash', 0];
     if (off > FLIP.clean) return ['bad', 0];
     if (whole === 0) return ['none', 0];
-    return ['clean', Math.min(whole, 2)];
+    return ['clean', Math.min(whole, most)];
 }
 
 // Speed bonus on the score: x1 at 20 km/h up to x1.5 from 200 km/h.
@@ -347,7 +356,7 @@ let state = {
     boost: { charges: 0, frames: 0, gain: 0, wasHeld: false },
     // Simulation frame of the run (the server counts the same frames).
     frame: 0,
-    jump: { airborne: false, y: 0, vy: 0, trickFrames: 0, lastLanding: -1e9, pending: false, visualY: 0, flipActive: false, flipAngle: 0, flipRate: 0, flipKmh: 0 },
+    jump: { airborne: false, y: 0, vy: 0, trickFrames: 0, airFrames: 0, flipMost: 2, lastLanding: -1e9, pending: false, visualY: 0, flipActive: false, flipAngle: 0, flipRate: 0, flipKmh: 0 },
     trick: { active: false, type: 'superman', was: false, spin: 0, since: 0 },
     ramps: [],
     rampFreeZones: [],
@@ -469,6 +478,8 @@ const matConstructionStripe = new THREE.MeshStandardMaterial({ color: 0xffcc00 }
 const matHole = new THREE.MeshBasicMaterial({ color: 0x000000 });
 // Bike z at the previous camera update (declared early: resetGame clears it).
 let lastCameraBikeZ = null;
+// V2 races: the camera's distance behind the drawn bike (eased with time).
+let cameraGap = null;
 // "Too slow" banner (see showPoliceWarning).
 let policeWarning = null;
 let policeWarningShown = -1;
@@ -1106,6 +1117,15 @@ const OBSTACLE_GAP = { minUnits: 24, seconds: 0.55, depth: 3 };
 const SCORE_DIFFICULTY = {
     from: 1500, full: 20000, seconds: [0.55, 0.3], minUnits: [24, 15], tries: [4, 12], chance: 0.25, rampClear: [280, 150]
 };
+// Past it (2026-11-20): three more phases, each opened by its overhead sign
+// once its score is reached: the obstacles closer still and more of them,
+// some in pairs across the road (one way through), the ramps clearing less.
+const EXTRA_PHASES = [
+    { from: 35000, seconds: 0.27, minUnits: 14, tries: 14, chance: 0.06, rampClear: 140, pairs: 0.15, text: 'Plus d’obstacles, certains par deux' },
+    { from: 60000, seconds: 0.24, minUnits: 13, tries: 16, chance: 0.12, rampClear: 130, pairs: 0.25, text: 'Encore plus serré : choisis vite ton passage' },
+    { from: 90000, seconds: 0.21, minUnits: 12, tries: 18, chance: 0.18, rampClear: 120, pairs: 0.35, text: 'Le plus dur du jeu : bonne chance' }
+];
+const extraPhase = () => (state.tricksOnly || state.phase < 4 ? null : EXTRA_PHASES[state.phase - 4] || null);
 function scoreDifficulty() {
     if (state.tricksOnly) return 0;
     const { from, full } = SCORE_DIFFICULTY;
@@ -1114,8 +1134,10 @@ function scoreDifficulty() {
 const lerpBy = ([a, b], k) => a + (b - a) * k;
 function obstacleRoomAt(z) {
     const level = scoreDifficulty();
-    const seconds = lerpBy(SCORE_DIFFICULTY.seconds, level);
-    const gap = Math.max(lerpBy(SCORE_DIFFICULTY.minUnits, level), state.speed * 60 * seconds) + OBSTACLE_GAP.depth;
+    const extra = extraPhase();
+    const seconds = extra ? extra.seconds : lerpBy(SCORE_DIFFICULTY.seconds, level);
+    const minUnits = extra ? extra.minUnits : lerpBy(SCORE_DIFFICULTY.minUnits, level);
+    const gap = Math.max(minUnits, state.speed * 60 * seconds) + OBSTACLE_GAP.depth;
     return !state.obstacles.some((obs) => {
         if (!obs.active) return false;
         const away = z < obs.box.min.z ? obs.box.min.z - z : z > obs.box.max.z ? z - obs.box.max.z : 0;
@@ -1124,7 +1146,8 @@ function obstacleRoomAt(z) {
 }
 
 // side: -1 / 1 puts it against that kerb; otherwise now and then anyway.
-function spawnObstacle(zPos, side = 0) {
+// x: where across the road (then never against a kerb).
+function spawnObstacle(zPos, side = 0, x = null) {
     const type = Math.random();
     let obs;
     let kind = null;
@@ -1170,7 +1193,10 @@ function spawnObstacle(zPos, side = 0) {
         obs = new THREE.Mesh(geo, new THREE.MeshStandardMaterial({ color: 0xff4400 }));
         obs.position.set((Math.random() - 0.5) * 16, 0.5, zPos);
     }
-    if (!side && Math.random() < EDGE.share) side = Math.random() < 0.5 ? -1 : 1;
+    if (x !== null) {
+        obs.position.x = x;
+        side = 0;
+    } else if (!side && Math.random() < EDGE.share) side = Math.random() < 0.5 ? -1 : 1;
     if (side) {
         // Its outer edge where a bike hugging that side rides.
         obs.updateMatrixWorld(true);
@@ -1189,6 +1215,18 @@ function spawnObstacle(zPos, side = 0) {
             Math.round(obs.rotation.y * 1000) / 1000]);
     }
     return record;
+}
+
+// Phases 4 to 6: two across the road at once, one way through (both
+// kerbs, or the middle and one kerb).
+function spawnPair(z) {
+    if (Math.random() < 0.5) {
+        spawnObstacle(z, -1);
+        spawnObstacle(z, 1);
+    } else {
+        spawnObstacle(z, 0, (Math.random() - 0.5) * 3);
+        spawnObstacle(z, Math.random() < 0.5 ? -1 : 1);
+    }
 }
 
 // An obstacle seen in a session: where the rider's game put it.
@@ -1930,7 +1968,10 @@ function visualSnapshot() {
 }
 
 function renderScene(dt, snapshot = visualSnapshot()) {
+    cameraDt = dt > 0 ? Math.min(0.1, dt) : FIXED_STEP;
     updateCamera();
+    // Tests: where the bike and the camera were drawn.
+    if (import.meta.env.DEV && bikeGroup) window.__drawn = { bike: bikeGroup.position.z, cam: camera.position.z };
     if (dt > 0) updateKnockedObstacles(dt);
     if (shields && dt > 0) shields.update(dt, performance.now() / 1000, bikeGroup.position);
     updateRampArrows();
@@ -1960,7 +2001,7 @@ function resetGame() {
     state.wheeliePercentage = 0;
     state.wheelieTime = 0;
     state.frame = 0;
-    state.jump = { airborne: false, y: 0, vy: 0, trickFrames: 0, lastLanding: -1e9, pending: false, visualY: 0, flipActive: false, flipAngle: 0, flipRate: 0, flipKmh: 0 };
+    state.jump = { airborne: false, y: 0, vy: 0, trickFrames: 0, airFrames: 0, flipMost: 2, lastLanding: -1e9, pending: false, visualY: 0, flipActive: false, flipAngle: 0, flipRate: 0, flipKmh: 0 };
     state.trick = { active: false, type: 'superman', was: false, spin: 0 };
     state.ramps.forEach((ramp) => scene.remove(ramp.mesh));
     state.ramps = [];
@@ -1969,6 +2010,7 @@ function resetGame() {
     state.gantries = [];
     state.quietZones = [];
     state.phase = 1;
+    state.extraSigns = 0;
     state.vulnerableUntil = -1;
     state.badLanding = 0;
     state.slow = { armed: false, frames: 0, policeFrames: 0 };
@@ -1999,6 +2041,8 @@ function resetGame() {
     if (v2) v2.rider.resetPlate();
     hidePoliceWarning();
     lastCameraBikeZ = null;
+    cameraGap = null;
+    renderFrom.valid = false;
     freeCamYaw = null;
     freeCamLast = null;
     freeOrbit.yaw = 0;
@@ -2636,7 +2680,8 @@ function placeRamp(x, z, wider, withShield = false) {
     if (ramp.shield) ramp.shield.scale.x = SHIELD.size / wider;
     // Clear the run-up and the landing zone of obstacles (less road as the
     // score climbs).
-    const zone = { from: z + 25, to: z - lerpBy(SCORE_DIFFICULTY.rampClear, scoreDifficulty()) };
+    const extra = extraPhase();
+    const zone = { from: z + 25, to: z - (extra ? extra.rampClear : lerpBy(SCORE_DIFFICULTY.rampClear, scoreDifficulty())) };
     state.rampFreeZones.push(zone);
     state.obstacles = state.obstacles.filter((obs) => {
         const oz = obs.mesh.position.z;
@@ -2710,7 +2755,8 @@ function setTrick(active) {
 
 // What the takeoff speed allows, said as the bike leaves the ramp.
 function announceFlip(kmh) {
-    if (kmh >= FLIP.doubleKmh) toast('DOUBLE BACKFLIP POSSIBLE', 'Reste appuyé : double · lâche après un tour : simple', { discreet: true, float: true });
+    if (ruleset().triple && kmh >= FLIP.tripleKmh) toast('TRIPLE BACKFLIP POSSIBLE', 'Reste appuyé : triple (400 pts) · lâche plus tôt : double ou simple', { discreet: true, float: true });
+    else if (kmh >= FLIP.doubleKmh) toast('DOUBLE BACKFLIP POSSIBLE', 'Reste appuyé : double · lâche après un tour : simple', { discreet: true, float: true });
     else if (kmh >= FLIP.kmh) toast('BACKFLIP', 'Reste appuyé jusqu’à l’atterrissage', { discreet: true, float: true });
     // In a wheelie but too slow: just a jump, nothing to fear.
     else toast('PAS DE BACKFLIP', `Il faut ${FLIP.kmh} km/h au tremplin`, { discreet: true, float: true });
@@ -2719,13 +2765,14 @@ function announceFlip(kmh) {
 function landFlip(frame) {
     const jump = state.jump;
     const manual = state.flipMode === 'manual';
-    const [outcome, turns, forwards] = manual ? manualFlipLanding(state.bike.angle + jump.flipAngle) : flipLanding(jump.flipAngle);
+    const most = jump.flipMost || 2;
+    const [outcome, turns, forwards] = manual ? manualFlipLanding(state.bike.angle + jump.flipAngle, most) : flipLanding(jump.flipAngle, most);
     if (outcome === 'clean') {
         const bonus = (jump.trickFrames > 0 ? FLIP.trickBonus : FLIP.bonus)[turns];
         state.score += bonus;
-        bumpStat(turns >= 2 ? 'doubleFlips' : 'flips');
+        bumpStat(turns >= 3 ? 'tripleFlips' : turns >= 2 ? 'doubleFlips' : 'flips');
         const flip = forwards ? 'FRONTFLIP' : 'BACKFLIP';
-        const name = turns >= 2 ? `DOUBLE ${flip}` : flip;
+        const name = turns >= 3 ? `TRIPLE ${flip}` : turns >= 2 ? `DOUBLE ${flip}` : flip;
         toast(`+${bonus}`, jump.trickFrames > 0 ? `${name} + FIGURE !` : `${name} !`, { float: true });
         audio.play('new_record', { volume: 0.45 });
         audio.play('landing', { volume: 0.5 });
@@ -2815,9 +2862,20 @@ function land(trickFrames, difficulty) {
     if (trickFrames > 0) {
         const bonus = trickFrames * FIXED_STEP * JUMP.landingRate * difficulty;
         state.score += bonus;
+        // Rules 10 and 11: held through most of the flight, 100 more; else 50.
+        let hold = 0;
+        let held = false;
+        if (ruleset().holdBonus) {
+            held = trickFrames * TRICK_HOLD.share[1] >= state.jump.airFrames * TRICK_HOLD.share[0];
+            hold = TRICK_HOLD.bonus[held ? 1 : 0];
+            state.score += hold;
+            if (held) bumpStat('heldTricks');
+        }
         const air = trickFrames * FIXED_STEP * JUMP.airRate * difficulty;
         state.boost.charges = Math.min(BOOST.maxCharges, state.boost.charges + 1);
-        toast(`+${Math.round(bonus + air)}`, 'FIGURE RÉUSSIE · BOOST +1 (B)', { float: true });
+        const text = !hold ? 'FIGURE RÉUSSIE · BOOST +1 (B)'
+            : held ? `FIGURE TENUE +${hold} · BOOST +1 (B)` : `FIGURE +${hold} (figure lâchée trop tôt) · BOOST +1`;
+        toast(`+${Math.round(bonus + air + hold)}`, text, { float: true });
         audio.play('multiplier_up', { volume: 0.45, rate: 1.15 });
         speak('landing', { force: true });
     }
@@ -2893,7 +2951,11 @@ const PHASES = [
     null,
     { title: 'PHASE 1', subtitle: 'OBSTACLES', color: '#0b6b3a' },
     { title: 'PHASE 2', subtitle: 'FIGURES', color: '#1d4fa8' },
-    { title: 'PHASE 3', subtitle: 'FIGURES + OBSTACLES', color: '#a8321d' }
+    { title: 'PHASE 3', subtitle: 'FIGURES + OBSTACLES', color: '#a8321d' },
+    // Past the full difficulty (EXTRA_PHASES).
+    { title: 'PHASE 4', subtitle: 'EXTRÊME', color: '#6b1fa3' },
+    { title: 'PHASE 5', subtitle: 'INFERNALE', color: '#9c0f16' },
+    { title: 'PHASE 6', subtitle: 'LÉGENDE', color: '#15161a' }
 ];
 const gantryTextures = [];
 function gantryTexture(phase) {
@@ -3044,14 +3106,26 @@ function updatePhases(frame) {
         const to = quietAfter(z, OBSTACLE_RETURN.calmFrames);
         rampObstaclesFrom(to);
     }
+    // The next phase past the full difficulty: its sign once its score is
+    // reached (and the last sign crossed: one at a time).
+    const signs = state.extraSigns || 0;
+    const nextPhase = EXTRA_PHASES[signs];
+    if (nextPhase && frame >= JUMP.groundTricksFrom && state.phase === 3 + signs && state.score >= nextPhase.from) {
+        state.extraSigns = signs + 1;
+        const z = ahead(lead);
+        spawnGantry(4 + signs, z);
+        quietAfter(z, 90);
+    }
     state.quietZones = state.quietZones.filter((zone) => zone.to < bikeGroup.position.z + 40);
     for (const gantry of state.gantries) {
         if (!gantry.userData.announced && bikeGroup.position.z < gantry.position.z) {
             gantry.userData.announced = true;
             const { title, subtitle } = PHASES[gantry.userData.phase];
             state.phase = gantry.userData.phase;
-            toast(`${title} · ${subtitle}`, gantry.userData.phase === 2 ? `Tremplins : FIGURE${isMobile() ? '' : ' (F)'} en l’air · backflip : en wheeling à 130 km/h, garde ${isMobile() ? 'WHEELIE' : 'ESPACE'}`
-                : gantry.userData.phase === 3 ? 'Un obstacle pendant une figure = chute' : 'Évite les obstacles');
+            const phase = gantry.userData.phase;
+            if (phase >= 4) audio.play('new_record', { volume: 0.4 });
+            toast(`${title} · ${subtitle}`, phase === 2 ? `Tremplins : FIGURE${isMobile() ? '' : ' (F)'} en l’air · backflip : en wheeling à 130 km/h, garde ${isMobile() ? 'WHEELIE' : 'ESPACE'}`
+                : phase === 3 ? 'Un obstacle pendant une figure = chute' : phase >= 4 ? EXTRA_PHASES[phase - 4].text : 'Évite les obstacles');
         }
     }
     state.gantries = state.gantries.filter((gantry) => {
@@ -3695,6 +3769,13 @@ let animationLoopRunning = false;
 let lastFrameTime = 0;
 let simulationAccumulator = 0;
 let uiAccumulator = 0;
+// The physics moves in steps of 1/60 s; the screen does not always draw one
+// step a frame (0 or 2 when the phone is busy, or a 120 Hz screen). Drawn
+// where the step left it, the bike jerked against the camera (it seemed to
+// go back a moment). Races: drawn between its last two steps instead.
+const renderFrom = { x: 0, y: 0, z: 0, valid: false };
+const renderAt = { x: 0, y: 0, z: 0 };
+let cameraDt = FIXED_STEP;
 
 function startAnimationLoop() {
     if (animationLoopRunning) return;
@@ -3718,6 +3799,12 @@ function animate(timestamp = performance.now()) {
 
     while (simulationAccumulator >= FIXED_STEP) {
         const dt = FIXED_STEP;
+        if (bikeGroup) {
+            renderFrom.x = bikeGroup.position.x;
+            renderFrom.y = bikeGroup.position.y;
+            renderFrom.z = bikeGroup.position.z;
+            renderFrom.valid = true;
+        }
         if (state.isPlaying && !state.isPaused && !state.userPaused && bikeGroup) {
         // Development only: tests drive the inputs frame by frame.
         if (import.meta.env.DEV && window.__wheelieStep) window.__wheelieStep(state);
@@ -3980,6 +4067,8 @@ function animate(timestamp = performance.now()) {
                 jump.y = JUMP.rampHeight;
                 jump.vy = (10 + startKmh * 0.08) / 60;
                 jump.trickFrames = 0;
+                jump.airFrames = 0;
+                jump.flipMost = ruleset().triple && startKmh >= FLIP.tripleKmh ? 3 : 2;
                 jump.hop = null;
                 bumpStat('jumps');
                 audio.play('rev_blip', { volume: 0.45, rate: 1.15 });
@@ -4361,6 +4450,7 @@ function animate(timestamp = performance.now()) {
                 state.score += groundTrickRate(startKmh) * FIXED_STEP;
             }
             if (jump.airborne) {
+                jump.airFrames += 1;
                 if (jump.flipActive && manualFlips) {
                     if (wheelieInput) jump.flipAngle += jump.flipRate;
                     else if (airBrake) jump.flipAngle -= jump.flipRate * FLIP_MANUAL.brake;
@@ -4492,25 +4582,29 @@ function animate(timestamp = performance.now()) {
                 state.rampFreeZones = state.rampFreeZones.filter((zone) => zone.to < bikeGroup.position.z);
                 // More of them as the score climbs (SCORE_DIFFICULTY).
                 const level = scoreDifficulty();
-                const tries = Math.round(lerpBy(SCORE_DIFFICULTY.tries, level));
+                const extra = extraPhase();
+                const tries = extra ? extra.tries : Math.round(lerpBy(SCORE_DIFFICULTY.tries, level));
                 // A word at each quarter of the way up.
                 const step = Math.floor(level * 4 + 1e-9);
                 if (step > (state.difficultyStep || 0)) {
                     state.difficultyStep = step;
-                    toast(step === 4 ? 'DIFFICULTÉ MAX' : 'ÇA SE CORSE', step === 4 ? 'Le plus dur : tiens bon' : 'Plus d’obstacles', { discreet: true, float: true });
+                    toast('ÇA SE CORSE', step === 4 ? `Plus d’obstacles · phase 4 à ${EXTRA_PHASES[0].from.toLocaleString('fr-FR')} pts` : 'Plus d’obstacles', { discreet: true, float: true });
                 }
                 for (let i = 0; i < tries; i++) {
                     // Difficulty-based spawning
                     let spawnChance = 0.3; // Easy default
                     if (GAME_SETTINGS.difficulty === 'medium') spawnChance = 0.6;
                     if (GAME_SETTINGS.difficulty === 'hard') spawnChance = 0.9;
-                    spawnChance = Math.min(1, spawnChance + SCORE_DIFFICULTY.chance * level);
+                    spawnChance = Math.min(1, spawnChance + SCORE_DIFFICULTY.chance * level + (extra ? extra.chance : 0));
 
                     const z = newZ + Math.random() * 100;
                     // Fewer while they come back (phase 3).
                     if (Math.random() < spawnChance * obstacleDensity(z)) {
                         if (obstaclesAllowed() && !inQuietZone(z) && !state.rampFreeZones.some((zone) => z <= zone.from && z >= zone.to) &&
-                            obstacleRoomAt(z)) spawnObstacle(z);
+                            obstacleRoomAt(z)) {
+                            if (extra && Math.random() < extra.pairs) spawnPair(z);
+                            else spawnObstacle(z);
+                        }
                     }
                 }
             }
@@ -4559,7 +4653,18 @@ function animate(timestamp = performance.now()) {
         updateMultiplierDisplay();
         uiAccumulator %= 0.1;
     }
+    const smooth = GAME_SETTINGS.gameMode === 'linear' && renderFrom.valid && bikeGroup && !(import.meta.env.DEV && window.__noSmooth)
+        && Math.abs(bikeGroup.position.z - renderFrom.z) < 30 && Math.abs(bikeGroup.position.x - renderFrom.x) < 5;
+    if (smooth) {
+        const k = Math.max(0, Math.min(1, simulationAccumulator / FIXED_STEP));
+        renderAt.x = bikeGroup.position.x;
+        renderAt.y = bikeGroup.position.y;
+        renderAt.z = bikeGroup.position.z;
+        bikeGroup.position.set(renderFrom.x + (renderAt.x - renderFrom.x) * k, renderFrom.y + (renderAt.y - renderFrom.y) * k,
+            renderFrom.z + (renderAt.z - renderFrom.z) * k);
+    }
     renderScene(elapsed, snapshot);
+    if (smooth) bikeGroup.position.set(renderAt.x, renderAt.y, renderAt.z);
 }
 
 function updateCamera() {
@@ -4790,24 +4895,35 @@ function updateCamera() {
         }
 
         const targetZ = bikeGroup.position.z + distanceOffset;
-        // A jump lifts the bike several metres: the camera rises with it.
-        const targetY = (isMobileDevice ? (IS_V2 ? 4 : 3.5) : 4.5) + state.jump.visualY * 0.6;
+        // A jump lifts the bike several metres: the camera rises with it
+        // (V2: the bike as drawn, between two physics steps).
+        const lift = IS_V2 ? bikeGroup.position.y : state.jump.visualY;
+        const targetY = (isMobileDevice ? (IS_V2 ? 4 : 3.5) : 4.5) + lift * 0.6;
 
-        // Rattrapage plus rapide (0.15 au lieu de 0.1)
-        camera.position.x += (bikeGroup.position.x - camera.position.x) * 0.1 + shakeX;
-        // The camera rides along with most of the bike's motion, then eases
-        // the rest: at speed the bike only pulls a little ahead instead of
-        // running away from the camera (the old lag grew to ~17 m at 150 km/h).
-        const bikeDz = lastCameraBikeZ === null ? 0 : bikeGroup.position.z - lastCameraBikeZ;
-        lastCameraBikeZ = bikeGroup.position.z;
-        if (IS_V2 && Math.abs(bikeDz) < 10) camera.position.z += bikeDz * 0.9;
+        // Eased by the time since the last frame (as at 60 images a second,
+        // whatever the screen draws).
+        const ease = (rate) => 1 - Math.pow(1 - rate, cameraDt * 60);
+        camera.position.x += (bikeGroup.position.x - camera.position.x) * ease(0.1) + shakeX;
         // Catch up faster during jumps and stunts so the trick can be seen.
         const followRate = state.jump.airborne || state.trick.active ? 0.35 : 0.15;
-        camera.position.z += (targetZ - camera.position.z) * followRate;
-        camera.position.y += (targetY - camera.position.y) * 0.1 + shakeY;
+        if (IS_V2) {
+            // V2: the camera keeps a distance behind the drawn bike, and that
+            // distance eases with time: the same steady picture whatever the
+            // frame rate (it used to follow frame by frame, and jerked when
+            // frames came unevenly). At speed the bike pulls a little ahead,
+            // as much as before (the old lag grew to ~17 m at 150 km/h).
+            const pullAhead = 0.1 * Math.max(0, state.speed) / -Math.log(1 - followRate);
+            if (cameraGap === null || lastCameraBikeZ === null) cameraGap = camera.position.z - bikeGroup.position.z;
+            lastCameraBikeZ = bikeGroup.position.z;
+            cameraGap += (distanceOffset + pullAhead - cameraGap) * ease(followRate);
+            camera.position.z = bikeGroup.position.z + cameraGap;
+        } else {
+            camera.position.z += (targetZ - camera.position.z) * ease(followRate);
+        }
+        camera.position.y += (targetY - camera.position.y) * ease(0.1) + shakeY;
 
         // Look slightly ahead of the bike
-        camera.lookAt(bikeGroup.position.x, 2 + state.jump.visualY * 0.5, bikeGroup.position.z - 20);
+        camera.lookAt(bikeGroup.position.x, 2 + lift * 0.5, bikeGroup.position.z - 20);
     }
 }
 

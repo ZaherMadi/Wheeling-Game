@@ -112,6 +112,8 @@ export function renderStats(container, { points = 0, codes = {}, all = null, ser
             ['Figures', whole(stats.tricks)],
             ['Backflips', whole(stats.flips)],
             ['Doubles backflips', whole(stats.doubleFlips)],
+            ['Triples backflips', whole(stats.tripleFlips)],
+            ['Figures tenues (60 % du saut)', whole(stats.heldTricks)],
             ['Boosts', whole(stats.boosts)]
         ]],
         ['Boucliers', [
