@@ -7026,8 +7026,9 @@ function spectateApply(a, b, k) {
     state.trick.active = !!(flags & LIVE_FLAGS.trick);
     state.trick.type = AIR_TRICKS[near[11]] || 'superman';
     const flip = state.jump.flipActive ? mix(6) : 0;
+    // V2: the flip turns the bike's pivot itself (its angle, not the wheelie's).
     if (v2) v2.rider.setFlip(flip);
-    bikePivot.rotation.x = -(state.jump.flipActive && !v2 ? flip : state.bike.angle);
+    if (!v2 || !state.jump.flipActive) bikePivot.rotation.x = -(state.jump.flipActive ? flip : state.bike.angle);
 }
 
 function spectateTick(now) {
@@ -7792,6 +7793,7 @@ if (import.meta.env.DEV) {
         fallTest(kmh, skidding = false) { startRoamFall(kmh / 3.6, skidding, v2.roam); },
         get roamFall() { return roamFall; },
         get live() { return live; },
-        get spectator() { return spectator; }
+        get spectator() { return spectator; },
+        spectate: { begin: (run) => spectateBegin(run), push: (batch) => spectatePush(batch) }
     };
 }
