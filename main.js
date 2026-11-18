@@ -10,7 +10,7 @@ import { createPlayerVoice } from './src/player-voice.js';
 import { renderTrophyRoom } from './src/trophy-room.js';
 import { HumanCheckRequired, forgetPass, runHumanCheck, storedPass } from './src/human-check.js';
 import { POSES, buyPose, choosePose, chosenPose, ownedPoses } from './src/v2/poses.js';
-import { DRIFT_POINTS, GLIDER_POINTS, JETPACK_POINTS, TRICKS_CODE_POINTS, rewards } from './src/unlocks.js';
+import { DRIFT_POINTS, GLIDER_POINTS, JETPACK_POINTS, TRICKS_CODE_POINTS, hasJetpack, rewards } from './src/unlocks.js';
 import { createAccount, deviceToken } from './src/account.js';
 import { createSecretBird } from './src/secret-bird.js';
 import { SHIELD, createShields } from './src/shield.js';
@@ -2750,7 +2750,7 @@ function roamJet() {
     if (!v2 || !state.isPlaying || state.isPaused || GAME_SETTINGS.gameMode !== 'free') return;
     if (roamFall.active) return;
     if (v2.roam.mode !== 'jet' && !jetUnlocked()) {
-        toast('JETPACK VERROUILLÉ', `${JETPACK_POINTS.toLocaleString('fr-FR')} points cumulés, ou le code secret`, { discreet: true, float: true });
+        toast('JETPACK', `Tape son code secret (révélé à ${JETPACK_POINTS.toLocaleString('fr-FR')} points cumulés)`, { discreet: true, float: true });
         return;
     }
     if (v2.roam.toggleJet() && v2.roam.mode === 'jet') bumpStat('jetpacks');
@@ -3032,9 +3032,10 @@ const LAND_SEQUENCE = ['wheelie', 'wheelie', 'brake', 'tap', 'tap', 'tap'];
 // Free roam, on the bike: the jetpack (and it is the player's from then on).
 const JET_SEQUENCE = ['brake', 'gas', 'wheelie', 'tap', 'tap', 'tap'];
 const JET_CODE_KEY = 'wheelie_jetpack_code';
-// The jetpack: reached at JETPACK_POINTS, or its code typed once.
+// The jetpack's button: there once its code has been typed (never before;
+// JETPACK_POINTS only reveals the code).
 function jetUnlocked() {
-    return totalPoints() >= JETPACK_POINTS || readSetting(JET_CODE_KEY) === '1';
+    return readSetting(JET_CODE_KEY) === '1';
 }
 function secretInput(kind) {
     if (!state.isPlaying || state.userPaused) return;
@@ -3042,7 +3043,8 @@ function secretInput(kind) {
     // The codes work for whoever knows them; cumulative points only reveal
     // them (the golden bird on the menu, the trophy room).
     if (competitive && (state.gameTime > 10 || state.tricksOnly)) return;
-    if (!competitive && !(v2 && v2.roam.mode === 'bike' && !roamFall.active)) return;
+    // Free roam: on the bike or on foot (street or roof), any time.
+    if (!competitive && !(v2 && (v2.roam.mode === 'bike' || v2.roam.mode === 'walk') && !roamFall.active && !v2.roam.frozen)) return;
     const recent = (secretCode.recent ||= []);
     recent.push(kind);
     if (recent.length > 6) recent.shift();
@@ -3072,10 +3074,7 @@ function secretInput(kind) {
     recent.length = 0;
     secretCode.step = 0;
     if (competitive) startTricksOnly();
-    else {
-        v2.roam.startGlide(bikeGroup);
-        bumpStat('gliders');
-    }
+    else if (v2.roam.startGlide(bikeGroup)) bumpStat('gliders');
 }
 
 // Presses of gas, brake and wheelie (keyboard, pads, or the joystick pushed
@@ -7146,6 +7145,7 @@ function renderPosePicker(note = '') {
     const list = document.createElement('div');
     list.className = 'pose-picker__list';
     for (const pose of POSES) {
+        if (pose.jetpack && !hasJetpack() && !owned.has(pose.id)) continue;
         const chip = document.createElement('button');
         chip.type = 'button';
         chip.className = 'pose-chip';
@@ -7155,8 +7155,8 @@ function renderPosePicker(note = '') {
         const label = document.createElement('span');
         label.textContent = pose.id === poseToConfirm ? `ACHETER ?` : pose.name;
         const tag = document.createElement('em');
-        tag.textContent = pose.id === poseToConfirm ? `${pose.price} pts`
-            : owned.has(pose.id) ? (pose.id === chosen ? '✓' : '') : `${pose.price} pts`;
+        tag.textContent = pose.id === poseToConfirm ? `${pose.price.toLocaleString('fr-FR')} pts`
+            : owned.has(pose.id) ? (pose.id === chosen ? '✓' : '') : `${pose.price.toLocaleString('fr-FR')} pts`;
         chip.append(label, tag);
         chip.addEventListener('click', () => pickPose(pose));
         list.append(chip);
@@ -7178,13 +7178,13 @@ function pickPose(pose) {
     }
     if (poseToConfirm !== pose.id) {
         poseToConfirm = pose.id;
-        renderPosePicker(`« ${pose.name} » : touche encore pour l’acheter (${pose.price} points cumulés).`);
+        renderPosePicker(`« ${pose.name} » : touche encore pour l’acheter (${pose.price.toLocaleString('fr-FR')} points cumulés).`);
         return;
     }
     poseToConfirm = null;
     const result = buyPose(pose.id);
     if (result === 'short') {
-        renderPosePicker(`Il te manque ${pose.price - totalPoints()} points cumulés pour « ${pose.name} ».`);
+        renderPosePicker(`Il te manque ${(pose.price - totalPoints()).toLocaleString('fr-FR')} points cumulés pour « ${pose.name} ».`);
         return;
     }
     audio.play('new_record', { volume: 0.4 });

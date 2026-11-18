@@ -10,7 +10,9 @@ export const POSES = [
     { id: 'muscles', name: 'Biceps', price: 1500 },
     { id: 'maillot', name: 'Le maillot brandi', price: 2500 },
     { id: 'numero1', name: 'Numéro 1', price: 3500 },
-    { id: 'dab', name: 'Dab', price: 5000 }
+    { id: 'dab', name: 'Dab', price: 5000 },
+    // Only for those who have the jetpack (its code typed).
+    { id: 'jetpack', name: 'Jetpack landing', price: 1000000, jetpack: true }
 ];
 const OWNED_KEY = 'wheelie_podium_poses';
 const CHOSEN_KEY = 'wheelie_podium_pose';

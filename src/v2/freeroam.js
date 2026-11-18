@@ -380,7 +380,7 @@ export function createFreeRoam({ scene, world, rider, audio, onTurn, playerVoice
     //   come, the driver explains (GTA...), and the fine is three times as
     //   much.
     // The bike then waits next to him.
-    const GLIDE = { sink: 1.6, speed: 12, startHeight: 42, fine: 50, share: 0.025, carFactor: 3, edge: 1.6, reach: 62 };
+    const GLIDE = { sink: 1.6, speed: 12, startHeight: 42, fine: 50, share: 0.025, carFactor: 3, edge: 1.6, reach: 132 };
     const glide = { group: null, x: 0, z: 0, y: 0, yaw: Math.PI, speed: GLIDE.speed, phase: '', t: 0, roll: 0, scene: null, roof: null, car: null };
     function glideFine(factor) {
         const points = totalPoints();
@@ -396,14 +396,26 @@ export function createFreeRoam({ scene, world, rider, audio, onTurn, playerVoice
         glide.group.scale.setScalar(1);
     }
 
+    // From the bike or on foot (in the street or on a roof), as often as
+    // the code is typed.
     function startGlide() {
-        if (mode !== 'bike' || frozen || turning || !bike) return false;
+        if ((mode !== 'bike' && mode !== 'walk') || frozen || turning || !bike) return false;
+        // The police leaving with the last one: gone at once.
+        if (glide.scene && glide.scene.step === 'leave') endGlide();
+        if (glide.scene) return false;
         ensureGlider();
-        glide.yaw = bike.rotation.y;
-        // Starts a little behind the bike, high up.
-        glide.x = bike.position.x;
-        glide.z = bike.position.z - Math.cos(glide.yaw) * 25;
-        glide.y = GLIDE.startHeight;
+        if (mode === 'bike') {
+            glide.yaw = bike.rotation.y;
+            // Starts a little behind the bike, high up.
+            glide.x = bike.position.x;
+            glide.z = bike.position.z - Math.cos(glide.yaw) * 25;
+            glide.y = GLIDE.startHeight;
+        } else {
+            glide.yaw = walker.yaw;
+            glide.x = walker.x;
+            glide.z = walker.z - Math.cos(glide.yaw) * 12;
+            glide.y = Math.max(GLIDE.startHeight, walker.y + 25);
+        }
         launchGlide();
         bike.visible = false;
         rider.dismount(glide.x, glide.z, glide.yaw);
@@ -760,13 +772,15 @@ export function createFreeRoam({ scene, world, rider, audio, onTurn, playerVoice
     // turn); COURIR (or B) is the turbo; ATTERRIR (or J) brings him down.
     // Out of fuel: the engine coughs and he comes down. He lands on the
     // street or a roof; the bike is brought to him on the street.
-    const JET = { burn: 10, boostBurn: 30, speed: 24, boostSpeed: 60, climb: 10, sink: 2.4, ceiling: 140, turn: 1.9, reach: 66, minPoints: 20 };
+    const JET = { burn: 10, boostBurn: 30, speed: 24, boostSpeed: 60, climb: 10, sink: 2.4, ceiling: 140, turn: 1.9, reach: 134, minPoints: 20 };
     const jetpack = createJetpack({ scene });
     const jet = { x: 0, y: 0, z: 0, yaw: Math.PI, speed: 0, vy: 0, pitch: 0, boost: 0, thrust: 0, debt: 0, landing: false, out: false,
         wasBoosting: false, ground: 0, roof: null, time: 0, whoosh: 0 };
     const jetVelocity = new THREE.Vector3();
 
     function startJet() {
+        // The police leaving with the glider: gone at once.
+        if (glide.scene && glide.scene.step === 'leave') endGlide();
         if (frozen || turning || glide.scene || mode === 'car' || mode === 'glide' || mode === 'jet') return false;
         if (totalPoints() < JET.minPoints) {
             toast('PAS DE CARBURANT', `Le jetpack brûle tes points cumulés : il en faut au moins ${JET.minPoints}`);

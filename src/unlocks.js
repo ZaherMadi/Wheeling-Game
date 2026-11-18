@@ -22,9 +22,18 @@ export const SHOES_POINTS = 10000;
 export const GLIDER_POINTS = 14000;
 export const TRICKS_CODE_POINTS = 16000;
 export const JETPACK_POINTS = 18000;
+// The podium pose of those who have the jetpack.
+export const JETPACK_POSE_POINTS = 1000000;
+export function hasJetpack() {
+    try {
+        return localStorage.getItem('wheelie_jetpack_code') === '1';
+    } catch {
+        return false;
+    }
+}
 // The jetpack's code (free roam, on the bike): frein, gaz, wheeling, then
 // three taps on the speedometer. Typed once, the jetpack is the player's.
-export const JETPACK_CODE_TEXT = 'FREIN, GAZ, WHEELING, puis 3 touches sur le compteur (en mode libre, sur la moto)';
+export const JETPACK_CODE_TEXT = 'FREIN, GAZ, WHEELING, puis 3 touches sur le compteur (en mode libre, sur la moto ou à pied, quand tu veux)';
 
 // [{ points, name, kind, hint, how }] in order. `name` (and `how`, the way
 // to use it) shown once unlocked, `hint` before.
@@ -40,11 +49,16 @@ export function rewards() {
         { points: SHOES_POINTS, name: 'Chaussures personnalisables', kind: 'shoes', hint: '???', how: 'Personnage › Chaussures' },
         { points: GLIDER_POINTS, name: 'Deltaplane', kind: 'glider', hint: '???',
             how: 'En mode libre sur la moto : gaz, frein, wheeling, puis 3 touches sur le compteur' },
-        { points: JETPACK_POINTS, name: 'Jetpack', kind: 'jetpack', hint: '???',
-            how: `Mode libre : bouton JETPACK (touche J). Le code : ${JETPACK_CODE_TEXT}. Carburant : tes points cumulés` },
+        { points: JETPACK_POINTS, name: 'Code du jetpack', kind: 'jetpack', hint: '???',
+            how: `Le code : ${JETPACK_CODE_TEXT}. Tapé une fois, le bouton JETPACK (touche J) apparaît. Carburant : tes points cumulés` },
         { points: TRICKS_CODE_POINTS, name: 'Code du mode figures', kind: 'code', hint: '???',
             how: 'Dans les 10 premières secondes d’une partie compétitive : gaz, frein, wheeling, puis 3 touches sur le compteur (partie non classée)' }
     );
+    // Only for those who have the jetpack (its code typed): the podium pose.
+    if (hasJetpack()) {
+        list.push({ points: JETPACK_POSE_POINTS, name: 'Pose « Jetpack landing »', kind: 'pose', hint: '???',
+            how: 'Podium › Poses : il arrive à pied, jetpack sur le dos, monte sur le podium et s’y pose en jetpack (1 000 000 de points)' });
+    }
     if (import.meta.env?.DEV) {
         list.filter((reward) => reward.kind !== 'car' && !REWARD_STEPS.includes(reward.points))
             .forEach((reward) => console.warn(`Récompense hors cadence : ${reward.name} à ${reward.points} pts`));

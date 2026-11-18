@@ -151,9 +151,15 @@ function poseOf(id, t) {
             sides: [{ hand: [0.64, 0.98, 0.18], pole: [1, 0, 0] }, { hand: [0.03, 0.8, 0.27], pole: [-1, 0.6, 0.2] }],
             head: [0.45, -0.5, 0.15]
         };
+        // Jetpack landing: fists on the hips, chin up, the jetpack on his back.
+        case 'jetpack': return {
+            sides: [hip(1), hip(-1)], head: [-0.16, Math.sin(t * 0.5) * 0.1, 0], jetpack: true
+        };
         default: return { sides: [hip(1), hip(-1)] };
     }
 }
+
+const isJetpack = (look) => look?.pose === 'jetpack';
 
 function createFigure(scene) {
     const parts = sharedParts();
@@ -237,6 +243,31 @@ function createFigure(scene) {
         pelvis.add(shoe);
         return shoe;
     });
+    // The jetpack of the "jetpack" pose: two tanks on the back, flames under
+    // them when it fires.
+    const pack = new THREE.Group();
+    pack.position.set(0, 0.3, -0.2);
+    pack.visible = false;
+    pelvis.add(pack);
+    const tankMaterial = new THREE.MeshStandardMaterial({ color: 0xf2c014, roughness: 0.3, metalness: 0.55 });
+    const bandMaterial = new THREE.MeshStandardMaterial({ color: 0x111214, roughness: 0.45, metalness: 0.6 });
+    own.push(tankMaterial, bandMaterial);
+    const flames = [];
+    for (const s of [-1, 1]) {
+        const tank = new THREE.Mesh(new THREE.CapsuleGeometry(0.08, 0.3, 6, 12), tankMaterial);
+        tank.position.set(s * 0.1, 0, 0);
+        const band = new THREE.Mesh(new THREE.CylinderGeometry(0.085, 0.085, 0.03, 12), bandMaterial);
+        band.position.set(s * 0.1, 0.06, 0);
+        const nozzle = new THREE.Mesh(new THREE.CylinderGeometry(0.05, 0.07, 0.08, 10), bandMaterial);
+        nozzle.position.set(s * 0.1, -0.26, 0);
+        const flame = new THREE.Mesh(new THREE.ConeGeometry(0.075, 0.7, 10, 1, true).rotateX(Math.PI).translate(0, -0.35, 0),
+            new THREE.MeshBasicMaterial({ color: 0xff8a2a, transparent: true, opacity: 0.9, blending: THREE.AdditiveBlending, depthWrite: false }));
+        flame.position.set(s * 0.1, -0.3, 0);
+        flame.visible = false;
+        own.push(flame.material);
+        pack.add(tank, band, nozzle, flame);
+        flames.push(flame);
+    }
     // The jersey of the "maillot" pose (held-jersey.js).
     const held = createHeldJersey();
     pelvis.add(held.mesh);
@@ -274,6 +305,7 @@ function createFigure(scene) {
     let lookKey = '';
     function setLook(next, name) {
         const value = { ...LIVERY_DEFAULT, ...(next || {}) };
+        pack.visible = isJetpack(value);
         const key = `${value.number}|${value.hoodie}|${value.helmet}|${value.helmetStyle}|${value.shoes}|${name}`;
         if (key === lookKey) {
             look = value;
@@ -306,11 +338,22 @@ function createFigure(scene) {
         held.setPrint(value.hoodie, ink, String(value.number), String(name || '').slice(0, 12));
     }
 
-    // Body: 'stand' (the pose), 'run' or 'air'. phase: running cycle.
+    // Body: 'stand' (the pose), 'run', 'walk', 'air' or 'jet' (the jetpack
+    // firing, legs together). phase: running cycle.
     function animate(t, motion, phase) {
         const pose = poseOf(look?.pose, t);
+        flames.forEach((flame, i) => {
+            flame.visible = motion === 'jet';
+            if (flame.visible) flame.scale.set(1, 0.8 + Math.sin(t * 57 + i * 2) * 0.15 + Math.random() * 0.2, 1);
+        });
+        if (motion === 'walk') {
+            // A walk: the run's cycle, shorter steps, no bounce.
+            phase *= 0.6;
+        }
+        const striding = motion === 'run' || motion === 'walk';
+        const stride = motion === 'walk' ? 0.55 : 1;
         const breathing = motion === 'stand' ? Math.sin(t * 2) * 0.006 : 0;
-        pelvis.position.y = PELVIS_Y + breathing + (motion === 'run' ? Math.abs(Math.sin(phase)) * 0.04 : 0);
+        pelvis.position.y = PELVIS_Y + breathing + (striding ? Math.abs(Math.sin(phase)) * 0.04 * stride : 0);
         head.rotation.set(...(motion === 'stand' && pose.head ? pose.head : [0, 0, 0]));
         const holding = motion === 'stand' && !!pose.jersey;
         held.mesh.visible = holding;
@@ -319,7 +362,7 @@ function createFigure(scene) {
         for (let i = 0; i < 2; i++) {
             const s = i === 0 ? 1 : -1;
             // Legs: feet under the hips, swinging when running, tucked in the air.
-            const swing = motion === 'run' ? Math.sin(phase + i * Math.PI) : 0;
+            const swing = striding ? Math.sin(phase + i * Math.PI) * stride : 0;
             const tuck = motion === 'air' ? 0.22 : 0;
             from.set(s * 0.12, 0, 0.02);
             to.set(s * 0.13, -PELVIS_Y + 0.1 + tuck + Math.max(0, swing) * 0.12, 0.03 + swing * 0.28 + tuck * 0.3);
@@ -327,9 +370,13 @@ function createFigure(scene) {
             shoes[i].position.set(to.x, to.y - 0.05, to.z);
             // Arms: the pose standing, swinging when running, up in the air.
             from.set(s * 0.215, 0.49, 0);
-            if (motion === 'run') {
+            if (striding) {
                 to.set(s * 0.24, 0.22, -swing * 0.26);
                 hint.set(s * 0.3, -0.2, -1);
+            } else if (motion === 'jet') {
+                // Arms out a little, balancing on the flames.
+                to.set(s * 0.36, 0.2, 0.05);
+                hint.set(s, -0.3, -0.3);
             } else if (motion === 'air') {
                 to.set(s * 0.42, 0.85, 0.05);
                 hint.set(s, -0.4, 0);
@@ -527,6 +574,14 @@ export function createPodium({ scene }) {
         entry.figure.root.position.set(side * 6.5, 0.08, 1.4);
         entry.figure.root.visible = delay <= 0;
         if (delay > 0) wait(entry, delay);
+        if (isJetpack(entry.figure.look)) {
+            // Jetpack landing: walks to the podium, climbs onto his step,
+            // the jetpack lifts him up and sets him down on it.
+            go(entry, 'walk', groundFront(steps[rank].block.x), 3);
+            go(entry, 'climb', steps[rank].top, 0.9, 0.3);
+            go(entry, 'jet', steps[rank].top, 1.8, 1.3);
+            return;
+        }
         go(entry, 'run', groundFront(steps[rank].block.x), 1.3);
         go(entry, 'jump', steps[rank].top, 0.75, 0.55);
     }
@@ -657,12 +712,15 @@ export function createPodium({ scene }) {
                     root.visible = false;
                 } else {
                     root.visible = true;
-                    const eased = move.kind === 'run' ? k : k * k * (3 - 2 * k);
+                    const eased = move.kind === 'run' || move.kind === 'walk' ? k : k * k * (3 - 2 * k);
                     root.position.lerpVectors(move.from, move.to, eased);
-                    if (move.kind === 'jump') root.position.y += 4 * move.height * k * (1 - k);
-                    motion = move.kind === 'jump' ? 'air' : 'run';
+                    if (move.kind === 'jump' || move.kind === 'climb') root.position.y += 4 * move.height * k * (1 - k);
+                    // The jetpack: up, a hover, down softly onto the step.
+                    if (move.kind === 'jet') root.position.y += move.height * Math.sin(Math.PI * Math.min(1, k * 1.1)) ** 0.7;
+                    motion = move.kind === 'jump' || move.kind === 'climb' ? 'air' : move.kind === 'jet' ? 'jet' : move.kind === 'walk' ? 'walk' : 'run';
                     step.subVectors(move.to, move.from);
-                    if (motion === 'run' && step.lengthSq() > 1e-4) entry.facing = Math.atan2(step.x, step.z);
+                    if ((motion === 'run' || motion === 'walk') && step.lengthSq() > 1e-4) entry.facing = Math.atan2(step.x, step.z);
+                    if (move.kind === 'jet' && k >= 1) celebrate(1.5);
                 }
                 if (k >= 1) entry.path.shift();
             } else if (entry.leaving) {

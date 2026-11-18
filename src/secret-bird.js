@@ -11,13 +11,13 @@ const FIRST_MS = 12000;
 export const SECRET_CODES = [
     {
         key: 'glider', points: GLIDER_POINTS, name: 'Deltaplane', v2Only: true,
-        where: 'En mode libre, assis sur la moto',
+        where: 'En mode libre, sur la moto ou à pied, quand tu veux',
         does: 'Un deltaplane t’emmène au-dessus de la rue : gauche / droite pour te diriger. Pose-toi sur un toit et cours-y librement, SAUTER au bord pour repartir. Dans la rue, la police le reprend avec une amende (au moins 2,5 % de tes points) ; sur une voiture, amende ×3.',
         video: '/video/code-deltaplane.mp4', poster: '/video/code-deltaplane.jpg'
     },
     {
         key: 'jetpack', points: JETPACK_POINTS, name: 'Jetpack', v2Only: true, steps: [1, 0, 2, 3],
-        where: 'En mode libre, assis sur la moto',
+        where: 'En mode libre, sur la moto ou à pied, quand tu veux',
         does: 'Un jetpack sur le dos : vole où tu veux au-dessus de la rue et des toits (MONTER, TURBO, ATTERRIR). Le carburant, ce sont tes points cumulés : 10 par seconde, 30 avec le turbo. Une fois le code tapé, le bouton JETPACK (touche J) reste à toi.'
     },
     {
@@ -37,7 +37,7 @@ export const SECRET_CODES = [
             }
         },
         locked: 'Code révélé en activant les figures en mode libre (50 000 points cumulés, dans le choix du mode libre).',
-        where: 'En mode libre, assis sur la moto',
+        where: 'En mode libre, sur la moto ou à pied, quand tu veux',
         does: 'Figures Land, le parc secret, t’attend dans une des prochaines rues : suis le panneau.'
     }
 ];

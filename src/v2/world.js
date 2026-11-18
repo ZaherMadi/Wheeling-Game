@@ -6,7 +6,7 @@
 // nothing is allocated while riding.
 import { report } from '../monitoring.js';
 import * as THREE from 'three';
-import { Batch, Sink, facadeMatrix, sideMatrix, transform } from './geometry.js';
+import { Batch, PRIMS, Sink, facadeMatrix, sideMatrix, transform } from './geometry.js';
 import { createFoliageTexture } from './citytextures.js';
 import {
     createCurtainWallTextures, createDecalAtlas, createPavingTexture, createPrintAtlas, paintSponsor, createShopAtlas,
@@ -577,23 +577,68 @@ export function createWorld({ scene, renderer, mobile }) {
             }
         }
 
-        // Distant towers behind the street walls (depth and skyline layers).
-        for (let i = 0; i < 2; i++) {
-            const style = Math.floor(random() * FACADE_STYLES.length);
-            const s = FACADE_STYLES[style];
-            const x0 = range(52, 85);
-            const width = range(16, 30);
-            const z0 = range(-HALF, HALF - width);
-            const height = range(45, 95);
-            const tint = tmpColor.setHSL(range(0.52, 0.66), range(0.05, 0.25), range(0.72, 0.95)).getHex();
-            const u0 = Math.floor(random() * s.cols) / s.cols;
-            const v0 = Math.floor(random() * s.rows) / s.rows;
-            const uv = [u0, v0, u0 + Math.round(width / s.cellWidth) / s.cols, v0 + Math.round(height / s.cellHeight) / s.rows];
-            const sideUv = [0, uv[1], width / s.cellWidth / s.cols, uv[3]];
-            const batch = sink.both[`bg${style}`];
-            batch.wallZ(z0, 0, z0 + width, height, x0, -1, tint, uv);
-            batch.wallX(x0, 0, x0 + width, height, z0 + width, 1, tint, sideUv);
-            batch.wallX(x0, 0, x0 + width, height, z0, -1, tint, sideUv);
+        // Behind the street, the city goes on (seen from the hang glider and
+        // the jetpack): two rows of blocks each side, x 52 to 136, with a
+        // street between them and behind, courtyards, now and then a park
+        // with trees. Simple buildings printed with the distant facades,
+        // flat roofs with a parapet and a few units, landed on like the
+        // others (roofAt).
+        const behind = sink.both.props;
+        behind.floor(46, -HALF, 52, HALF, 0.03, 0x8c8c88);
+        const ROWS = [{ x0: 52, x1: 90, low: 12, high: 38 }, { x0: 96, x1: 136, low: 16, high: 70 }];
+        for (const row of ROWS) {
+            behind.floor(row.x1, -HALF, row.x1 + 6, HALF, 0.03, 0x3a3d42);
+            for (let z = -HALF + 6; z < HALF; z += 12) behind.floor(row.x1 + 2.9, z, row.x1 + 3.1, z + 5, 0.04, 0xd8d8d0);
+            if (random() < 0.2) {
+                // A park: lawn, paths, trees.
+                behind.floor(row.x0, -HALF, row.x1, HALF, 0.03, 0x5f8145);
+                behind.floor((row.x0 + row.x1) / 2 - 1.2, -HALF, (row.x0 + row.x1) / 2 + 1.2, HALF, 0.04, 0xc8b89a);
+                for (let i = 0; i < 16; i++) {
+                    const x = range(row.x0 + 2, row.x1 - 2);
+                    const z = range(-HALF + 2, HALF - 2);
+                    const size = range(1.6, 2.6);
+                    behind.add(PRIMS.cylinder6, transform(x, 1.3, z, 0.2, 2.6, 0.2), 0x5a4030);
+                    behind.add(PRIMS.blob, transform(x, 2.6 + size, z, size, size * 0.9, size), pick([0x4f7a38, 0x5d8a3e, 0x46703a, 0x6b8f3f]));
+                }
+                continue;
+            }
+            behind.floor(row.x0, -HALF, row.x1, HALF, 0.03, 0x7c7d7a);
+            let z = -HALF;
+            while (z < HALF - 5) {
+                const width = Math.min(HALF - z, range(14, 26));
+                const gap = random() < 0.3 ? range(3, 6) : 0;
+                const height = range(row.low, row.high);
+                const depth = range(Math.min(18, row.x1 - row.x0), row.x1 - row.x0);
+                const x0 = row.x0;
+                const x1 = x0 + depth;
+                const style = Math.floor(random() * FACADE_STYLES.length);
+                const s = FACADE_STYLES[style];
+                const tint = tmpColor.setHSL(range(0.04, 0.66), range(0.04, 0.22), range(0.7, 0.93)).getHex();
+                const u0 = Math.floor(random() * s.cols) / s.cols;
+                const v0 = Math.floor(random() * s.rows) / s.rows;
+                const uv = [u0, v0, u0 + Math.round(width / s.cellWidth) / s.cols, v0 + Math.round(height / s.cellHeight) / s.rows];
+                const sideUv = [0, uv[1], depth / s.cellWidth / s.cols, uv[3]];
+                const batch = sink.both[`bg${style}`];
+                batch.wallZ(z, 0, z + width, height, x0, -1, tint, uv);
+                batch.wallZ(z, 0, z + width, height, x1, 1, tint, uv);
+                batch.wallX(x0, 0, x1, height, z + width, 1, tint, sideUv);
+                batch.wallX(x0, 0, x1, height, z, -1, tint, sideUv);
+                // The roof: a finish, a parapet, a unit or two.
+                behind.floor(x0, z, x1, z + width, height, pick([0x6e7076, 0xa7abb0, 0x5d7a45, 0x8f8a80]));
+                behind.block(x0, height, z, x1, height + 0.5, z + 0.25, 0xd9d4c8, 1, 'zZY');
+                behind.block(x0, height, z + width - 0.25, x1, height + 0.5, z + width, 0xd9d4c8, 1, 'zZY');
+                behind.block(x0, height, z, x0 + 0.25, height + 0.5, z + width, 0xd9d4c8, 1, 'xXY');
+                behind.block(x1 - 0.25, height, z, x1, height + 0.5, z + width, 0xd9d4c8, 1, 'xXY');
+                for (let i = 0; i < 2; i++) {
+                    const ux = range(x0 + 3, Math.max(x0 + 3.5, x1 - 4));
+                    const uz = range(z + 2, Math.max(z + 2.5, z + width - 3));
+                    if (random() < 0.5) behind.block(ux, height, uz, ux + 1.8, height + 1.3, uz + 1.2, 0xb8bcc2, 1, 'xXzZY');
+                    else behind.add(PRIMS.cylinder, transform(ux, height + 1.6, uz, 1.1, 3.2, 1.1), 0x8d7f6c);
+                }
+                roofs.push(side > 0 ? { x0: x0 + 0.4, x1: x1 - 0.4, z0: z + 0.4, z1: z + width - 0.4, y: height, side, kind: 'back' }
+                    : { x0: -(x1 - 0.4), x1: -(x0 + 0.4), z0: -(z + width - 0.4), z1: -(z + 0.4), y: height, side, kind: 'back' });
+                z += width + gap;
+            }
         }
 
         // One billboard per block on a tall right-hand facade.

@@ -181,13 +181,14 @@ const LOST_LINES = { 'sedan,van': 'lost_sedan_van', sedan: 'lost_sedan', van: 'l
 const FLEE_DISTANCE = 20;
 const CHASE_SHOUT_EVERY = 10;
 const CHASE_FINE = 400; // in all, with the 100 of the first stop
-// A wheelie in front of a patrol car driving the same way: it comes
-// alongside, a last warning over the loudspeaker, then `seconds` to put the
-// front wheel down. Still up (or up again while they ride along): they cut
-// in front of the bike and fine `share` of the cumulative points. Seen
-// within `range` metres; warned once, the next wheelie in front of them
-// within `memory` seconds goes straight to the cut.
-const WHEELIE_POLICE = { range: 42, seconds: 5, share: 0.2, side: 2.9, memory: 60, cut: 1.5, ahead: 7.5 };
+// A wheelie right beside a patrol car driving the same way (side by side:
+// within `along` metres ahead or behind, `beside` metres to the side; not
+// merely somewhere around): a last warning over the loudspeaker, then
+// `seconds` to put the front wheel down. Still up (or up again while they
+// ride along): they cut in front of the bike and fine `share` of the
+// cumulative points. Warned once, the next wheelie beside them within
+// `memory` seconds goes straight to the cut.
+const WHEELIE_POLICE = { along: 6, beside: 6.5, seconds: 5, share: 0.2, side: 2.9, memory: 60, cut: 1.5, ahead: 7.5 };
 
 export function createPolicePatrol({ scene, world, traffic, audio, talk, onFine, onCaught, onEscape, freezePlayer, confiscateBike, totalPoints = () => 0, onWarn = () => {} }) {
     let group = null;
@@ -379,14 +380,18 @@ export function createPolicePatrol({ scene, world, traffic, audio, talk, onFine,
         const wheeling = player.mode === 'bike' && !!player.wheeling;
         if (!warn) {
             if (!car || stop || car.towing || car.chasing || !wheeling || player.speed < 3) return;
-            const distance = Math.hypot(group.position.x - player.x, group.position.z - player.z);
-            if (distance > WHEELIE_POLICE.range || !sameWay(player)) return;
+            // Side by side with the bike, in its frame.
+            const dx = group.position.x - player.x;
+            const dz = group.position.z - player.z;
+            const along = dx * Math.sin(player.heading) + dz * Math.cos(player.heading);
+            const beside = dx * Math.cos(player.heading) - dz * Math.sin(player.heading);
+            if (Math.abs(along) > WHEELIE_POLICE.along || Math.abs(beside) > WHEELIE_POLICE.beside || !sameWay(player)) return;
             // Warned not long ago: no second warning.
             if (clock - warnedAt < WHEELIE_POLICE.memory) {
                 startCut(player);
                 return;
             }
-            warn = { phase: 'approach', t: 0, deadline: Infinity, down: false, side: player.x > 0 ? -1 : 1, spoken: false };
+            warn = { phase: 'approach', t: 0, deadline: Infinity, down: false, side: Math.sign(beside) || 1, spoken: false };
             car.chasing = true;
             // Rides close to the bike: no collisions with it meanwhile.
             car.ghost = true;
