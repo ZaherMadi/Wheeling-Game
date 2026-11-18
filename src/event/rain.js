@@ -25,8 +25,9 @@ export function createRain(scene) {
     scene.add(lines);
     let shown = 0;
 
-    // amount: 0 to 1; ride: how fast the camera goes forward (units a second).
-    function update(dt, camera, amount, ride = 0) {
+    // amount: 0 to 1; ride: how fast the camera goes forward (units a
+    // second); wind: sideways (the storm), units a second.
+    function update(dt, camera, amount, ride = 0, wind = 0) {
         shown += (amount - shown) * Math.min(1, dt * 1.2);
         const count = Math.floor(COUNT * Math.max(0, Math.min(1, shown)));
         lines.visible = count > 0;
@@ -40,6 +41,8 @@ export function createRain(scene) {
             const drop = drops[i];
             drop.y -= drop.speed * dt;
             drop.z += ride * dt * 0.15;
+            drop.x += wind * dt;
+            if (drop.x > BOX.x) drop.x -= BOX.x * 2;
             if (drop.y < 0 || drop.z > BOX.zBack) {
                 drop.y = BOX.y * (0.6 + Math.random() * 0.4);
                 drop.x = (Math.random() - 0.5) * BOX.x * 2;
@@ -51,7 +54,7 @@ export function createRain(scene) {
             positions[o] = x;
             positions[o + 1] = drop.y;
             positions[o + 2] = z;
-            positions[o + 3] = x - 0.08;
+            positions[o + 3] = x - 0.08 - wind * 0.02 * drop.length;
             positions[o + 4] = drop.y + drop.length * (1 + shown);
             positions[o + 5] = z - slant * drop.length;
         }

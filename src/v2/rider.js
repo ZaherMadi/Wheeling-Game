@@ -1478,8 +1478,10 @@ export function createRider({ scene }) {
             bandGroup.add(pivot);
             return pivot;
         });
-        const hair = buildHair();
-        group.add(hair);
+        // The girl's hairstyles: vanilles (black two-strand twists, beads
+        // at the ends) by default, or the vanilla-coloured afro.
+        const hairs = { vanilles: buildVanilles(), afro: buildHair() };
+        group.add(hairs.vanilles, hairs.afro);
         // The creation on the chest (the back's own print takes the number's place).
         const frontMaterial = new THREE.MeshStandardMaterial({
             transparent: true, roughness: 0.86, depthWrite: false, polygonOffset: true, polygonOffsetFactor: -1, polygonOffsetUnits: -1
@@ -1491,7 +1493,7 @@ export function createRider({ scene }) {
         pelvis.add(chest);
         return {
             group, chest, frontMaterial, skin, print: null, look: null, pictures: {}, bandCanvas, bandMap, tie, tails, band: null,
-            faceMaterial, faces, beard, hair
+            faceMaterial, faces, beard, hairs
         };
     }
 
@@ -1516,6 +1518,93 @@ export function createRider({ scene }) {
         const texture = new THREE.CanvasTexture(canvas);
         texture.colorSpace = THREE.SRGBColorSpace;
         return texture;
+    }
+
+    // Vanilles: black two-strand twists falling from under the beanie at the
+    // sides and the back to the shoulders, beads at their ends, a few gold
+    // cuffs; two shorter ones by the temples.
+    function buildVanilles() {
+        const canvas = document.createElement('canvas');
+        canvas.width = 64;
+        canvas.height = 64;
+        const ctx = canvas.getContext('2d');
+        ctx.fillStyle = '#120e0c';
+        ctx.fillRect(0, 0, 64, 64);
+        // The two strands wound round each other: diagonal light ridges.
+        ctx.strokeStyle = 'rgba(92,72,60,0.75)';
+        ctx.lineWidth = 5;
+        for (let i = -64; i < 128; i += 16) {
+            ctx.beginPath();
+            ctx.moveTo(i, 0);
+            ctx.lineTo(i + 64, 64);
+            ctx.stroke();
+        }
+        ctx.strokeStyle = 'rgba(0,0,0,0.6)';
+        ctx.lineWidth = 2;
+        for (let i = -56; i < 136; i += 16) {
+            ctx.beginPath();
+            ctx.moveTo(i, 0);
+            ctx.lineTo(i + 64, 64);
+            ctx.stroke();
+        }
+        const twist = new THREE.CanvasTexture(canvas);
+        twist.colorSpace = THREE.SRGBColorSpace;
+        twist.wrapS = twist.wrapT = THREE.RepeatWrapping;
+        twist.repeat.set(9, 1);
+        const strand = new THREE.MeshStandardMaterial({ map: twist, roughness: 0.55, metalness: 0.05 });
+        const beads = [
+            new THREE.MeshStandardMaterial({ color: 0xd4a63a, roughness: 0.28, metalness: 0.85 }),
+            new THREE.MeshStandardMaterial({ color: 0xf6f1e6, roughness: 0.22, metalness: 0.1 }),
+            new THREE.MeshStandardMaterial({ color: 0xc90025, roughness: 0.3, metalness: 0.15 }),
+            new THREE.MeshStandardMaterial({ color: 0x2fb3a6, roughness: 0.3, metalness: 0.15 })
+        ];
+        const gold = beads[0];
+        const hair = new THREE.Group();
+        hair.visible = false;
+        const parts = new Parts();
+        // (transform() hands back one shared matrix: the tubes get their own.)
+        const none = new THREE.Matrix4();
+        const cuff = new THREE.CylinderGeometry(1, 1, 1, 10);
+        let n = 0;
+        const twistFrom = (angle, rootY, rootR, length, spread) => {
+            const a = angle * Math.PI / 180;
+            const out = new THREE.Vector3(Math.sin(a), 0, Math.cos(a));
+            const root = new THREE.Vector3(out.x * rootR, rootY, out.z * rootR + 0.005);
+            const sway = (Math.random() - 0.5) * 0.03;
+            const points = [
+                root,
+                root.clone().addScaledVector(out, spread * 0.6).add(new THREE.Vector3(sway, -0.05, 0)),
+                root.clone().addScaledVector(out, spread).add(new THREE.Vector3(sway * 1.5, -length * 0.5, 0)),
+                root.clone().addScaledVector(out, spread * 0.85).add(new THREE.Vector3(sway * 2, -length, 0))
+            ];
+            const curve = new THREE.CatmullRomCurve3(points);
+            const tube = new THREE.TubeGeometry(curve, 14, 0.0155, 6, false);
+            parts.add(strand, tube, none);
+            tube.dispose();
+            const end = points[3];
+            // A bead at most ends, now and then a gold cuff halfway down.
+            if (n % 4 !== 3) parts.add(beads[n % beads.length], sphere, transform(end.x, end.y - 0.012, end.z, 0.02, 0.022, 0.02));
+            if (n % 5 === 1) {
+                const mid = curve.getPoint(0.55);
+                parts.add(gold, cuff, transform(mid.x, mid.y, mid.z, 0.019, 0.026, 0.019));
+            }
+            n++;
+        };
+        // Outer layer round the sides and the back, inner layer for fullness.
+        for (let i = 0; i < 28; i++) {
+            const angle = 58 + (244 * (i + 0.5)) / 28;
+            const back = Math.cos(angle * Math.PI / 180) < 0;
+            twistFrom(angle, back ? -0.005 : 0.03, 0.186, 0.27 + Math.random() * 0.06, 0.05);
+        }
+        for (let i = 0; i < 16; i++) {
+            const angle = 72 + (216 * (i + 0.5)) / 16 + (Math.random() - 0.5) * 6;
+            twistFrom(angle, 0.0, 0.17, 0.22 + Math.random() * 0.05, 0.035);
+        }
+        // By the temples, shorter.
+        for (const angle of [48, 312]) twistFrom(angle, 0.05, 0.172, 0.16, 0.025);
+        cuff.dispose();
+        parts.build(hair);
+        return hair;
     }
 
     // The girl's hair: a vanilla afro coming out under the beanie at the
@@ -1705,7 +1794,9 @@ export function createRider({ scene }) {
         sneaker.color.set('#f4f4f2');
         glove.color.set(0x7a4524);
         const girl = look.gender === 'girl';
-        outfit.hair.visible = girl;
+        const style = look.hair === 'afro' ? 'afro' : 'vanilles';
+        outfit.hairs.vanilles.visible = girl && style === 'vanilles';
+        outfit.hairs.afro.visible = girl && style === 'afro';
         outfit.beard.visible = !girl;
         const face = outfit.faces[girl ? 'girl' : 'boy'];
         if (outfit.faceMaterial.map !== face) {

@@ -916,3 +916,395 @@ body.love-panel :is(#score-container, #speedometer, #pause-btn, #angle-multiplie
   color: var(--lf-white);
   box-shadow: 0 0 14px rgba(255, 31, 61, 0.35) !important;
 }
+
+/* The storm: lightning, and its words big in the middle. */
+.love-flash.is-lightning {
+  background: rgba(235, 240, 255, 0.9);
+  animation: love-lightning 0.55s ease-out;
+}
+
+@keyframes love-lightning {
+  0% { opacity: 0; }
+  6% { opacity: 1; }
+  14% { opacity: 0.15; }
+  22% { opacity: 0.85; }
+  100% { opacity: 0; }
+}
+
+#love-root .ink--storm .ink__dry {
+  color: #eef1f8;
+  text-shadow: 0 3px 8px rgba(0, 0, 0, 0.85), 0 0 22px rgba(120, 140, 200, 0.5);
+}
+
+#love-root .ink--storm .ink__wet {
+  color: #ffffff;
+  text-shadow: none;
+}
+
+.ink--center,
+.ink--center2 {
+  left: 50%;
+  margin-left: calc((var(--ink-width) + 8px) / -2);
+}
+
+.ink--center {
+  top: 34%;
+}
+
+.ink--center2 {
+  top: calc(34% + 74px);
+}
+
+/* --- The studio: the rider turning above, a slide per choice below ------------------ */
+.love-screen.is-studio {
+  place-items: end center;
+  padding: 0 10px max(10px, env(safe-area-inset-bottom));
+  overflow: hidden;
+  background:
+    radial-gradient(ellipse at 50% 30%, rgba(118, 0, 0, 0.12), transparent 60%),
+    linear-gradient(180deg, rgba(5, 5, 5, 0) 0%, rgba(5, 5, 5, 0) 40%, rgba(5, 5, 5, 0.55) 62%, rgba(5, 5, 5, 0.9) 100%);
+}
+
+#love-root .love-card--studio {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  width: min(480px, 100%);
+  max-height: 58vh;
+  padding: 12px 14px 12px;
+  border-radius: 24px;
+  text-align: left;
+  overflow: hidden;
+  background: linear-gradient(180deg, rgba(30, 7, 10, 0.94), rgba(6, 4, 5, 0.97));
+}
+
+.love-studio__top {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.love-studio__logo {
+  width: 40px;
+  height: 40px;
+  object-fit: contain;
+  filter: drop-shadow(0 0 10px rgba(255, 31, 61, 0.6));
+}
+
+.love-studio__top .love-kicker {
+  margin: 0;
+  font-size: 9px;
+}
+
+.love-studio__name {
+  display: block;
+  font: italic 900 20px/1.1 var(--lf-title);
+  color: var(--lf-white);
+}
+
+#love-root .love-studio__top .love-close {
+  position: static;
+  margin-left: auto;
+  flex: none;
+}
+
+.love-steps {
+  display: flex;
+  gap: 6px;
+  overflow-x: auto;
+  scrollbar-width: none;
+}
+
+#love-root .love-step {
+  flex: 1 0 auto;
+  padding: 7px 10px !important;
+  border-radius: 999px;
+  border: 1px solid rgba(244, 237, 233, 0.14);
+  background: rgba(244, 237, 233, 0.04);
+  color: rgba(244, 237, 233, 0.6);
+  font: 600 10.5px/1 var(--lf-body);
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  cursor: pointer;
+}
+
+#love-root .love-step.is-done {
+  color: var(--lf-gold);
+  border-color: rgba(201, 164, 92, 0.4);
+}
+
+#love-root .love-step.is-on {
+  color: #fff;
+  border-color: var(--lf-glow);
+  background: linear-gradient(180deg, rgba(255, 31, 61, 0.35), rgba(118, 0, 0, 0.35));
+  box-shadow: 0 0 14px rgba(255, 31, 61, 0.4) !important;
+}
+
+.love-slide {
+  flex: 1 1 auto;
+  min-height: 150px;
+  overflow-y: auto;
+  touch-action: pan-y;
+}
+
+.love-slide.from-right {
+  animation: love-from-right 0.32s cubic-bezier(0.22, 1, 0.36, 1);
+}
+
+.love-slide.from-left {
+  animation: love-from-left 0.32s cubic-bezier(0.22, 1, 0.36, 1);
+}
+
+@keyframes love-from-right {
+  from { opacity: 0; transform: translateX(40px); }
+}
+
+@keyframes love-from-left {
+  from { opacity: 0; transform: translateX(-40px); }
+}
+
+.love-slide__title {
+  margin: 0 0 2px;
+  font: italic 900 24px/1.15 var(--lf-title);
+  color: var(--lf-white);
+}
+
+.love-slide__hint {
+  margin: 0 0 10px;
+  font-size: 12px;
+  line-height: 1.45;
+  color: rgba(244, 237, 233, 0.62);
+}
+
+.love-choices {
+  display: grid;
+  gap: 8px;
+}
+
+.love-choices--two {
+  grid-template-columns: 1fr 1fr;
+}
+
+.love-choices--three {
+  grid-template-columns: repeat(3, 1fr);
+}
+
+#love-root .love-choice {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 4px;
+  padding: 12px 6px !important;
+  border-radius: 16px;
+  border: 1px solid rgba(244, 237, 233, 0.12);
+  background: linear-gradient(180deg, rgba(244, 237, 233, 0.07), rgba(244, 237, 233, 0.02));
+  color: rgba(244, 237, 233, 0.85);
+  text-align: center;
+  cursor: pointer;
+  transition: border-color 0.2s, background 0.2s, transform 0.2s;
+}
+
+.love-choice__icon {
+  font-size: 32px;
+  line-height: 1.1;
+}
+
+.love-choice b {
+  font: 600 14px/1.2 var(--lf-body);
+}
+
+.love-choice small {
+  font-size: 10.5px;
+  line-height: 1.35;
+  color: rgba(244, 237, 233, 0.55);
+}
+
+#love-root .love-choice.is-on {
+  border-color: var(--lf-glow);
+  background: linear-gradient(180deg, rgba(255, 31, 61, 0.24), rgba(118, 0, 0, 0.2));
+  color: #fff;
+  box-shadow: 0 0 18px rgba(255, 31, 61, 0.35) !important;
+  transform: translateY(-2px);
+}
+
+.love-band-preview {
+  display: grid;
+  place-items: center;
+  height: 48px;
+  margin-bottom: 10px;
+  border-radius: 8px;
+  background:
+    repeating-linear-gradient(90deg, rgba(0, 0, 0, 0.08) 0 1px, transparent 1px 5px),
+    var(--band);
+  color: var(--band-ink);
+  font: 400 28px/1 var(--lf-ink);
+  box-shadow: inset 0 3px 0 rgba(0, 0, 0, 0.15), inset 0 -3px 0 rgba(0, 0, 0, 0.15), 0 8px 18px rgba(0, 0, 0, 0.35);
+}
+
+.love-nav {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+}
+
+#love-root .love-arrow {
+  width: 40px;
+  height: 40px;
+  padding: 0 !important;
+  border-radius: 50%;
+  border: 1px solid rgba(244, 237, 233, 0.2);
+  background: rgba(244, 237, 233, 0.06);
+  color: var(--lf-white);
+  font: 400 26px/1 var(--lf-body);
+  cursor: pointer;
+}
+
+#love-root .love-arrow:disabled {
+  opacity: 0.3;
+  cursor: default;
+}
+
+.love-nav__dots {
+  display: flex;
+  gap: 6px;
+  justify-content: center;
+}
+
+.love-nav__dots i {
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  background: rgba(244, 237, 233, 0.22);
+  transition: width 0.25s, background 0.25s;
+}
+
+.love-nav__dots i.is-on {
+  width: 20px;
+  border-radius: 4px;
+  background: var(--lf-glow);
+}
+
+.love-actions {
+  display: grid;
+  grid-template-columns: 1fr 1.8fr;
+  gap: 8px;
+}
+
+#love-root .love-actions .love-btn {
+  margin: 0 !important;
+}
+
+.love-card--studio .love-best {
+  margin: 0;
+  text-align: center;
+}
+
+/* Landscape: the panel on the right, the rider on the left. */
+@media (orientation: landscape) and (min-width: 700px) {
+  .love-screen.is-studio {
+    place-items: center end;
+    padding: 10px max(14px, env(safe-area-inset-right)) 10px 10px;
+    background: linear-gradient(90deg, rgba(5, 5, 5, 0) 35%, rgba(5, 5, 5, 0.75) 100%);
+  }
+
+  #love-root .love-card--studio {
+    width: min(440px, 46vw);
+    max-height: 94vh;
+  }
+}
+
+/* --- The tutorial ------------------------------------------------------------------------- */
+.love-tuto {
+  position: absolute;
+  inset: 0;
+  z-index: 5;
+  display: grid;
+  place-items: center;
+  padding: max(12px, env(safe-area-inset-top)) 14px max(12px, env(safe-area-inset-bottom));
+  background: rgba(5, 5, 5, 0.86);
+  pointer-events: auto;
+  touch-action: pan-y;
+}
+
+.love-tuto__card {
+  width: min(400px, 100%);
+  max-height: 100%;
+  overflow-y: auto;
+  padding: 12px 14px 14px;
+  border-radius: 22px;
+  background: linear-gradient(180deg, rgba(30, 7, 10, 0.96), rgba(6, 4, 5, 0.98));
+  border: 1px solid rgba(255, 31, 61, 0.35);
+  box-shadow: 0 0 40px rgba(201, 0, 37, 0.35);
+  text-align: center;
+}
+
+.love-tuto__shot {
+  position: relative;
+  aspect-ratio: 390 / 520;
+  max-height: 46vh;
+  margin: 0 auto;
+  border-radius: 16px;
+  overflow: hidden;
+  background: #111;
+  border: 1px solid rgba(255, 31, 61, 0.3);
+}
+
+.love-tuto__shot img {
+  display: block;
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+}
+
+.love-tuto__num {
+  position: absolute;
+  top: 8px;
+  right: 8px;
+  padding: 3px 9px;
+  border-radius: 999px;
+  background: rgba(5, 5, 5, 0.7);
+  color: var(--lf-gold);
+  font: 600 11px/1.4 var(--lf-body);
+}
+
+.love-tuto__title {
+  margin: 12px 0 4px;
+  font: italic 900 24px/1.15 var(--lf-title);
+}
+
+.love-tuto__text {
+  margin: 0 0 10px;
+  font-size: 13px;
+  line-height: 1.5;
+  color: rgba(244, 237, 233, 0.78);
+}
+
+.love-tuto .love-nav__dots {
+  margin-bottom: 12px;
+}
+
+/* Five steps fit on a phone. */
+#love-root .love-step {
+  flex: 1 1 0;
+  min-width: 0;
+  padding: 7px 2px !important;
+  font-size: 9.5px;
+  letter-spacing: 0.04em;
+  text-align: center;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+/* The music step: smaller choices, the player under them. */
+.love-choices--three .love-choice__icon {
+  font-size: 24px;
+}
+
+.love-choices--three .love-choice b {
+  font-size: 12.5px;
+}
+
+.love-choices--three + .love-player {
+  height: 110px;
+  margin-top: 8px;
+}

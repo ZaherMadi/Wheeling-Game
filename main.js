@@ -1972,7 +1972,7 @@ function visualSnapshot() {
 
 function renderScene(dt, snapshot = visualSnapshot()) {
     cameraDt = dt > 0 ? Math.min(0.1, dt) : FIXED_STEP;
-    updateCamera();
+    if (!cameraHold) updateCamera();
     if (state.loveEvent && loveEvent) loveEvent.frame(dt);
     // Tests: where the bike and the camera were drawn.
     if (import.meta.env.DEV && bikeGroup) window.__drawn = { bike: bikeGroup.position.z, cam: camera.position.z };
@@ -2048,6 +2048,7 @@ function resetGame() {
     lastCameraBikeZ = null;
     cameraGap = null;
     renderFrom.valid = false;
+    cameraHold = false;
     freeCamYaw = null;
     freeCamLast = null;
     freeOrbit.yaw = 0;
@@ -3869,6 +3870,8 @@ let uiAccumulator = 0;
 const renderFrom = { x: 0, y: 0, z: 0, valid: false };
 const renderAt = { x: 0, y: 0, z: 0 };
 let cameraDt = FIXED_STEP;
+// The camera left where it is (the Love&Faith storm takes the rider away).
+let cameraHold = false;
 
 function startAnimationLoop() {
     if (animationLoopRunning) return;
@@ -7445,7 +7448,24 @@ loveEvent = createLoveEvent({
         document.querySelectorAll('.screen.active').forEach((screen) => screen.classList.remove('active'));
         document.getElementById('mode-select-screen')?.classList.add('active');
     },
-    stat: (name, n = 1) => bumpStat(name, n)
+    stat: (name, n = 1) => bumpStat(name, n),
+    // The event's studio: the rider shown turning above its panel.
+    showroom: (on) => {
+        if (!v2) return;
+        if (on) document.querySelectorAll('.screen.active').forEach((screen) => screen.classList.remove('active'));
+        v2.showroom(on, '#love-card');
+    },
+    menu: () => {
+        renderMenuBackdrop();
+        document.getElementById('mode-select-screen')?.classList.add('active');
+    },
+    cameraHold: (on) => { cameraHold = !!on; },
+    // The city under the sea of clouds.
+    city: (visible) => {
+        groundChunks.forEach((chunk) => { chunk.visible = visible; });
+        state.gantries.forEach((gantry) => { gantry.visible = visible; });
+        v2?.world.setSkylineVisible(visible);
+    }
 });
 
 function updateLeaderboard(nickname, score) {

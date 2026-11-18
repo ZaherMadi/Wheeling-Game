@@ -1,7 +1,7 @@
-// The Love&Faith event's sound: at random, either the artist's own
-// SoundCloud tracks (MWL), played through SoundCloud's own player (embedded,
-// nothing downloaded), or the anasheed shipped with the game; another at
-// random when one ends (music or anasheed, one chance in two each). A
+// The Love&Faith event's sound (a setting): the artist's own SoundCloud
+// tracks (MWL, the default), played through SoundCloud's own player
+// (embedded, nothing downloaded), or the anasheed shipped with the game, or
+// both; at random, another at random when one ends. A
 // browser only plays sound after a tap: the first play starts from the
 // event's panel (the tap on JOUER).
 const ARTIST = 'https://api.soundcloud.com/users/582246534';
@@ -32,7 +32,13 @@ function loadApi() {
     return apiPromise;
 }
 
-export function createMusic({ onTrack = () => {} } = {}) {
+export const MUSIC_MODES = [['music', 'Musique (MWL)'], ['anasheed', 'Anasheed'], ['both', 'Les deux']];
+
+export function createMusic({ onTrack = () => {}, mode: firstMode = 'music' } = {}) {
+    let mode = firstMode;
+    // Music asked before SoundCloud's player was ready: it starts then.
+    let waiting = false;
+    let unavailable = false;
     let frame = null;
     let widget = null;
     let ready = false;
@@ -71,7 +77,13 @@ export function createMusic({ onTrack = () => {} } = {}) {
             widget.bind(SC.Widget.Events.READY, () => {
                 ready = true;
                 widget.setVolume(Math.round(volume * 100));
-                widget.getSounds((list) => { sounds = Array.isArray(list) ? list : []; });
+                widget.getSounds((list) => {
+                    sounds = Array.isArray(list) ? list : [];
+                    if (waiting && wanted) {
+                        waiting = false;
+                        playSoundCloud();
+                    }
+                });
             });
             widget.bind(SC.Widget.Events.FINISH, () => { if (wanted && playing === 'sc') next(); });
             widget.bind(SC.Widget.Events.PLAY, () => {
@@ -82,7 +94,14 @@ export function createMusic({ onTrack = () => {} } = {}) {
                 }
                 widget.getCurrentSound((sound) => onTrack(sound ? { title: `${MUSIC_CREDIT.name} — ${sound.title}`, url: sound.permalink_url } : null));
             });
-        }).catch(() => {});
+        }).catch(() => {
+            // No SoundCloud: the anasheed rather than nothing.
+            unavailable = true;
+            if (waiting && wanted) {
+                waiting = false;
+                playFile();
+            }
+        });
     }
 
     function playFile() {
@@ -113,11 +132,24 @@ export function createMusic({ onTrack = () => {} } = {}) {
         widget.play();
     }
 
-    // The next one: music or anasheed, one chance in two (the anasheed when
-    // SoundCloud is not there).
+    // The next one, as the setting says (both: one chance in two).
     function next() {
-        if (ready && widget && Math.random() < 0.5) playSoundCloud();
-        else playFile();
+        const music = mode === 'music' || (mode === 'both' && Math.random() < 0.5);
+        if (!music || unavailable) {
+            playFile();
+        } else if (ready && widget) {
+            playSoundCloud();
+        } else {
+            audio.pause();
+            playing = 'sc';
+            waiting = true;
+        }
+    }
+
+    function setMode(value) {
+        if (!MUSIC_MODES.some(([id]) => id === value) || value === mode) return;
+        mode = value;
+        if (wanted) next();
     }
 
     // A tap just happened: start (at random) or go on.
@@ -129,6 +161,7 @@ export function createMusic({ onTrack = () => {} } = {}) {
 
     function stop() {
         wanted = false;
+        waiting = false;
         playing = null;
         audio.pause();
         if (ready && widget) widget.pause();
@@ -140,5 +173,5 @@ export function createMusic({ onTrack = () => {} } = {}) {
         if (ready && widget) widget.setVolume(Math.round(volume * 100));
     }
 
-    return { mount, start, stop, setVolume, next, get ready() { return ready; }, get playing() { return playing; } };
+    return { mount, start, stop, setVolume, setMode, next, get ready() { return ready; }, get playing() { return playing; }, get mode() { return mode; } };
 }

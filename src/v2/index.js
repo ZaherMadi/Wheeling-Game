@@ -408,10 +408,13 @@ export function createRealisticVersion({ scene, renderer, camera, mobile, audio,
     const look = new THREE.Vector3();
     const SUBJECT_RADIUS = 2.6;
     const SUBJECT_HEIGHT = 1.45;
+    // The panel the rider is framed beside (the rider screen's, or the
+    // Love&Faith event's).
+    let showroomPanel = '#rider-screen .rider-panel';
     function freeArea() {
         const width = window.innerWidth;
         const height = window.innerHeight;
-        const panel = document.querySelector('#rider-screen .rider-panel')?.getBoundingClientRect();
+        const panel = document.querySelector(showroomPanel)?.getBoundingClientRect();
         if (!panel || !panel.width) return { width, height, x0: 0, x1: width, y0: 0, y1: height };
         if (height > width) {
             // Portrait: above the panel (at least the top 40 % of the screen).
@@ -451,7 +454,8 @@ export function createRealisticVersion({ scene, renderer, camera, mobile, audio,
         accept: (event) => !event.target.closest('.rider-panel, button, input'),
         onStart: () => { showroomHeld = performance.now(); }
     });
-    function showroom(on) {
+    function showroom(on, panel = '#rider-screen .rider-panel') {
+        showroomPanel = panel;
         if (on && showroomFrame === null) {
             mountPanel();
             wornLook = null;
@@ -607,6 +611,11 @@ export function createRealisticVersion({ scene, renderer, camera, mobile, audio,
     return {
         world, rider, fx, roam, frame, reset, setQuality, showroom, startAd, adScreen, policeStop,
         podium, podiumView, podiumLook, riderName, skidmarks,
+        // Turning the rider shown in the showroom (a finger on another screen).
+        showroomTurn(radians) {
+            showroomAngle += radians;
+            showroomHeld = performance.now();
+        },
         // Session live: the rider watched wears his own look (null: ours).
         // The Love&Faith event: its sky, its outfit ({ print } or null).
         setSky(sky) {

@@ -12,7 +12,8 @@ import './love.css';
 import { createInk } from './ink.js';
 import { createRain } from './rain.js';
 import { createItemFactory, ITEM_KINDS } from './items.js';
-import { createMusic, MUSIC_CREDIT } from './music.js';
+import { createMusic, MUSIC_CREDIT, MUSIC_MODES } from './music.js';
+import { createCloudSea } from './clouds.js';
 import { createPuddles } from './puddles.js';
 
 export const LOVE_CODE = '5HC';
@@ -24,6 +25,21 @@ const BAND_KEY = 'wheelie_love_band';
 const RIDER_KEY = 'wheelie_love_rider';
 const RIDERS = [['boy', 'Garçon', '🧔🏾‍♂️'], ['girl', 'Fille', '👩🏾‍🦱']];
 const BEST_KEY = 'wheelie_love_best';
+// The girl's hairstyle; the music (the artist's by default); the tutorial seen.
+const HAIR_KEY = 'wheelie_love_hair';
+const HAIRS = [['vanilles', 'Vanilles', 'Noires, des perles aux pointes'], ['afro', 'Afro vanille', 'Des perles dans les boucles']];
+const MUSIC_KEY = 'wheelie_love_music';
+const MUSIC_HINTS = { music: 'Les morceaux de MWL, au hasard', anasheed: 'Cinq anasheed, au hasard', both: 'Musique et anasheed mélangés' };
+const TUTO_KEY = 'wheelie_love_tuto';
+const TUTORIAL = [
+    ['Lève la roue', 'Gaz et wheeling : ici, rien d’autre ne compte. Pas de police, pas de tremplins.'],
+    ['Attrape', 'Cœurs, nounours (des câlins) et lettres : +1 d’amour chacun, et un mot s’écrit à la plume.'],
+    ['Évite', 'Cœur brisé : −3. Larme : −2. Passe à côté en te décalant à gauche ou à droite.'],
+    ['Sous 12, il pleut', 'La nuit tombe, ton perso pleure et se demande pourquoi. Les flaques éclaboussent.'],
+    ['À 20 : cœur réparé', 'La route devient une mer de nuages et tu entres dans le nuage. Mission réussie.'],
+    ['À 0 : tempête émotionnelle', 'Elle emporte tout sur son passage. C’est perdu… et ça se recommence.']
+];
+const STEP_LABELS = { rider: 'Perso', hair: 'Coiffure', outfit: 'Tenue', band: 'Bandeau', music: 'Musique' };
 const FILES = '/event/love/';
 export const LOVE = { max: 20, start: 8, sun: 12 };
 // Placement on the road: one slot every `seconds` of riding, each one a
@@ -154,6 +170,31 @@ function createChimes() {
         },
         repaired() {
             [523, 659, 784, 1047, 1319].forEach((f, i) => tone(f, i * 0.12, 0.9, 0.14));
+        },
+        // A crack, then the rumble rolling away.
+        thunder(strength = 1) {
+            const c = ctx();
+            if (!c) return;
+            const length = 2.6;
+            const buffer = c.createBuffer(1, Math.floor(c.sampleRate * length), c.sampleRate);
+            const data = buffer.getChannelData(0);
+            let last = 0;
+            for (let i = 0; i < data.length; i++) {
+                const t = i / c.sampleRate;
+                // Brown noise: a deep rumble.
+                last = (last + (Math.random() * 2 - 1) * 0.08) * 0.985;
+                const crack = t < 0.12 ? (Math.random() * 2 - 1) * (1 - t / 0.12) * 0.8 : 0;
+                data[i] = (last * 6 * Math.exp(-t * 1.4) * (0.7 + 0.3 * Math.sin(t * 7))) + crack;
+            }
+            const source = c.createBufferSource();
+            source.buffer = buffer;
+            const filter = c.createBiquadFilter();
+            filter.type = 'lowpass';
+            filter.frequency.value = 900;
+            const gain = c.createGain();
+            gain.gain.value = 0.5 * strength;
+            source.connect(filter).connect(gain).connect(c.destination);
+            source.start();
         }
     };
 }
@@ -177,12 +218,14 @@ export function createLoveEvent(deps) {
         <div class="love-ink" id="love-ink" aria-live="polite"></div>
         <div class="love-flash" id="love-flash"></div>
         <div class="love-screen" id="love-screen" hidden><div class="love-card" id="love-card"></div></div>
+        <div class="love-tuto" id="love-tuto" hidden><div class="love-tuto__card" id="love-tuto-card"></div></div>
         <div class="love-music" id="love-music" aria-hidden="true"></div>`;
     document.body.append(root);
     const $ = (id) => root.querySelector(`#${id}`);
     const ink = createInk($('love-ink'));
     const chimes = createChimes();
     const music = createMusic({
+        mode: MUSIC_MODES.some(([id]) => id === readLocal(MUSIC_KEY)) ? readLocal(MUSIC_KEY) : 'music',
         onTrack(track) {
             const now = $('love-now');
             if (!track) {
@@ -222,13 +265,17 @@ export function createLoveEvent(deps) {
     };
     const bandChoice = () => BANDS.find(([id]) => id === readLocal(BAND_KEY)) || BANDS[0];
     const riderChoice = () => (readLocal(RIDER_KEY) === 'girl' ? 'girl' : 'boy');
+    const hairChoice = () => (readLocal(HAIR_KEY) === 'afro' ? 'afro' : 'vanilles');
     const look = () => {
         const [, , color, ink] = bandChoice();
-        return { print: outfit(), band: { color, ink }, gender: riderChoice() };
+        return { print: outfit(), band: { color, ink }, gender: riderChoice(), hair: hairChoice() };
     };
-    const riderButtons = (className) => RIDERS.map(([id, name, emoji]) => `<button type="button" class="${className} ${id === riderChoice() ? 'is-on' : ''}" data-rider="${id}">
-        <span>${emoji}</span>${esc(name)}</button>`).join('');
     let puddles = null;
+    let clouds = null;
+    // Leaves and papers blown across by the storm.
+    let debrisMaterials = null;
+    const debris = [];
+    const shake = new THREE.Vector3();
 
     // --- The bar --------------------------------------------------------------------
     function showBar() {
@@ -260,49 +307,137 @@ export function createLoveEvent(deps) {
         parkPlayer();
     }
 
-    function chooseRider() {
+    // --- The studio: the rider turning above (as on the rider screen), one
+    // slide per choice below, each choice seen on him at once. -------------------
+    let slideAt = 0;
+    let studioOn = false;
+    const steps = () => ['rider', 'hair', 'outfit', 'band', 'music'].filter((id) => id !== 'hair' || riderChoice() === 'girl');
+    const choice = (attr, id, on, emoji, name, hint, extra = '') => `<button type="button" class="love-choice ${on ? 'is-on' : ''}" data-${attr}="${id}" ${extra}>
+        ${emoji ? `<span class="love-choice__icon">${emoji}</span>` : ''}<b>${esc(name)}</b>${hint ? `<small>${esc(hint)}</small>` : ''}</button>`;
+
+    function slide(id) {
+        if (id === 'rider') {
+            return ['Qui roule ?', 'Garçon ou fille : tu pourras changer à tout moment (ici ou dans les paramètres).',
+                `<div class="love-choices love-choices--two">${choice('rider', 'boy', riderChoice() === 'boy', '🧔🏾‍♂️', 'Garçon', 'Bonnet, bandeau, barbe légère')}
+                ${choice('rider', 'girl', riderChoice() === 'girl', '👩🏾‍🦱', 'Fille', 'Vanilles ou afro, avec des perles')}</div>`];
+        }
+        if (id === 'hair') {
+            return ['Sa coiffure', 'Ses cheveux sortent du bonnet sur les côtés et dans le dos.',
+                `<div class="love-choices love-choices--two">${HAIRS.map(([h, name, hint]) => choice('hair', h, hairChoice() === h, h === 'vanilles' ? '〰️' : '☁️', name, hint)).join('')}</div>`];
+        }
+        if (id === 'outfit') {
+            return ['Ta tenue Love&Faith', 'Les créations du site, au dos et sur la poitrine.',
+                `<div class="love-outfits">${OUTFITS.map(([o, name]) => `<button type="button" class="love-outfit ${o === outfit() ? 'is-on' : ''}" data-outfit="${o}">
+                    <img src="${FILES}icon-${o}.webp" alt=""><span>${esc(name)}</span></button>`).join('')}</div>`];
+        }
+        if (id === 'band') {
+            const [, , color, inkColor] = bandChoice();
+            return ['Ton bandeau', 'Sur les yeux : l’amour rend aveugle.',
+                `<div class="love-band-preview" style="--band:${color};--band-ink:${inkColor}"><span>L’amour rend aveugle</span></div>
+                <div class="love-bands">${BANDS.map(([b, name, c, k]) => `<button type="button" class="love-band ${b === bandChoice()[0] ? 'is-on' : ''}" data-band="${b}"
+                    style="--band:${c};--band-ink:${k}" aria-label="Bandeau ${esc(name)}"><span>${esc(name)}</span></button>`).join('')}</div>`];
+        }
+        const mode = music.mode;
+        return ['La musique', 'Elle tourne au hasard pendant la course.',
+            `<div class="love-choices love-choices--three">${MUSIC_MODES.map(([m, name]) => choice('music', m, mode === m, m === 'anasheed' ? '🌙' : m === 'both' ? '🔀' : '🎵', name, MUSIC_HINTS[m])).join('')}</div>
+            ${mode === 'anasheed' ? '' : '<div class="love-player" id="love-player-slot"></div>'}`];
+    }
+
+    function renderStudio(direction = 0) {
+        const list = steps();
+        slideAt = Math.max(0, Math.min(list.length - 1, slideAt));
+        const id = list[slideAt];
+        const [title, hint, body] = slide(id);
+        const best = Number(readLocal(BEST_KEY)) || 0;
+        $('love-screen').classList.add('is-studio');
         show(`
-            <img class="love-logo" src="${FILES}logo-heart.png" alt="Love&Faith">
-            <p class="love-kicker">ÉVÉNEMENT · LOVE&amp;FAITH × 51WHELING</p>
-            <h2 class="love-title">Qui roule ?</h2>
-            <p class="love-text">Garçon : bonnet, bandeau, barbe légère. Fille : cheveux afro vanille avec des perles qui sortent du bonnet. Tu pourras changer dans les paramètres.</p>
-            <div class="love-riders love-riders--big">${riderButtons('love-rider')}</div>
-            <button type="button" class="love-btn love-btn--primary" data-act="rider-ok">CONTINUER</button>`);
+            <div class="love-studio__top">
+                <img class="love-studio__logo" src="${FILES}logo-heart.png" alt="">
+                <div><p class="love-kicker">LOVE&amp;FAITH × 51WHELING</p><b class="love-studio__name">Répare ton cœur</b></div>
+                <button type="button" class="love-close" data-act="close" aria-label="Fermer">✕</button>
+            </div>
+            <div class="love-steps">${list.map((s, i) => `<button type="button" class="love-step ${i === slideAt ? 'is-on' : ''} ${i < slideAt ? 'is-done' : ''}" data-step="${i}">${STEP_LABELS[s]}</button>`).join('')}</div>
+            <div class="love-slide ${direction > 0 ? 'from-right' : direction < 0 ? 'from-left' : ''}" id="love-slide">
+                <h3 class="love-slide__title">${esc(title)}</h3>
+                <p class="love-slide__hint">${esc(hint)}</p>
+                ${body}
+            </div>
+            <div class="love-nav">
+                <button type="button" class="love-arrow" data-act="prev" ${slideAt === 0 ? 'disabled' : ''} aria-label="Précédent">‹</button>
+                <span class="love-nav__dots">${list.map((_, i) => `<i class="${i === slideAt ? 'is-on' : ''}"></i>`).join('')}</span>
+                <button type="button" class="love-arrow" data-act="next" ${slideAt === list.length - 1 ? 'disabled' : ''} aria-label="Suivant">›</button>
+            </div>
+            <div class="love-actions">
+                <button type="button" class="love-btn love-btn--ghost" data-act="tuto">Tutoriel</button>
+                <button type="button" class="love-btn love-btn--primary" data-act="play">❤ JOUER</button>
+            </div>
+            ${best ? `<p class="love-best">Ton record : cœur réparé en <b>${formatTime(best)}</b></p>` : ''}`);
+        $('love-card').classList.add('love-card--studio');
+        const slot = $('love-player-slot');
+        if (slot) mountPlayer(slot);
+        else parkPlayer();
     }
 
     function open() {
         if (!loveUnlocked()) return;
-        if (readLocal(RIDER_KEY) === null) {
-            chooseRider();
-            return;
+        addFonts();
+        studioOn = true;
+        slideAt = 0;
+        deps.v2()?.setOutfit(look());
+        renderStudio();
+        deps.showroom(true);
+        if (readLocal(TUTO_KEY) === null) tutorial(0);
+    }
+
+    // Out of the studio: the race starts, or back to the modes.
+    function closeStudio(toMenu) {
+        if (!studioOn) return;
+        studioOn = false;
+        hidePanel();
+        $('love-screen').classList.remove('is-studio');
+        deps.showroom(false);
+        if (toMenu) {
+            deps.v2()?.setOutfit(null);
+            deps.menu();
         }
-        const chosen = outfit();
-        const best = Number(readLocal(BEST_KEY)) || 0;
-        show(`
-            <button type="button" class="love-close" data-act="close" aria-label="Fermer">✕</button>
-            <img class="love-logo" src="${FILES}logo-heart.png" alt="Love&Faith">
-            <p class="love-kicker">ÉVÉNEMENT · LOVE&amp;FAITH × 51WHELING</p>
-            <h2 class="love-title">Répare ton cœur</h2>
-            <ul class="love-rules">
-                <li><b>Lève la roue</b> et roule : rien d’autre ne compte.</li>
-                <li><span class="love-ico">❤ 🧸 ✉</span> Cœurs, câlins, lettres : <b>+1</b> d’amour.</li>
-                <li><span class="love-ico">💔</span> Cœur brisé : <b>−3</b> · <span class="love-ico">💧</span> larme : <b>−2</b>.</li>
-                <li>Tu pars à <b>${LOVE.start}</b>. Remplis la barre jusqu’à <b>${LOVE.max}</b> : cœur réparé. Sous ${LOVE.sun}, il pleut…</li>
-            </ul>
-            <h4 class="love-h4">Ton perso</h4>
-            <div class="love-riders">${riderButtons('love-rider')}</div>
-            <h4 class="love-h4">Ta tenue Love&amp;Faith</h4>
-            <div class="love-outfits">${OUTFITS.map(([id, name]) => `<button type="button" class="love-outfit ${id === chosen ? 'is-on' : ''}" data-outfit="${id}">
-                <img src="${FILES}icon-${id}.webp" alt=""><span>${esc(name)}</span></button>`).join('')}</div>
-            <h4 class="love-h4">Ton bandeau « L’amour rend aveugle »</h4>
-            <div class="love-bands">${BANDS.map(([id, name, color, ink]) => `<button type="button" class="love-band ${id === bandChoice()[0] ? 'is-on' : ''}" data-band="${id}"
-                style="--band:${color};--band-ink:${ink}" aria-label="Bandeau ${esc(name)}"><span>${esc(name)}</span></button>`).join('')}</div>
-            <h4 class="love-h4">Musique · ${esc(MUSIC_CREDIT.name)} et anasheed, au hasard</h4>
-            <div class="love-player" id="love-player-slot"></div>
-            <button type="button" class="love-btn love-btn--primary" data-act="play">❤ JOUER</button>
-            ${best ? `<p class="love-best">Ton record : cœur réparé en <b>${formatTime(best)}</b></p>` : ''}
-            <p class="love-note">Événement en test : garde le code pour toi.</p>`);
-        mountPlayer($('love-player-slot'));
+    }
+
+    function goStep(next) {
+        const list = steps();
+        const target = Math.max(0, Math.min(list.length - 1, next));
+        if (target === slideAt) return;
+        const direction = Math.sign(target - slideAt);
+        slideAt = target;
+        renderStudio(direction);
+    }
+
+    // A choice made: seen on the rider at once.
+    function chosen() {
+        deps.v2()?.setOutfit(look());
+        if (studioOn) renderStudio(0);
+    }
+
+    // --- The tutorial: a screen of the game for each thing to know. ----------------
+    let tutoAt = 0;
+    function tutorial(at = 0) {
+        addFonts();
+        tutoAt = Math.max(0, Math.min(TUTORIAL.length - 1, at));
+        const [title, text] = TUTORIAL[tutoAt];
+        const last = tutoAt === TUTORIAL.length - 1;
+        $('love-tuto-card').innerHTML = `
+            <div class="love-tuto__shot"><img src="${FILES}tuto/tuto-${tutoAt + 1}.webp" alt=""><span class="love-tuto__num">${tutoAt + 1}/${TUTORIAL.length}</span></div>
+            <h3 class="love-tuto__title">${esc(title)}</h3>
+            <p class="love-tuto__text">${esc(text)}</p>
+            <div class="love-nav__dots">${TUTORIAL.map((_, i) => `<i class="${i === tutoAt ? 'is-on' : ''}"></i>`).join('')}</div>
+            <div class="love-actions">
+                <button type="button" class="love-btn love-btn--ghost" data-act="tuto-skip">${last ? 'Revoir' : 'Passer'}</button>
+                <button type="button" class="love-btn love-btn--primary" data-act="${last ? 'tuto-done' : 'tuto-next'}">${last ? 'C’EST PARTI' : 'SUIVANT'}</button>
+            </div>`;
+        $('love-tuto').hidden = false;
+    }
+    function closeTutorial() {
+        $('love-tuto').hidden = true;
+        writeLocal(TUTO_KEY, '1');
     }
 
     // The SoundCloud player: shown over its place in the panel (a tap on it
@@ -321,6 +456,15 @@ export function createLoveEvent(deps) {
             holder.style.top = `${box.top}px`;
             holder.style.width = `${box.width}px`;
             holder.style.height = `${box.height}px`;
+            // Cut where the slide scrolls it out of sight.
+            const view = slot.closest('.love-slide')?.getBoundingClientRect();
+            if (view) {
+                const top = Math.max(0, view.top - box.top);
+                const bottom = Math.max(0, box.bottom - view.bottom);
+                holder.style.clipPath = `inset(${top}px 0 ${bottom}px 0 round 10px)`;
+            } else {
+                holder.style.clipPath = '';
+            }
             requestAnimationFrame(follow);
         };
         follow();
@@ -329,6 +473,33 @@ export function createLoveEvent(deps) {
         playerSlot = null;
         $('love-music').classList.remove('is-shown');
     }
+
+    // Swipes: the slides (the studio's, the tutorial's); a finger elsewhere
+    // turns the rider.
+    let swipe = null;
+    root.addEventListener('pointerdown', (event) => {
+        const target = event.target instanceof Element ? event.target : null;
+        const inTuto = !!target?.closest('#love-tuto');
+        const inSlide = !!target?.closest('#love-slide');
+        const free = studioOn && !inTuto && target?.closest('#love-screen') && !target.closest('#love-card');
+        if (!inTuto && !inSlide && !free) return;
+        swipe = { x: event.clientX, y: event.clientY, lastX: event.clientX, inTuto, free };
+    });
+    root.addEventListener('pointermove', (event) => {
+        if (!swipe?.free) return;
+        deps.v2()?.showroomTurn((event.clientX - swipe.lastX) * 0.012);
+        swipe.lastX = event.clientX;
+    });
+    root.addEventListener('pointerup', (event) => {
+        if (!swipe) return;
+        const dx = event.clientX - swipe.x;
+        const dy = event.clientY - swipe.y;
+        const { inTuto, free } = swipe;
+        swipe = null;
+        if (free || Math.abs(dx) < 45 || Math.abs(dx) < Math.abs(dy) * 1.2) return;
+        if (inTuto) tutorial(tutoAt + (dx < 0 ? 1 : -1));
+        else goStep(slideAt + (dx < 0 ? 1 : -1));
+    });
 
     function welcome() {
         show(`
@@ -368,10 +539,12 @@ export function createLoveEvent(deps) {
         if (!items) items = createItemFactory();
         if (!rain) rain = createRain(deps.scene);
         if (!puddles) puddles = createPuddles(deps.scene);
+        if (!clouds) clouds = createCloudSea(deps.scene);
         clearRun();
         Object.assign(run, {
             on: true, love: LOVE.start, shownLove: LOVE.start, nextZ: null, time: 0, ended: false, caught: 0, hits: 0,
-            thoughtAt: 6 + Math.random() * 4, tearAt: 0, slot: 0, lastZ: null, hitUntil: 0, cloud: 0, outcome: null
+            thoughtAt: 6 + Math.random() * 4, tearAt: 0, slot: 0, lastZ: null, hitUntil: 0, cloud: 0, outcome: null,
+            end: 0, cityHidden: false, storm: null
         });
         hidePanel();
         parkPlayer();
@@ -507,7 +680,16 @@ export function createLoveEvent(deps) {
         // Nothing more on the road: the ones ahead go.
         for (const item of run.items) deps.scene.remove(item.object);
         run.items = [];
-        if (kind === 'repaired') chimes.repaired();
+        if (kind === 'repaired') {
+            chimes.repaired();
+            // The road turns into a sea of clouds.
+            clouds.start(deps.bike().position);
+        } else {
+            // The emotional storm.
+            run.storm = { t: 0, next: 0.15, said: 0, swept: false, vx: 0 };
+            chimes.thunder(1.2);
+            flash('lightning');
+        }
         deps.end(kind);
     }
 
@@ -528,7 +710,15 @@ export function createLoveEvent(deps) {
             sky.ambience = love >= 16 ? 'day' : 'golden';
             sky.dusk = 0;
         }
-        if (run.outcome === 'broken') rainAmount = 1;
+        if (run.outcome === 'broken') {
+            rainAmount = 1;
+            sky.ambience = 'overcast';
+            sky.dusk = 0.99;
+        }
+        if (run.outcome === 'repaired') {
+            sky.ambience = 'day';
+            sky.dusk = 0;
+        }
         deps.v2()?.setSky({ ...sky });
         return rainAmount;
     }
@@ -540,7 +730,7 @@ export function createLoveEvent(deps) {
         const camera = deps.camera;
         for (const item of run.items) items.animate(item, t);
         const rainAmount = dt > 0 ? updateSky(dt) : 0;
-        if (rain && dt > 0) rain.update(dt, camera, rainAmount, deps.speed() * 60);
+        if (rain && dt > 0) rain.update(dt, camera, rainAmount, deps.speed() * 60, run.storm ? 26 + Math.min(30, run.storm.t * 10) : 0);
         puddles?.frame(dt, rain ? rain.amount : 0, deps.bike().position.z + 40, camera.position.z);
         // The rider's mood.
         const sadness = run.outcome === 'repaired' ? 0 : Math.max(0, Math.min(1, (LOVE.sun - run.shownLove) / 8));
@@ -548,8 +738,8 @@ export function createLoveEvent(deps) {
         if (dt > 0 && !run.outcome) moodMoments(dt, sadness);
         updateTears(dt, sadness);
         updateSparks(dt);
-        // Into the cloud once mended.
-        if (run.outcome === 'repaired' && dt > 0) intoCloud(dt);
+        if (dt > 0 && run.outcome === 'repaired') seaOfClouds(dt);
+        if (dt > 0 && run.storm) storm(dt);
         ink.update();
     }
 
@@ -645,6 +835,104 @@ export function createLoveEvent(deps) {
         }
     }
 
+    // Mended: the clouds cover the road and the city goes under them; the
+    // bike rides on over them a moment, then into the cloud.
+    const skyFog = new THREE.Color(0xf7e8f2);
+    function seaOfClouds(dt) {
+        run.end += dt;
+        const k = clouds.update(dt, deps.bike().position, deps.camera);
+        const fog = deps.scene.fog;
+        if (fog && run.end < 3.2) {
+            // Far and soft over the clouds.
+            fog.color.lerp(skyFog, Math.min(1, dt * 1.5));
+            fog.far += (320 - fog.far) * Math.min(1, dt);
+        }
+        if (k >= 1 && !run.cityHidden) {
+            run.cityHidden = true;
+            deps.city(false);
+        }
+        if (run.end > 3.2) intoCloud(dt);
+    }
+
+    // The storm: lightning, thunder, rain and wind across, the picture
+    // shaking, the words; then the gust takes the rider away.
+    function storm(dt) {
+        const s = run.storm;
+        s.t += dt;
+        s.next -= dt;
+        if (s.next <= 0) {
+            s.next = 0.55 + Math.random() * 1.1;
+            flash('lightning');
+            setTimeout(() => chimes.thunder(0.6 + Math.random() * 0.6), 120 + Math.random() * 400);
+        }
+        if (s.said === 0 && s.t > 0.5) {
+            s.said = 1;
+            ink.write('Tempête émotionnelle', { tone: 'storm', size: Math.min(46, window.innerWidth / 9), className: 'ink--center', hold: 4 });
+        }
+        if (s.said === 1 && s.t > 1.8) {
+            s.said = 2;
+            ink.write('Elle emporte tout sur son passage', { tone: 'storm', size: Math.min(27, window.innerWidth / 15), className: 'ink--center2', hold: 2.8 });
+        }
+        // The picture shakes harder and harder.
+        const camera = deps.camera;
+        camera.position.sub(shake);
+        const amount = Math.min(1, s.t / 1.6) * 0.14;
+        shake.set((Math.random() - 0.5) * amount, (Math.random() - 0.5) * amount, 0);
+        camera.position.add(shake);
+        blowDebris(dt, s);
+        // The gust: the rider and the bike carried away.
+        if (s.t > 2.7) {
+            const bike = deps.bike();
+            if (!s.swept) {
+                s.swept = true;
+                deps.cameraHold(true);
+                deps.v2()?.rider.shakeHead();
+            }
+            s.vx = Math.min(48, s.vx + 42 * dt);
+            bike.position.x += s.vx * dt;
+            bike.position.y = Math.min(6, bike.position.y + s.vx * 0.05 * dt);
+            bike.rotation.z -= 2.6 * dt;
+            bike.rotation.x += 0.9 * dt;
+        }
+    }
+
+    function blowDebris(dt, s) {
+        if (!debrisMaterials) {
+            const make = (draw) => {
+                const canvas = document.createElement('canvas');
+                canvas.width = canvas.height = 32;
+                draw(canvas.getContext('2d'));
+                const texture = new THREE.CanvasTexture(canvas);
+                texture.colorSpace = THREE.SRGBColorSpace;
+                return new THREE.SpriteMaterial({ map: texture, transparent: true, depthWrite: false });
+            };
+            debrisMaterials = [
+                make((ctx) => { ctx.fillStyle = '#5a3a1a'; ctx.beginPath(); ctx.ellipse(16, 16, 13, 6, 0.6, 0, Math.PI * 2); ctx.fill(); }),
+                make((ctx) => { ctx.fillStyle = '#7a5a20'; ctx.beginPath(); ctx.ellipse(16, 16, 11, 5, -0.4, 0, Math.PI * 2); ctx.fill(); }),
+                make((ctx) => { ctx.fillStyle = '#e8e4da'; ctx.fillRect(7, 9, 18, 14); })
+            ];
+        }
+        const camera = deps.camera;
+        const want = Math.min(110, 30 + s.t * 30);
+        while (debris.length < want) {
+            const sprite = new THREE.Sprite(debrisMaterials[Math.floor(Math.random() * debrisMaterials.length)]);
+            sprite.scale.setScalar(0.25 + Math.random() * 0.45);
+            sprite.position.set(camera.position.x - 22 - Math.random() * 20, 0.3 + Math.random() * 7, camera.position.z - 4 - Math.random() * 45);
+            deps.scene.add(sprite);
+            debris.push({ sprite, vx: 26 + Math.random() * 30, vy: (Math.random() - 0.3) * 4, spin: (Math.random() - 0.5) * 12 });
+        }
+        for (let i = debris.length - 1; i >= 0; i--) {
+            const d = debris[i];
+            d.sprite.position.x += d.vx * dt;
+            d.sprite.position.y += (d.vy + Math.sin(performance.now() / 180 + i) * 2) * dt;
+            d.sprite.material.rotation += d.spin * dt;
+            if (d.sprite.position.x > camera.position.x + 24) {
+                deps.scene.remove(d.sprite);
+                debris.splice(i, 1);
+            }
+        }
+    }
+
     // The fog closes in, pink and white: a cloud.
     const cloudColor = new THREE.Color(0xffe3ec);
     function intoCloud(dt) {
@@ -678,11 +966,11 @@ export function createLoveEvent(deps) {
         } else if (kind === 'broken') {
             deps.stat('loveBroken');
         }
-        const delay = kind === 'repaired' ? 3200 : kind === 'broken' ? 2200 : 1400;
+        const delay = kind === 'repaired' ? 5600 : kind === 'broken' ? 5400 : 1400;
         setTimeout(() => {
             if (!run.on) return;
             const title = kind === 'repaired' ? 'Cœur réparé' : kind === 'broken' ? 'Cœur brisé' : 'Chute…';
-            const sub = kind === 'repaired' ? 'MISSION RÉUSSIE' : kind === 'broken' ? 'LA BARRE EST VIDE' : 'LE CŒUR À ' + run.love + '/' + LOVE.max;
+            const sub = kind === 'repaired' ? 'MISSION RÉUSSIE' : kind === 'broken' ? 'PERDU · LA TEMPÊTE A TOUT EMPORTÉ' : 'LE CŒUR À ' + run.love + '/' + LOVE.max;
             show(`
                 <p class="love-kicker">LOVE&amp;FAITH × 51WHELING</p>
                 <div class="love-end__title" id="love-end-title"></div>
@@ -716,6 +1004,16 @@ export function createLoveEvent(deps) {
         run.ended = true;
         clearRun();
         rain?.hide();
+        clouds?.stop();
+        for (const d of debris) deps.scene.remove(d.sprite);
+        debris.length = 0;
+        deps.camera.position.sub(shake);
+        shake.set(0, 0, 0);
+        run.storm = null;
+        if (run.cityHidden) deps.city(true);
+        run.cityHidden = false;
+        deps.cameraHold(false);
+        $('love-flash').className = 'love-flash';
         hidePanel();
         $('love-hud').hidden = true;
         document.body.classList.remove('love-on');
@@ -730,34 +1028,58 @@ export function createLoveEvent(deps) {
     }
 
     root.addEventListener('click', (event) => {
-        const target = event.target instanceof Element ? event.target.closest('[data-act], [data-outfit], [data-band], [data-rider]') : null;
-        if (!target) return;
+        const target = event.target instanceof Element ? event.target.closest('[data-act], [data-outfit], [data-band], [data-rider], [data-hair], [data-music], [data-step]') : null;
+        if (!target || target.disabled) return;
+        if (target.dataset.step) {
+            goStep(Number(target.dataset.step));
+            return;
+        }
         if (target.dataset.rider) {
             setRider(target.dataset.rider);
             return;
         }
+        if (target.dataset.hair) {
+            writeLocal(HAIR_KEY, target.dataset.hair);
+            chosen();
+            return;
+        }
+        if (target.dataset.music) {
+            setMusic(target.dataset.music);
+            return;
+        }
         if (target.dataset.band) {
             writeLocal(BAND_KEY, target.dataset.band);
-            root.querySelectorAll('.love-band').forEach((b) => b.classList.toggle('is-on', b === target));
+            chosen();
             return;
         }
         if (target.dataset.outfit) {
             writeLocal(OUTFIT_KEY, target.dataset.outfit);
-            root.querySelectorAll('.love-outfit').forEach((b) => b.classList.toggle('is-on', b === target));
+            chosen();
             return;
         }
         const act = target.dataset.act;
         if (act === 'close') {
-            hidePanel();
+            if (studioOn) closeStudio(true);
+            else hidePanel();
         } else if (act === 'open') {
             open();
-        } else if (act === 'rider-ok') {
-            if (readLocal(RIDER_KEY) === null) writeLocal(RIDER_KEY, 'boy');
-            open();
+        } else if (act === 'prev' || act === 'next') {
+            goStep(slideAt + (act === 'next' ? 1 : -1));
+        } else if (act === 'tuto') {
+            tutorial(0);
+        } else if (act === 'tuto-next') {
+            tutorial(tutoAt + 1);
+        } else if (act === 'tuto-skip') {
+            if (tutoAt === TUTORIAL.length - 1) tutorial(0);
+            else closeTutorial();
+        } else if (act === 'tuto-done') {
+            closeTutorial();
         } else if (act === 'play') {
             // The tap starts the sound (and the chimes) now.
+            if (!readLocal(RIDER_KEY)) writeLocal(RIDER_KEY, riderChoice());
             chimes.unlock();
             music.start();
+            closeStudio(false);
             deps.startRun();
         } else if (act === 'again') {
             chimes.unlock();
@@ -772,8 +1094,15 @@ export function createLoveEvent(deps) {
 
     function setRider(id) {
         writeLocal(RIDER_KEY, id === 'girl' ? 'girl' : 'boy');
-        document.querySelectorAll('[data-rider]').forEach((b) => b.classList.toggle('is-on', b.dataset.rider === riderChoice()));
-        if (run.on) deps.v2()?.setOutfit(look());
+        document.querySelectorAll('#love-settings [data-rider]').forEach((b) => b.classList.toggle('active', b.dataset.rider === riderChoice()));
+        if (run.on || studioOn) chosen();
+    }
+
+    function setMusic(mode) {
+        writeLocal(MUSIC_KEY, mode);
+        music.setMode(mode);
+        document.querySelectorAll('#love-settings [data-music]').forEach((b) => b.classList.toggle('active', b.dataset.music === mode));
+        if (studioOn) renderStudio(0);
     }
 
     // The game's settings (Options): the event's rider, once unlocked.
@@ -786,13 +1115,15 @@ export function createLoveEvent(deps) {
         block.innerHTML = `<h3>ÉVÉNEMENT LOVE&amp;FAITH</h3><div class="settings-group">
             <p class="setting-desc">Ton perso dans l’événement</p>
             ${RIDERS.map(([id, name, emoji]) => `<button type="button" class="setting-btn ${id === riderChoice() ? 'active' : ''}" data-rider="${id}">${emoji} ${name.toUpperCase()}</button>`).join('')}
+            <p class="setting-desc">Musique de l’événement</p>
+            ${MUSIC_MODES.map(([id, name]) => `<button type="button" class="setting-btn ${id === music.mode ? 'active' : ''}" data-music="${id}">${id === 'anasheed' ? '🌙' : id === 'both' ? '🔀' : '🎵'} ${name.toUpperCase()}</button>`).join('')}
         </div>`;
         group.after(block);
         block.addEventListener('click', (event) => {
-            const button = event.target instanceof Element ? event.target.closest('[data-rider]') : null;
+            const button = event.target instanceof Element ? event.target.closest('[data-rider], [data-music]') : null;
             if (!button) return;
-            setRider(button.dataset.rider);
-            block.querySelectorAll('[data-rider]').forEach((b) => b.classList.toggle('active', b.dataset.rider === riderChoice()));
+            if (button.dataset.music) setMusic(button.dataset.music);
+            else setRider(button.dataset.rider);
         });
     }
 

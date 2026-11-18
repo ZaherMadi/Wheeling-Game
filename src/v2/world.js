@@ -1053,6 +1053,7 @@ export function createWorld({ scene, renderer, mobile }) {
 
     return {
         acquireChunk, releaseChunk, createObstacle, update, setDusk, setAmbience, setQuality, reseed, sharedMaterials, sun,
+        setSkylineVisible(visible) { skyline.visible = visible; },
         crossings, busShelters, parkedNear, takeParked, createCar, carModels: Object.keys(cars), roofAt,
         ambiences: Object.keys(AMBIENCES),
         stats: () => variants.map((variant) => ({
