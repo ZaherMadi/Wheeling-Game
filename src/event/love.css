@@ -874,3 +874,45 @@ body.love-panel :is(#score-container, #speedometer, #pause-btn, #angle-multiplie
   border-color: var(--lf-gold);
   box-shadow: 0 0 12px rgba(201, 164, 92, 0.6) !important;
 }
+
+/* Who rides: the boy or the girl. */
+.love-riders {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 8px;
+}
+
+#love-root .love-rider {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  padding: 10px 8px !important;
+  border-radius: 14px;
+  border: 1px solid rgba(244, 237, 233, 0.15);
+  background: rgba(244, 237, 233, 0.05);
+  color: rgba(244, 237, 233, 0.85);
+  font: 600 14px/1 var(--lf-body);
+  cursor: pointer;
+}
+
+#love-root .love-rider span {
+  font-size: 22px;
+}
+
+#love-root .love-riders--big .love-rider {
+  flex-direction: column;
+  padding: 18px 8px !important;
+  font-size: 16px;
+}
+
+#love-root .love-riders--big .love-rider span {
+  font-size: 44px;
+}
+
+#love-root .love-rider.is-on {
+  border-color: var(--lf-glow);
+  background: rgba(201, 0, 37, 0.18);
+  color: var(--lf-white);
+  box-shadow: 0 0 14px rgba(255, 31, 61, 0.35) !important;
+}

@@ -19,6 +19,10 @@ export const LOVE_CODE = '5HC';
 const UNLOCK_KEY = 'wheelie_love_event';
 const OUTFIT_KEY = 'wheelie_love_outfit';
 const BAND_KEY = 'wheelie_love_band';
+// Who rides in the event: the boy (by default) or the girl; asked the first
+// time, changed in the event's panel or the game's settings.
+const RIDER_KEY = 'wheelie_love_rider';
+const RIDERS = [['boy', 'Garçon', '🧔🏾‍♂️'], ['girl', 'Fille', '👩🏾‍🦱']];
 const BEST_KEY = 'wheelie_love_best';
 const FILES = '/event/love/';
 export const LOVE = { max: 20, start: 8, sun: 12 };
@@ -186,8 +190,9 @@ export function createLoveEvent(deps) {
                 return;
             }
             const link = $('love-now-title');
-            link.textContent = `${MUSIC_CREDIT.name} — ${track.title}`;
-            link.href = track.url || MUSIC_CREDIT.url;
+            link.textContent = track.title;
+            if (track.url) link.href = track.url;
+            else link.removeAttribute('href');
             now.hidden = false;
         }
     });
@@ -216,10 +221,13 @@ export function createLoveEvent(deps) {
         return OUTFITS.some(([id]) => id === saved) ? saved : OUTFITS[0][0];
     };
     const bandChoice = () => BANDS.find(([id]) => id === readLocal(BAND_KEY)) || BANDS[0];
+    const riderChoice = () => (readLocal(RIDER_KEY) === 'girl' ? 'girl' : 'boy');
     const look = () => {
         const [, , color, ink] = bandChoice();
-        return { print: outfit(), band: { color, ink } };
+        return { print: outfit(), band: { color, ink }, gender: riderChoice() };
     };
+    const riderButtons = (className) => RIDERS.map(([id, name, emoji]) => `<button type="button" class="${className} ${id === riderChoice() ? 'is-on' : ''}" data-rider="${id}">
+        <span>${emoji}</span>${esc(name)}</button>`).join('');
     let puddles = null;
 
     // --- The bar --------------------------------------------------------------------
@@ -252,8 +260,22 @@ export function createLoveEvent(deps) {
         parkPlayer();
     }
 
+    function chooseRider() {
+        show(`
+            <img class="love-logo" src="${FILES}logo-heart.png" alt="Love&Faith">
+            <p class="love-kicker">ÉVÉNEMENT · LOVE&amp;FAITH × 51WHELING</p>
+            <h2 class="love-title">Qui roule ?</h2>
+            <p class="love-text">Garçon : bonnet, bandeau, barbe légère. Fille : cheveux afro vanille avec des perles qui sortent du bonnet. Tu pourras changer dans les paramètres.</p>
+            <div class="love-riders love-riders--big">${riderButtons('love-rider')}</div>
+            <button type="button" class="love-btn love-btn--primary" data-act="rider-ok">CONTINUER</button>`);
+    }
+
     function open() {
         if (!loveUnlocked()) return;
+        if (readLocal(RIDER_KEY) === null) {
+            chooseRider();
+            return;
+        }
         const chosen = outfit();
         const best = Number(readLocal(BEST_KEY)) || 0;
         show(`
@@ -267,13 +289,15 @@ export function createLoveEvent(deps) {
                 <li><span class="love-ico">💔</span> Cœur brisé : <b>−3</b> · <span class="love-ico">💧</span> larme : <b>−2</b>.</li>
                 <li>Tu pars à <b>${LOVE.start}</b>. Remplis la barre jusqu’à <b>${LOVE.max}</b> : cœur réparé. Sous ${LOVE.sun}, il pleut…</li>
             </ul>
+            <h4 class="love-h4">Ton perso</h4>
+            <div class="love-riders">${riderButtons('love-rider')}</div>
             <h4 class="love-h4">Ta tenue Love&amp;Faith</h4>
             <div class="love-outfits">${OUTFITS.map(([id, name]) => `<button type="button" class="love-outfit ${id === chosen ? 'is-on' : ''}" data-outfit="${id}">
                 <img src="${FILES}icon-${id}.webp" alt=""><span>${esc(name)}</span></button>`).join('')}</div>
             <h4 class="love-h4">Ton bandeau « L’amour rend aveugle »</h4>
             <div class="love-bands">${BANDS.map(([id, name, color, ink]) => `<button type="button" class="love-band ${id === bandChoice()[0] ? 'is-on' : ''}" data-band="${id}"
                 style="--band:${color};--band-ink:${ink}" aria-label="Bandeau ${esc(name)}"><span>${esc(name)}</span></button>`).join('')}</div>
-            <h4 class="love-h4">Musique · ${esc(MUSIC_CREDIT.name)} (au hasard)</h4>
+            <h4 class="love-h4">Musique · ${esc(MUSIC_CREDIT.name)} et anasheed, au hasard</h4>
             <div class="love-player" id="love-player-slot"></div>
             <button type="button" class="love-btn love-btn--primary" data-act="play">❤ JOUER</button>
             ${best ? `<p class="love-best">Ton record : cœur réparé en <b>${formatTime(best)}</b></p>` : ''}
@@ -321,6 +345,7 @@ export function createLoveEvent(deps) {
         writeLocal(UNLOCK_KEY, '1');
         if (first) deps.stat('loveUnlocks');
         installEntry();
+        installSettings();
         welcome();
     }
 
@@ -705,8 +730,12 @@ export function createLoveEvent(deps) {
     }
 
     root.addEventListener('click', (event) => {
-        const target = event.target instanceof Element ? event.target.closest('[data-act], [data-outfit], [data-band]') : null;
+        const target = event.target instanceof Element ? event.target.closest('[data-act], [data-outfit], [data-band], [data-rider]') : null;
         if (!target) return;
+        if (target.dataset.rider) {
+            setRider(target.dataset.rider);
+            return;
+        }
         if (target.dataset.band) {
             writeLocal(BAND_KEY, target.dataset.band);
             root.querySelectorAll('.love-band').forEach((b) => b.classList.toggle('is-on', b === target));
@@ -721,6 +750,9 @@ export function createLoveEvent(deps) {
         if (act === 'close') {
             hidePanel();
         } else if (act === 'open') {
+            open();
+        } else if (act === 'rider-ok') {
+            if (readLocal(RIDER_KEY) === null) writeLocal(RIDER_KEY, 'boy');
             open();
         } else if (act === 'play') {
             // The tap starts the sound (and the chimes) now.
@@ -738,7 +770,34 @@ export function createLoveEvent(deps) {
         }
     });
 
+    function setRider(id) {
+        writeLocal(RIDER_KEY, id === 'girl' ? 'girl' : 'boy');
+        document.querySelectorAll('[data-rider]').forEach((b) => b.classList.toggle('is-on', b.dataset.rider === riderChoice()));
+        if (run.on) deps.v2()?.setOutfit(look());
+    }
+
+    // The game's settings (Options): the event's rider, once unlocked.
+    function installSettings() {
+        if (!loveUnlocked() || document.getElementById('love-settings')) return;
+        const group = document.querySelector('#submenu-options .settings-group');
+        if (!group) return;
+        const block = document.createElement('div');
+        block.id = 'love-settings';
+        block.innerHTML = `<h3>ÉVÉNEMENT LOVE&amp;FAITH</h3><div class="settings-group">
+            <p class="setting-desc">Ton perso dans l’événement</p>
+            ${RIDERS.map(([id, name, emoji]) => `<button type="button" class="setting-btn ${id === riderChoice() ? 'active' : ''}" data-rider="${id}">${emoji} ${name.toUpperCase()}</button>`).join('')}
+        </div>`;
+        group.after(block);
+        block.addEventListener('click', (event) => {
+            const button = event.target instanceof Element ? event.target.closest('[data-rider]') : null;
+            if (!button) return;
+            setRider(button.dataset.rider);
+            block.querySelectorAll('[data-rider]').forEach((b) => b.classList.toggle('active', b.dataset.rider === riderChoice()));
+        });
+    }
+
     installEntry();
+    installSettings();
 
     return {
         open, unlockFromCode, installEntry, begin, spawn, step, frame, finish, leave,
@@ -752,6 +811,7 @@ export function createLoveEvent(deps) {
             get puddles() { return puddles ? puddles.count : 0; },
             get drops() { return puddles ? puddles.drops : 0; },
             get puddleSystem() { return puddles; },
+            get music() { return music.playing; },
             // A puddle right in the bike's way.
             puddleAhead(width = 6, length = 12) {
                 const bike = deps.bike().position;

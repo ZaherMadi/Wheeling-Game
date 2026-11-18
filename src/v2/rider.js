@@ -1395,7 +1395,7 @@ export function createRider({ scene }) {
         };
         const skin = standard(0x7a4524, 0.6);
         const decal = (map, roughness = 0.85) => new THREE.MeshStandardMaterial({
-            map, transparent: true, roughness, depthWrite: false, polygonOffset: true, polygonOffsetFactor: -2, polygonOffsetUnits: -2
+            map, transparent: true, roughness, depthWrite: false, polygonOffset: true, polygonOffsetFactor: -1, polygonOffsetUnits: -1
         });
         const group = new THREE.Group();
         group.visible = false;
@@ -1410,9 +1410,16 @@ export function createRider({ scene }) {
             parent.add(mesh);
             return mesh;
         };
-        // The face (under the blindfold: the mouth shows).
-        patch(group, decal(load('face.png'), 0.5), new THREE.SphereGeometry(1, 20, 12, Math.PI / 2 - 0.82, 1.64, Math.PI * 0.34, Math.PI * 0.4),
-            transform(0, 0.04, 0.005, 0.171, 0.193, 0.178));
+        // The face under the blindfold (no eyes: it covers them): the boy's
+        // moustache and mouth, the girl's lips.
+        const faces = { boy: load('face-boy.png'), girl: load('face-girl.png') };
+        const faceMaterial = decal(faces.boy, 0.5);
+        patch(group, faceMaterial, new THREE.SphereGeometry(1, 20, 12, Math.PI / 2 - 0.82, 1.64, Math.PI * 0.34, Math.PI * 0.4),
+            transform(0, 0.04, 0.005, 0.171, 0.193, 0.178)).renderOrder = 3;
+        // The boy's very light beard: stubble along the jaw and on the chin.
+        const beard = patch(group, decal(stubbleTexture(), 0.9),
+            new THREE.SphereGeometry(1, 28, 10, Math.PI / 2 - 1.4, 2.8, Math.PI * 0.575, Math.PI * 0.31),
+            transform(0, 0.04, 0.005, 0.1696, 0.1916, 0.1766));
 
         // The beanie as on the figure: pulled down snug over the head and
         // tilted back (low over the nape, the folded cuff just above the
@@ -1420,8 +1427,8 @@ export function createRider({ scene }) {
         // on a white band, the kiss on the front.
         const knitMaps = beanieMaps();
         const beanie = new THREE.Group();
-        beanie.position.set(0, 0.045, -0.004);
-        beanie.rotation.x = -0.22;
+        beanie.position.set(0, 0.03, -0.004);
+        beanie.rotation.x = -0.2;
         group.add(beanie);
         const R = [0.184, 0.214, 0.192];
         const crown = new THREE.Mesh(new THREE.SphereGeometry(1, 28, 14, 0, Math.PI * 2, 0, Math.PI * 0.5),
@@ -1449,25 +1456,30 @@ export function createRider({ scene }) {
         bandMap.anisotropy = 8;
         const bandMaterial = new THREE.MeshStandardMaterial({ map: bandMap, roughness: 0.72, side: THREE.DoubleSide });
         const tie = new THREE.MeshStandardMaterial({ color: 0xc90025, roughness: 0.72, side: THREE.DoubleSide });
+        const bandGroup = new THREE.Group();
+        bandGroup.position.set(0, -0.005, 0.005);
+        bandGroup.rotation.x = -0.2;
+        group.add(bandGroup);
         const blindfold = new THREE.Mesh(new THREE.CylinderGeometry(1, 1, 1, 48, 1, true, Math.PI, Math.PI * 2), bandMaterial);
         blindfold.scale.set(0.179, 0.07, 0.187);
-        blindfold.position.set(0, 0.036, 0.005);
-        group.add(blindfold);
+        bandGroup.add(blindfold);
         const knot = new THREE.Mesh(sphere, tie);
         knot.scale.set(0.03, 0.03, 0.022);
-        knot.position.set(0, 0.036, -0.19);
-        group.add(knot);
+        knot.position.set(0, 0, -0.19);
+        bandGroup.add(knot);
         const tails = [-1, 1].map((side) => {
             const pivot = new THREE.Group();
-            pivot.position.set(side * 0.014, 0.03, -0.198);
+            pivot.position.set(side * 0.014, -0.006, -0.198);
             const end = new THREE.Mesh(box, tie);
             end.scale.set(0.034, 0.14, 0.006);
             end.position.y = -0.07;
             pivot.add(end);
             pivot.rotation.z = side * 0.32;
-            group.add(pivot);
+            bandGroup.add(pivot);
             return pivot;
         });
+        const hair = buildHair();
+        group.add(hair);
         // The creation on the chest (the back's own print takes the number's place).
         const frontMaterial = new THREE.MeshStandardMaterial({
             transparent: true, roughness: 0.86, depthWrite: false, polygonOffset: true, polygonOffsetFactor: -1, polygonOffsetUnits: -1
@@ -1477,7 +1489,98 @@ export function createRider({ scene }) {
         chest.visible = false;
         chest.renderOrder = 2;
         pelvis.add(chest);
-        return { group, chest, frontMaterial, skin, print: null, look: null, pictures: {}, bandCanvas, bandMap, tie, tails, band: null };
+        return {
+            group, chest, frontMaterial, skin, print: null, look: null, pictures: {}, bandCanvas, bandMap, tie, tails, band: null,
+            faceMaterial, faces, beard, hair
+        };
+    }
+
+    // A few days' stubble: fine dark dots, thicker on the chin and the jaw.
+    function stubbleTexture() {
+        const canvas = document.createElement('canvas');
+        canvas.width = 512;
+        canvas.height = 192;
+        const ctx = canvas.getContext('2d');
+        for (let i = 0; i < 9000; i++) {
+            const x = Math.random() * 512;
+            const y = Math.random() * 192;
+            // u: round the jaw (the middle is the chin), v: down to under the chin.
+            const fromMiddle = Math.abs(x - 256) / 256;
+            const down = y / 192;
+            const edge = Math.min(1, fromMiddle * 1.4);
+            const density = 0.25 + down * 0.75 * (0.6 + 0.4 * (1 - edge)) - (fromMiddle > 0.92 ? 0.6 : 0);
+            if (Math.random() > density) continue;
+            ctx.fillStyle = `rgba(26,13,5,${0.26 + Math.random() * 0.24})`;
+            ctx.fillRect(x, y, 2.2, 2.2);
+        }
+        const texture = new THREE.CanvasTexture(canvas);
+        texture.colorSpace = THREE.SRGBColorSpace;
+        return texture;
+    }
+
+    // The girl's hair: a vanilla afro coming out under the beanie at the
+    // sides and the back, beads in it, two beaded locks by the face.
+    function buildHair() {
+        const canvas = document.createElement('canvas');
+        canvas.width = canvas.height = 256;
+        const ctx = canvas.getContext('2d');
+        ctx.fillStyle = '#efdcae';
+        ctx.fillRect(0, 0, 256, 256);
+        for (let i = 0; i < 1400; i++) {
+            const light = Math.random() < 0.5;
+            ctx.strokeStyle = light ? 'rgba(255,248,226,0.55)' : 'rgba(170,132,74,0.35)';
+            ctx.lineWidth = 1.2;
+            ctx.beginPath();
+            ctx.arc(Math.random() * 256, Math.random() * 256, 2 + Math.random() * 3.5, Math.random() * 6, Math.random() * 6 + 3);
+            ctx.stroke();
+        }
+        const curls = new THREE.CanvasTexture(canvas);
+        curls.colorSpace = THREE.SRGBColorSpace;
+        curls.wrapS = curls.wrapT = THREE.RepeatWrapping;
+        curls.repeat.set(1.5, 1.5);
+        const hairMaterial = new THREE.MeshStandardMaterial({ map: curls, roughness: 0.96 });
+        const beads = [
+            new THREE.MeshStandardMaterial({ color: 0xd4a63a, roughness: 0.28, metalness: 0.85 }),
+            new THREE.MeshStandardMaterial({ color: 0xf6f1e6, roughness: 0.22, metalness: 0.1 }),
+            new THREE.MeshStandardMaterial({ color: 0xc90025, roughness: 0.3, metalness: 0.15 }),
+            new THREE.MeshStandardMaterial({ color: 0x2fb3a6, roughness: 0.3, metalness: 0.15 })
+        ];
+        const hair = new THREE.Group();
+        hair.visible = false;
+        const parts = new Parts();
+        const puffs = [];
+        // Rings of curls round the head (angle 0: the face), leaving the face free.
+        const ring = (y, radius, size, from, to, count) => {
+            for (let i = 0; i < count; i++) {
+                const a = (from + (to - from) * (i + 0.5) / count) * Math.PI / 180;
+                const s = size * (0.85 + Math.random() * 0.3);
+                const r = radius + (Math.random() - 0.5) * 0.024;
+                const p = new THREE.Vector3(Math.sin(a) * r * 1.02, y + (Math.random() - 0.5) * 0.024, Math.cos(a) * r + 0.005);
+                parts.add(hairMaterial, sphere, transform(p.x, p.y, p.z, s, s * 0.95, s));
+                puffs.push({ p, s, a });
+            }
+        };
+        ring(0.075, 0.18, 0.048, 62, 298, 13);
+        ring(0.025, 0.2, 0.056, 50, 310, 17);
+        ring(-0.035, 0.214, 0.06, 54, 306, 18);
+        ring(-0.095, 0.198, 0.058, 66, 294, 15);
+        ring(-0.15, 0.155, 0.05, 105, 255, 9);
+        // Beads in the curls, on their outer side.
+        for (let i = 0; i < 20; i++) {
+            const puff = puffs[Math.floor(Math.random() * puffs.length)];
+            const out = new THREE.Vector3(Math.sin(puff.a), (Math.random() - 0.4) * 0.6, Math.cos(puff.a)).normalize();
+            const at = puff.p.clone().addScaledVector(out, puff.s * 0.97);
+            parts.add(beads[i % beads.length], sphere, transform(at.x, at.y, at.z, 0.014, 0.014, 0.014));
+        }
+        // Two beaded locks by the temples.
+        for (const side of [-1, 1]) {
+            parts.add(hairMaterial, tube, transform(side * 0.165, -0.04, 0.095, 0.014, 0.13, 0.014));
+            for (let i = 0; i < 4; i++) {
+                parts.add(beads[(i + (side > 0 ? 1 : 0)) % beads.length], sphere, transform(side * 0.165, -0.0 - i * 0.032, 0.095, 0.017, 0.015, 0.017));
+            }
+        }
+        parts.build(hair);
+        return hair;
     }
 
     // The beanie's knit (from the figure's own texture), its cuff with the
@@ -1601,6 +1704,14 @@ export function createRider({ scene }) {
         jerseyDark.color.set('#dcdad5');
         sneaker.color.set('#f4f4f2');
         glove.color.set(0x7a4524);
+        const girl = look.gender === 'girl';
+        outfit.hair.visible = girl;
+        outfit.beard.visible = !girl;
+        const face = outfit.faces[girl ? 'girl' : 'boy'];
+        if (outfit.faceMaterial.map !== face) {
+            outfit.faceMaterial.map = face;
+            outfit.faceMaterial.needsUpdate = true;
+        }
         const band = look.band || { color: '#c90025', ink: '#ffffff' };
         const bandKey = `${band.color}/${band.ink}`;
         if (outfit.band !== bandKey) {
@@ -1654,7 +1765,7 @@ export function createRider({ scene }) {
     }
     // Where a tear starts: under the left (-1) or right (1) eye.
     function eyePoint(out, side) {
-        out.set(side * 0.06, -0.004, 0.182);
+        out.set(side * 0.06, -0.008, 0.184);
         return head.localToWorld(out);
     }
 
