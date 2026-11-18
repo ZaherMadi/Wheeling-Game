@@ -411,19 +411,13 @@ export function createRider({ scene }) {
     pelvis.position.copy(PELVIS_REST);
     riderGroup.add(pelvis);
     // Hoodie body turned from a profile: waist, chest, shoulders sloping to
-    // the neck. Wider than deep, like a real torso. Two of them: the usual
-    // one, and a woman's (the Love&Faith event's girl): narrower shoulders,
-    // a waist, rounder hips, a bust.
+    // the neck. Wider than deep, like a real torso. (A woman's, the
+    // Love&Faith event's girl, is built below.)
     const BODY_SHAPES = {
         boy: {
             profile: [[0.0, 0.0], [0.15, 0.0], [0.162, 0.1], [0.18, 0.24], [0.188, 0.38], [0.178, 0.46], [0.14, 0.53], [0.085, 0.58], [0.0, 0.6]],
             scale: [1.22, 0.9], hips: [0.2, 0.15, 0.17], shoulder: [0.205, 0.445, 0.082, 0.08], print: [2, 6], hem: [0.165, 0.152],
             pocket: [0.17, 0.26], cords: [0.47, 0.16]
-        },
-        girl: {
-            profile: [[0.0, 0.0], [0.168, 0.0], [0.172, 0.06], [0.146, 0.17], [0.134, 0.23], [0.15, 0.31], [0.163, 0.37], [0.156, 0.44], [0.124, 0.5], [0.078, 0.555], [0.0, 0.575]],
-            scale: [1.14, 0.92], hips: [0.215, 0.16, 0.18], shoulder: [0.178, 0.415, 0.07, 0.068], print: [3, 8], hem: [0.172, 0.165],
-            pocket: [0.165, 0.22], cords: [0.45, 0.15], bust: true
         }
     };
     function buildTorso(shape) {
@@ -436,10 +430,6 @@ export function createRider({ scene }) {
         parts.add(jersey, torsoGeometry, transform(0, 0.02, 0, sx, 1, sz));
         const [shoulderX, shoulderY, round, roundY] = shape.shoulder;
         for (const side of [-1, 1]) parts.add(jersey, sphere, transform(side * shoulderX, shoulderY, 0, round, roundY, roundY));
-        if (shape.bust) {
-            // A bust under the hoodie: one soft rounded shape across the chest.
-            parts.add(jersey, sphere, transform(0, 0.33, 0.088, 0.128, 0.066, 0.072));
-        }
         // The number (or the print) across the back follows the same surface.
         const printProfile = profile.slice(...shape.print).map((point) => new THREE.Vector2(point.x * 1.012, point.y));
         const printGeometry = new THREE.LatheGeometry(printProfile, 12, Math.PI - 0.95, 1.9);
@@ -460,8 +450,188 @@ export function createRider({ scene }) {
         pelvis.add(group);
         return group;
     }
-    const bodies = { boy: buildTorso(BODY_SHAPES.boy), girl: buildTorso(BODY_SHAPES.girl) };
+
+    // Her body: a smooth profile (the waist well in, round hips), a bust
+    // that stands out of the front, narrower shoulders. The same hoodie.
+    const GIRL = {
+        profile: [[0.178, 0.0], [0.186, 0.05], [0.166, 0.13], [0.136, 0.21], [0.13, 0.25], [0.145, 0.31], [0.157, 0.37], [0.152, 0.44], [0.122, 0.5], [0.078, 0.555], [0.0, 0.575]],
+        sx: 1.14, sz: 0.9,
+        bust: { y: 0.35, x: 0.074, depth: 0.054 },
+        // (Round shoulders where her slim arms start.)
+        shoulder: [0.176, 0.458, 0.064, 0.06]
+    };
+    const girlProfile = [new THREE.Vector2(0, 0), ...new THREE.SplineCurve(GIRL.profile.map(([r, y]) => new THREE.Vector2(r, y))).getPoints(40)];
+    // Her torso's radius at a height of the profile (0 above the neck).
+    function girlRadius(y) {
+        for (let i = 1; i < girlProfile.length; i++) {
+            const a = girlProfile[i - 1];
+            const b = girlProfile[i];
+            if (y >= a.y && y <= b.y) return b.y > a.y ? a.x + (b.x - a.x) * (y - a.y) / (b.y - a.y) : Math.max(a.x, b.x);
+        }
+        return 0;
+    }
+    // How far the bust stands out of the front at (x, y), pelvis space.
+    function bustBump(x, y) {
+        const { x: across, y: height, depth } = GIRL.bust;
+        const lobe = (d) => Math.exp(-((d / 0.054) ** 2));
+        const a = lobe(x - across);
+        const b = lobe(x + across);
+        const dy = y - height;
+        return depth * (a + b - a * b) * Math.exp(-((dy / (dy < 0 ? 0.04 : 0.075)) ** 2));
+    }
+    // The front of her body at (x, y), pelvis space.
+    function girlFront(x, y) {
+        const r = girlRadius(y - 0.02);
+        const half = r * GIRL.sx;
+        if (Math.abs(x) >= half) return 0;
+        return r * GIRL.sz * Math.sqrt(1 - (x / half) ** 2) + bustBump(x, y);
+    }
+    // Her profile turned between two heights, in pelvis space, the bust
+    // pushed out of its front; `out` above her (the prints).
+    function girlLathe(from, to, out, segments, phiStart, phiLength) {
+        const points = girlProfile.filter((p) => p.y >= from && p.y <= to).map((p) => new THREE.Vector2(p.x * out, p.y));
+        const geometry = new THREE.LatheGeometry(points, segments, phiStart, phiLength);
+        geometry.applyMatrix4(new THREE.Matrix4().makeScale(GIRL.sx, 1, GIRL.sz).setPosition(0, 0.02, 0));
+        const position = geometry.attributes.position;
+        for (let i = 0; i < position.count; i++) {
+            const x = position.getX(i);
+            const z = position.getZ(i);
+            if (z <= 0) continue;
+            const k = Math.min(1, Math.max(0, (z / Math.hypot(x, z) - 0.2) / 0.55));
+            position.setZ(i, z + bustBump(x, position.getY(i)) * k * k * (3 - 2 * k) * out);
+        }
+        geometry.computeVertexNormals();
+        // All the way round: the seam's two edges get one normal.
+        if (phiLength >= Math.PI * 2 - 1e-6) {
+            const normal = geometry.attributes.normal;
+            const rows = points.length;
+            for (let j = 0; j < rows; j++) {
+                const b = segments * rows + j;
+                const x = normal.getX(j) + normal.getX(b);
+                const y = normal.getY(j) + normal.getY(b);
+                const z = normal.getZ(j) + normal.getZ(b);
+                const length = Math.hypot(x, y, z) || 1;
+                normal.setXYZ(j, x / length, y / length, z / length);
+                normal.setXYZ(b, x / length, y / length, z / length);
+            }
+        }
+        return geometry;
+    }
+    function buildGirlTorso() {
+        const group = new THREE.Group();
+        const parts = new Parts();
+        const none = new THREE.Matrix4();
+        // Round hips and seat.
+        parts.add(pants, sphere, transform(0, 0.03, -0.012, 0.226, 0.164, 0.2));
+        // (The seam at the back.)
+        const torso = girlLathe(0, 1, 1, 48, Math.PI, Math.PI * 2);
+        parts.add(jersey, torso, none);
+        const [shoulderX, shoulderY, round, roundY] = GIRL.shoulder;
+        for (const side of [-1, 1]) parts.add(jersey, sphere, transform(side * shoulderX, shoulderY, 0, round, roundY, roundY));
+        // The back's print (a creation, or the number and the name).
+        const back = new THREE.LatheGeometry(girlProfile.filter((p) => p.y >= 0.17 && p.y <= 0.46).map((p) => new THREE.Vector2(p.x * 1.012, p.y)), 12, Math.PI - 0.95, 1.9);
+        parts.add(jerseyPrint, back, transform(0, 0.02, 0, GIRL.sx, 1, GIRL.sz));
+        const hood = new THREE.SphereGeometry(1, 14, 10, 0, Math.PI * 2, 0, Math.PI * 0.55);
+        parts.add(jersey, hood, HOOD_TRANSFORM());
+        parts.add(jerseyDark, new THREE.TorusGeometry(0.13, 0.035, 6, 16), transform(0, 0.575, -0.02, 1.0, 1, 0.88, Math.PI / 2 - 0.25));
+        parts.add(jerseyDark, new THREE.CylinderGeometry(0.185, 0.18, 0.07, 32), transform(0, 0.045, 0, GIRL.sx + 0.01, 1, GIRL.sz + 0.02));
+        parts.add(jerseyDark, box, transform(0, 0.17, girlFront(0, 0.17) + 0.013, 0.22, 0.12, 0.03, 0.12));
+        parts.add(pants, tube, transform(0, 0.575, 0.01, 0.055, 0.1, 0.055));
+        parts.build(group);
+        for (const geometry of [torso, back, hood]) geometry.dispose();
+        pelvis.add(group);
+        return group;
+    }
+    const bodies = { boy: buildTorso(BODY_SHAPES.boy), girl: buildGirlTorso() };
     bodies.girl.visible = false;
+
+    // Her hair lies outside her hood, shoulders and back: a point (pelvis
+    // space) moved out of them by `margin`.
+    const HOOD_MATRIX = HOOD_TRANSFORM().clone();
+    const HOOD_INVERSE = HOOD_MATRIX.clone().invert();
+    const keepOutPoint = new THREE.Vector3();
+    function girlKeepOut(p, margin) {
+        const [shoulderX, shoulderY, round] = GIRL.shoulder;
+        for (let pass = 0; pass < 2; pass++) {
+            const q = keepOutPoint.copy(p).applyMatrix4(HOOD_INVERSE);
+            const need = 1 + margin / 0.1;
+            const length = q.length();
+            if (length < need) p.copy(q.multiplyScalar(need / Math.max(length, 1e-4)).applyMatrix4(HOOD_MATRIX));
+            for (const side of [-1, 1]) {
+                const d = keepOutPoint.set(p.x - side * shoulderX, p.y - shoulderY, p.z);
+                const reach = round + margin;
+                if (d.length() < reach) p.set(side * shoulderX, shoulderY, 0).addScaledVector(d.normalize(), reach);
+            }
+            const r = girlRadius(p.y - 0.02);
+            if (r > 0) {
+                const ex = r * GIRL.sx + margin;
+                const ez = r * GIRL.sz + margin + (p.z > 0 ? bustBump(p.x, p.y) : 0);
+                const k = (p.x / ex) ** 2 + (p.z / ez) ** 2;
+                if (k < 1) {
+                    const s = 1 / Math.sqrt(Math.max(k, 1e-4));
+                    p.x *= s;
+                    p.z *= s;
+                }
+            }
+        }
+        return p;
+    }
+
+    // Hair: the roots go with the head, further down it goes with the body
+    // (two bones, every vertex weighted between them), so the locks rest on
+    // her hood and shoulders whatever the head does. Laid out as she sits,
+    // her head (0.94 of his) upright on her shoulders.
+    const HAIR_REST = new THREE.Matrix4().compose(new THREE.Vector3(0, 0.74, 0.03), new THREE.Quaternion(), new THREE.Vector3(0.94, 0.94, 0.94));
+    const HAIR_REST_INVERSE = HAIR_REST.clone().invert();
+    const hairPoint = new THREE.Vector3();
+    function hairSkin(parent) {
+        const headBone = new THREE.Bone();
+        parent.add(headBone);
+        const bodyBone = new THREE.Bone();
+        pelvis.add(bodyBone);
+        const skeleton = new THREE.Skeleton([headBone, bodyBone], [new THREE.Matrix4(), HAIR_REST.clone()]);
+        const byMaterial = new Map();
+        return {
+            // How much of a lock follows the body, a share `u` of the way down.
+            along(u) {
+                const k = Math.min(1, Math.max(0, (u - 0.1) / 0.32));
+                return k * k * (3 - 2 * k);
+            },
+            // A point of the head's space, moved out of her body.
+            lay(point, margin) {
+                hairPoint.copy(point).applyMatrix4(HAIR_REST);
+                girlKeepOut(hairPoint, margin);
+                return point.copy(hairPoint.applyMatrix4(HAIR_REST_INVERSE));
+            },
+            // geometry in the head's space (kept); weight: a number, or one per vertex.
+            add(material, geometry, weight) {
+                const count = geometry.attributes.position.count;
+                const indices = new Uint16Array(count * 4);
+                const weights = new Float32Array(count * 4);
+                for (let i = 0; i < count; i++) {
+                    const w = typeof weight === 'function' ? weight(i) : weight;
+                    indices[i * 4 + 1] = 1;
+                    weights[i * 4] = 1 - w;
+                    weights[i * 4 + 1] = w;
+                }
+                geometry.setAttribute('skinIndex', new THREE.Uint16BufferAttribute(indices, 4));
+                geometry.setAttribute('skinWeight', new THREE.Float32BufferAttribute(weights, 4));
+                if (!byMaterial.has(material)) byMaterial.set(material, []);
+                byMaterial.get(material).push(geometry);
+            },
+            build() {
+                byMaterial.forEach((list, material) => {
+                    const mesh = new THREE.SkinnedMesh(mergeGeometries(list, false), material);
+                    list.forEach((geometry) => geometry.dispose());
+                    mesh.bind(skeleton, new THREE.Matrix4());
+                    mesh.castShadow = true;
+                    mesh.frustumCulled = false;
+                    parent.add(mesh);
+                });
+                byMaterial.clear();
+            }
+        };
+    }
 
     const head = new THREE.Group();
     head.position.set(0, 0.74, 0.03);
@@ -528,6 +698,43 @@ export function createRider({ scene }) {
     }
     const arms = [-1, 1].map(() => createLimb(0.34, 0.34, 0.07, jersey, jersey));
     const legs = [-1, 1].map(() => createLimb(0.44, 0.46, 0.088, pants, pants));
+    // Her arms and legs have a shape of their own (fuller thighs, a calf,
+    // slim knees, ankles and wrists, slender arms), swapped in with her body.
+    // radii: [share of the way from the joint it starts at, radius].
+    function limbGeometry(length, radii) {
+        const at = (t) => {
+            for (let i = 1; i < radii.length; i++) {
+                const [t0, r0] = radii[i - 1];
+                const [t1, r1] = radii[i];
+                if (t <= t1) return r0 + (r1 - r0) * (0.5 - 0.5 * Math.cos(Math.PI * (t - t0) / (t1 - t0)));
+            }
+            return radii[radii.length - 1][1];
+        };
+        const half = length / 2;
+        const start = radii[0][1];
+        const end = radii[radii.length - 1][1];
+        const points = [];
+        for (let i = 0; i <= 4; i++) {
+            const a = -Math.PI / 2 + (i / 4) * (Math.PI / 2);
+            points.push(new THREE.Vector2(Math.max(0, start * Math.cos(a)), -half + start + start * Math.sin(a)));
+        }
+        const y0 = -half + start;
+        const y1 = half - end;
+        for (let i = 1; i < 16; i++) points.push(new THREE.Vector2(at(i / 16), y0 + (y1 - y0) * (i / 16)));
+        for (let i = 0; i <= 4; i++) {
+            const a = (i / 4) * (Math.PI / 2);
+            points.push(new THREE.Vector2(Math.max(0, end * Math.cos(a)), y1 + end * Math.sin(a)));
+        }
+        return new THREE.LatheGeometry(points, 12);
+    }
+    const GIRL_LIMBS = {
+        arm: [limbGeometry(0.34, [[0, 0.06], [0.45, 0.053], [1, 0.045]]), limbGeometry(0.34, [[0, 0.045], [0.3, 0.049], [1, 0.033]])],
+        leg: [limbGeometry(0.44, [[0, 0.107], [0.3, 0.1], [0.72, 0.074], [1, 0.057]]), limbGeometry(0.46, [[0, 0.055], [0.3, 0.068], [0.66, 0.049], [1, 0.035]])]
+    };
+    for (const limb of [...arms, ...legs]) {
+        limb.upper.userData.own = limb.upper.geometry;
+        limb.lower.userData.own = limb.lower.geometry;
+    }
     // Gloves wrapped round the grips: palm, fingers, thumb and the cuff.
     const hands = [-1, 1].map((side) => {
         const hand = new THREE.Group();
@@ -1524,7 +1731,13 @@ export function createRider({ scene }) {
         // (The girl's a little higher: above the bust.)
         const chests = {
             boy: chestOf([[0.18, 0.24], [0.188, 0.38], [0.178, 0.46]], 1.22, 0.9),
-            girl: chestOf([[0.161, 0.385], [0.156, 0.44], [0.138, 0.485]], 1.14, 0.92)
+            girl: (() => {
+                const mesh = new THREE.Mesh(girlLathe(0.37, 0.48, 1.014, 12, -0.56, 1.12), frontMaterial);
+                mesh.visible = false;
+                mesh.renderOrder = 2;
+                pelvis.add(mesh);
+                return mesh;
+            })()
         };
         const chest = chests.boy;
         return {
@@ -1597,9 +1810,9 @@ export function createRider({ scene }) {
         const gold = beads[0];
         const hair = new THREE.Group();
         hair.visible = false;
-        const parts = new Parts();
-        // (transform() hands back one shared matrix: the tubes get their own.)
-        const none = new THREE.Matrix4();
+        // Roots with the head, the rest with her body: on her hood and her
+        // shoulders, never through them.
+        const skin = hairSkin(hair);
         const cuff = new THREE.CylinderGeometry(1, 1, 1, 10);
         let n = 0;
         const twistFrom = (angle, rootY, rootR, length, spread) => {
@@ -1613,16 +1826,17 @@ export function createRider({ scene }) {
                 root.clone().addScaledVector(out, spread).add(new THREE.Vector3(sway * 1.5, -length * 0.5, 0)),
                 root.clone().addScaledVector(out, spread * 0.85).add(new THREE.Vector3(sway * 2, -length, 0))
             ];
-            const curve = new THREE.CatmullRomCurve3(points);
-            const tube = new THREE.TubeGeometry(curve, 14, 0.0155, 6, false);
-            parts.add(strand, tube, none);
-            tube.dispose();
-            const end = points[3];
+            const laid = new THREE.CatmullRomCurve3(points).getPoints(14).map((point, i) => (i === 0 ? point : skin.lay(point, 0.024)));
+            const curve = new THREE.CatmullRomCurve3(laid);
+            const tube = new THREE.TubeGeometry(curve, 16, 0.0155, 6, false);
+            // (7 vertices round each of the 17 rings.)
+            skin.add(strand, tube, (i) => skin.along(Math.floor(i / 7) / 16));
+            const end = curve.getPoint(1);
             // A bead at most ends, now and then a gold cuff halfway down.
-            if (n % 4 !== 3) parts.add(beads[n % beads.length], sphere, transform(end.x, end.y - 0.012, end.z, 0.02, 0.022, 0.02));
+            if (n % 4 !== 3) skin.add(beads[n % beads.length], sphere.clone().applyMatrix4(transform(end.x, end.y - 0.012, end.z, 0.02, 0.022, 0.02)), 1);
             if (n % 5 === 1) {
                 const mid = curve.getPoint(0.55);
-                parts.add(gold, cuff, transform(mid.x, mid.y, mid.z, 0.019, 0.026, 0.019));
+                skin.add(gold, cuff.clone().applyMatrix4(transform(mid.x, mid.y, mid.z, 0.019, 0.026, 0.019)), skin.along(0.55));
             }
             n++;
         };
@@ -1639,7 +1853,7 @@ export function createRider({ scene }) {
         // By the temples, shorter.
         for (const angle of [48, 312]) twistFrom(angle, 0.05, 0.172, 0.16, 0.025);
         cuff.dispose();
-        parts.build(hair);
+        skin.build();
         return hair;
     }
 
@@ -1672,7 +1886,7 @@ export function createRider({ scene }) {
         ];
         const hair = new THREE.Group();
         hair.visible = false;
-        const parts = new Parts();
+        const skin = hairSkin(hair);
         const puffs = [];
         // Rings of curls round the head (angle 0: the face), leaving the face free.
         const ring = (y, radius, size, from, to, count) => {
@@ -1681,8 +1895,11 @@ export function createRider({ scene }) {
                 const s = size * (0.85 + Math.random() * 0.3);
                 const r = radius + (Math.random() - 0.5) * 0.024;
                 const p = new THREE.Vector3(Math.sin(a) * r * 1.02, y + (Math.random() - 0.5) * 0.024, Math.cos(a) * r + 0.005);
-                parts.add(hairMaterial, sphere, transform(p.x, p.y, p.z, s, s * 0.95, s));
-                puffs.push({ p, s, a });
+                // The lowest curls rest on her hood and back.
+                const w = Math.min(1, Math.max(0, (-0.05 - p.y) / 0.09));
+                if (w > 0) skin.lay(p, s * 0.85);
+                skin.add(hairMaterial, sphere.clone().applyMatrix4(transform(p.x, p.y, p.z, s, s * 0.95, s)), w);
+                puffs.push({ p, s, a, w });
             }
         };
         ring(0.075, 0.18, 0.048, 62, 298, 13);
@@ -1695,16 +1912,16 @@ export function createRider({ scene }) {
             const puff = puffs[Math.floor(Math.random() * puffs.length)];
             const out = new THREE.Vector3(Math.sin(puff.a), (Math.random() - 0.4) * 0.6, Math.cos(puff.a)).normalize();
             const at = puff.p.clone().addScaledVector(out, puff.s * 0.97);
-            parts.add(beads[i % beads.length], sphere, transform(at.x, at.y, at.z, 0.014, 0.014, 0.014));
+            skin.add(beads[i % beads.length], sphere.clone().applyMatrix4(transform(at.x, at.y, at.z, 0.014, 0.014, 0.014)), puff.w);
         }
         // Two beaded locks by the temples.
         for (const side of [-1, 1]) {
-            parts.add(hairMaterial, tube, transform(side * 0.165, -0.04, 0.095, 0.014, 0.13, 0.014));
+            skin.add(hairMaterial, tube.clone().applyMatrix4(transform(side * 0.165, -0.04, 0.095, 0.014, 0.13, 0.014)), 0);
             for (let i = 0; i < 4; i++) {
-                parts.add(beads[(i + (side > 0 ? 1 : 0)) % beads.length], sphere, transform(side * 0.165, -0.0 - i * 0.032, 0.095, 0.017, 0.015, 0.017));
+                skin.add(beads[(i + (side > 0 ? 1 : 0)) % beads.length], sphere.clone().applyMatrix4(transform(side * 0.165, -0.0 - i * 0.032, 0.095, 0.017, 0.015, 0.017)), 0);
             }
         }
-        parts.build(hair);
+        skin.build();
         return hair;
     }
 
@@ -1822,17 +2039,29 @@ export function createRider({ scene }) {
 
     function dressOutfit() {
         const look = outfit.look;
-        classicHead.visible = false;
-        araiHead.visible = false;
-        jersey.color.set('#f1f0ec');
-        jerseyAccent.set('#f1f0ec');
-        jerseyDark.color.set('#dcdad5');
-        sneaker.color.set('#f4f4f2');
-        glove.color.set(0x7a4524);
-        const girl = look.gender === 'girl';
+        // The whole outfit (the event, a Love&Faith rider), or a few pieces
+        // from the shop over the rider's own livery ({ parts: { print, head } }).
+        const pieces = look.parts || null;
+        const headOn = !pieces || !!pieces.head;
+        const wanted = pieces ? pieces.print || null : look.print;
+        outfit.group.visible = headOn;
+        if (headOn) {
+            classicHead.visible = false;
+            araiHead.visible = false;
+        }
+        if (wanted) {
+            jersey.color.set('#f1f0ec');
+            jerseyAccent.set('#f1f0ec');
+            jerseyDark.color.set('#dcdad5');
+        }
+        if (!pieces) {
+            sneaker.color.set('#f4f4f2');
+            glove.color.set(0x7a4524);
+        }
+        const girl = !pieces && look.gender === 'girl';
         shapeFor(girl);
-        outfit.chests.boy.visible = !girl;
-        outfit.chests.girl.visible = girl;
+        outfit.chests.boy.visible = !!wanted && !girl;
+        outfit.chests.girl.visible = !!wanted && girl;
         const style = look.hair === 'afro' ? 'afro' : 'vanilles';
         outfit.hairs.vanilles.visible = girl && style === 'vanilles';
         outfit.hairs.afro.visible = girl && style === 'afro';
@@ -1855,12 +2084,16 @@ export function createRider({ scene }) {
             setTimeout(again, 1500);
             setTimeout(again, 4000);
         }
-        if (outfit.print === look.print) return;
-        outfit.print = look.print;
+        if (!wanted) {
+            // The livery's own number and name stay on the back.
+            outfit.print = null;
+            return;
+        }
+        if (outfit.print === wanted) return;
+        outfit.print = wanted;
         jerseyPrint.map.dispose();
         jerseyPrint.map = printTexture(null, true);
         jerseyPrint.needsUpdate = true;
-        const wanted = look.print;
         Promise.all([loadPicture(`print-${wanted}-back.webp`), loadPicture(`print-${wanted}-front.webp`)]).then(([back, front]) => {
             if (!outfit.look || outfit.print !== wanted) return;
             jerseyPrint.map.dispose();
@@ -1877,9 +2110,16 @@ export function createRider({ scene }) {
     function shapeFor(girl) {
         bodies.boy.visible = !girl;
         bodies.girl.visible = girl;
-        shoulders.forEach((target, i) => { target.position.x = (i === 0 ? -1 : 1) * (girl ? 0.19 : 0.215); });
-        for (const limb of arms) limb.upper.userData.thick = limb.lower.userData.thick = girl ? 0.8 : 1;
-        for (const limb of legs) limb.upper.userData.thick = limb.lower.userData.thick = girl ? 0.84 : 1;
+        shoulders.forEach((target, i) => target.position.set((i === 0 ? -1 : 1) * (girl ? 0.182 : 0.215), girl ? 0.47 : 0.49, 0));
+        hips.forEach((target, i) => target.position.set((i === 0 ? -1 : 1) * (girl ? 0.13 : 0.12), 0, 0.02));
+        const shape = (limb, own) => {
+            limb.upper.geometry = girl ? own[0] : limb.upper.userData.own;
+            limb.lower.geometry = girl ? own[1] : limb.lower.userData.own;
+        };
+        arms.forEach((limb) => shape(limb, GIRL_LIMBS.arm));
+        legs.forEach((limb) => shape(limb, GIRL_LIMBS.leg));
+        hands.forEach((hand) => hand.scale.setScalar(girl ? 0.86 : 1));
+        shoes.forEach((shoe) => shoe.scale.setScalar(girl ? 0.9 : 1));
         head.scale.setScalar(girl ? 0.94 : 1);
     }
 
@@ -1888,9 +2128,9 @@ export function createRider({ scene }) {
         if (look && !outfit) outfit = buildOutfit();
         if (!outfit) return;
         outfit.look = look || null;
-        outfit.group.visible = !!look;
         if (look) dressOutfit();
         else {
+            outfit.group.visible = false;
             outfit.print = null;
             glove.color.set(0x0e0e10);
             outfit.chests.boy.visible = outfit.chests.girl.visible = false;

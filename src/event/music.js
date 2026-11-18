@@ -33,6 +33,12 @@ function loadApi() {
 }
 
 export const MUSIC_MODES = [['music', 'Musique (MWL)'], ['anasheed', 'Anasheed'], ['both', 'Les deux']];
+// The track played first when the event comes back after a while (the end
+// of its address on SoundCloud).
+export const FIRST_TRACK = 'ne-mabandonne-pas';
+// "Ne m’abandonne pas" → "nemabandonnepas", as its address without dashes.
+const plain = (text) => String(text || '').normalize('NFD').replace(/[\u0300-\u036f]/g, '').toLowerCase().replace(/[^a-z0-9]/g, '');
+const isTrack = (sound, slug) => !!sound && (String(sound.permalink_url || '').split('?')[0].endsWith(`/${slug}`) || plain(sound.title) === plain(slug));
 
 export function createMusic({ onTrack = () => {}, mode: firstMode = 'music' } = {}) {
     let mode = firstMode;
@@ -44,10 +50,13 @@ export function createMusic({ onTrack = () => {}, mode: firstMode = 'music' } = 
     let ready = false;
     let sounds = [];
     let wanted = false;
-    let volume = 0.7;
+    // (The effects are 30 % lower in the event, the music on top.)
+    let volume = 0.85;
     let playing = null;
     let lastFile = -1;
     let lastSound = -1;
+    // A track asked for first (start({ first })), else at random.
+    let firstWanted = null;
     // The anasheed: one player, kept for every one of them (a phone lets it
     // play again once a tap has started it).
     const audio = new Audio();
@@ -125,8 +134,12 @@ export function createMusic({ onTrack = () => {}, mode: firstMode = 'music' } = 
             widget.play();
             return;
         }
-        let index = Math.floor(Math.random() * count);
-        if (count > 1 && index === lastSound) index = (index + 1) % count;
+        let index = firstWanted ? sounds.findIndex((sound) => isTrack(sound, firstWanted)) : -1;
+        firstWanted = null;
+        if (index < 0) {
+            index = Math.floor(Math.random() * count);
+            if (count > 1 && index === lastSound) index = (index + 1) % count;
+        }
         lastSound = index;
         widget.skip(index);
         widget.play();
@@ -134,8 +147,11 @@ export function createMusic({ onTrack = () => {}, mode: firstMode = 'music' } = 
 
     // The next one, as the setting says (both: one chance in two).
     function next() {
-        const music = mode === 'music' || (mode === 'both' && Math.random() < 0.5);
+        // (The track asked for first: the artist's, unless only anasheed.)
+        const asked = !!firstWanted && mode !== 'anasheed';
+        const music = asked || mode === 'music' || (mode === 'both' && Math.random() < 0.5);
         if (!music || unavailable) {
+            firstWanted = null;
             playFile();
         } else if (ready && widget) {
             playSoundCloud();
@@ -152,10 +168,11 @@ export function createMusic({ onTrack = () => {}, mode: firstMode = 'music' } = 
         if (wanted) next();
     }
 
-    // A tap just happened: start (at random) or go on.
-    function start() {
+    // A tap just happened: start (at random, or `first`) or go on.
+    function start({ first = null } = {}) {
         if (wanted && playing) return;
         wanted = true;
+        firstWanted = first;
         next();
     }
 
@@ -173,5 +190,11 @@ export function createMusic({ onTrack = () => {}, mode: firstMode = 'music' } = 
         if (ready && widget) widget.setVolume(Math.round(volume * 100));
     }
 
-    return { mount, start, stop, setVolume, setMode, next, get ready() { return ready; }, get playing() { return playing; }, get mode() { return mode; } };
+    return {
+        mount, start, stop, setVolume, setMode, next,
+        get ready() { return ready; }, get playing() { return playing; }, get mode() { return mode; },
+        // Tests: what SoundCloud's player has, what plays.
+        get sounds() { return sounds.map((sound) => ({ title: sound.title, url: sound.permalink_url })); },
+        get current() { return lastSound >= 0 ? sounds[lastSound]?.permalink_url || null : null; }
+    };
 }

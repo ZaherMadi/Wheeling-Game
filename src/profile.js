@@ -19,6 +19,11 @@ const FREE_TRICKS_KEY = 'wheelie_free_tricks';
 const LIVE_KEY = 'wheelie_live_unlocked';
 const LOVE_WON_KEY = 'wheelie_love_won';
 const LOVE_OWNED_KEY = 'wheelie_love_owned';
+const LOVE_SHOP_KEY = 'wheelie_love_shop';
+const isGender = (value) => value === 'boy' || value === 'girl';
+const isShopItem = (value) => /^[a-z][a-z0-9-]{0,30}$/.test(value);
+// The Love&Faith riders won and bought, the shop's pieces bought.
+const LOVE_LISTS = [[LOVE_WON_KEY, 'loveWon', isGender], [LOVE_OWNED_KEY, 'love', isGender], [LOVE_SHOP_KEY, 'loveShop', isShopItem]];
 const POSES_KEY = 'wheelie_podium_poses';
 const JET_CODE_KEY = 'wheelie_jetpack_code';
 const BESTS = ['bestScore', 'topKmh'];
@@ -157,10 +162,9 @@ function ownedHere() {
     }
     const poses = readJson(POSES_KEY, []);
     if (Array.isArray(poses)) poses.forEach((id) => typeof id === 'string' && owned.push(`pose:${id}`));
-    // The Love&Faith riders: won, bought.
-    for (const [key, prefix] of [[LOVE_WON_KEY, 'loveWon'], [LOVE_OWNED_KEY, 'love']]) {
+    for (const [key, prefix, valid] of LOVE_LISTS) {
         const list = readJson(key, []);
-        if (Array.isArray(list)) list.forEach((g) => (g === 'boy' || g === 'girl') && owned.push(`${prefix}:${g}`));
+        if (Array.isArray(list)) list.forEach((item) => typeof item === 'string' && valid(item) && owned.push(`${prefix}:${item}`));
     }
     return owned;
 }
@@ -203,12 +207,14 @@ function applyOwned(owned) {
         }
     }
     if (changed) writeJson(POSES_KEY, [...poses]);
-    for (const [key, prefix] of [[LOVE_WON_KEY, 'loveWon'], [LOVE_OWNED_KEY, 'love']]) {
-        const list = new Set(readJson(key, []));
+    for (const [key, prefix, valid] of LOVE_LISTS) {
+        const saved = readJson(key, []);
+        const list = new Set(Array.isArray(saved) ? saved : []);
         const before = list.size;
         for (const item of owned) {
-            const [name, gender] = item.split(':');
-            if (name === prefix && (gender === 'boy' || gender === 'girl')) list.add(gender);
+            const at = item.indexOf(':');
+            const name = item.slice(at + 1);
+            if (at > 0 && item.slice(0, at) === prefix && valid(name)) list.add(name);
         }
         if (list.size !== before) {
             writeJson(key, [...list]);

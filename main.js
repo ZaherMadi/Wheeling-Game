@@ -1617,6 +1617,8 @@ function showFreeTricksOffer() {
 // (after a run's points, free roam tricks, or any change of the points).
 function maybeOfferFreeTricks() {
     if (!IS_V2 || freeTricksUnlocked() || readSetting(FREE_TRICKS.shownKey) === '1') return;
+    // Not over the Love&Faith event's ending: at the next points, after it.
+    if (state.loveEvent) return;
     if (totalPoints() >= FREE_TRICKS.need) setTimeout(showFreeTricksOffer, 1200);
 }
 document.addEventListener('wheelie:points', maybeOfferFreeTricks);
@@ -2021,6 +2023,8 @@ function resetGame() {
     state.police = { phase: 'idle', lastSeen: -1e9, gaveUp: false };
     state.tricksOnly = false;
     state.loveEvent = false;
+    // The usual mix (the event sets its own as it begins).
+    audio.setMix(null);
     state.edge = { frames: 0, pending: null };
     state.turns = 0;
     state.obstacleRamp = null;
@@ -2245,7 +2249,7 @@ async function startGame() {
 
         setupMobileControls();
         // "C'est parti, <pseudo> !" at the first run once the voice exists, then now and then.
-        const namedStart = IS_V2 && GAME_SETTINGS.voiceEnabled ? playerVoice.startLine(riderVoiceKey()) : null;
+        const namedStart = IS_V2 && GAME_SETTINGS.voiceEnabled && eventVoices() ? playerVoice.startLine(riderVoiceKey()) : null;
         resetIdleVoice();
         if (namedStart) {
             lastVoiceAt = performance.now();
@@ -3773,7 +3777,7 @@ function loveCrash(reason) {
     const sequence = ++crashSequence;
     if (v2) playCrashSequence(crashKind, crashSpeed, sequence, crashInfo);
     hideRunControls();
-    loveEvent?.finish('fall', { seconds: state.gameTime });
+    loveEvent?.finish('fall', { seconds: state.gameTime, points: bankLovePoints() });
 }
 
 // Mended (into the cloud, on at a cruise) or broken (rolling to a stop):
@@ -3805,7 +3809,19 @@ function loveFinish(kind) {
         if (now - start < 60000) requestAnimationFrame(tick);
     };
     requestAnimationFrame(tick);
-    loveEvent?.finish(kind, { seconds: state.gameTime });
+    loveEvent?.finish(kind, { seconds: state.gameTime, points: bankLovePoints() });
+}
+
+// What the race earned (the wheeling's points): added to the cumulative
+// points, as a race of the competitive mode.
+function bankLovePoints() {
+    const points = Math.max(0, Math.floor(state.score));
+    if (points > 0) {
+        addPoints(points);
+        bumpStat('lovePoints', points);
+        document.dispatchEvent(new CustomEvent('wheelie:points'));
+    }
+    return points;
 }
 
 // V2 only: keep rendering after the run ends so the fall plays out.
@@ -5368,8 +5384,11 @@ function updateRiderVoiceButtons() {
 // Free roam has its own lines: no race commentary there.
 const FREE_ROAM_EVENTS = new Set(['start', 'idle', 'wheelie', 'speed']);
 
+// The AI voices: off in the Love&Faith event unless asked for there.
+const eventVoices = () => !state.loveEvent || !!loveEvent?.voices();
 function speak(eventName, { force = false, allowWhenStopped = false } = {}) {
     if (GAME_SETTINGS.gameMode === 'free' && !FREE_ROAM_EVENTS.has(eventName)) return;
+    if (!eventVoices()) return;
     const group = voiceLineGroups[voiceGroup()];
     // Events newer than a group (the classic voice) fall back to the closest one.
     const lines = group?.[eventName] || (eventName === 'earlyCrash' ? group?.crash : null);
@@ -7451,6 +7470,11 @@ loveEvent = createLoveEvent({
     stat: (name, n = 1) => bumpStat(name, n),
     points: () => totalPoints(),
     spend: (n) => spendPoints(n),
+    // The race's points so far (the wheeling's).
+    score: () => Math.max(0, Math.floor(state.score)),
+    // The event's mix: the effects 30 % lower, softened under the music,
+    // the AI voices off unless asked for.
+    mix: (on) => audio.setMix(on ? { level: 0.7, tone: 5200, engine: 0.8, voice: loveEvent?.voices() ? 1 : 0 } : null),
     // The event's studio: the rider shown turning above its panel.
     showroom: (on) => {
         if (!v2) return;

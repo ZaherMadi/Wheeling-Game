@@ -68,8 +68,13 @@ export function createRealisticVersion({ scene, renderer, camera, mobile, audio,
     let eventOutfit = null;
     let baseOutfit = null;
     function dressRider() {
-        rider.setEventLook(wornLook ? null : eventOutfit || baseOutfit);
-        if (wornLook || !(eventOutfit || baseOutfit)) wearOwn();
+        const look = wornLook ? null : eventOutfit || baseOutfit;
+        // The shop's pieces go over the rider's own livery.
+        if (!look || look.parts) {
+            rider.setEventLook(null);
+            wearOwn();
+        }
+        if (look) rider.setEventLook(look);
     }
     // The event's sky ({ ambience, dusk }, or null: the day cycle).
     let skyOverride = null;

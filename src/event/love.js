@@ -12,7 +12,7 @@ import './love.css';
 import { createInk } from './ink.js';
 import { createRain } from './rain.js';
 import { createItemFactory, ITEM_KINDS } from './items.js';
-import { createMusic, MUSIC_CREDIT, MUSIC_MODES } from './music.js';
+import { createMusic, FIRST_TRACK, MUSIC_CREDIT, MUSIC_MODES } from './music.js';
 import { createCloudSea } from './clouds.js';
 import { createPuddles } from './puddles.js';
 
@@ -48,6 +48,21 @@ const OWNED_KEY = 'wheelie_love_owned';
 const WEAR_KEY = 'wheelie_love_wear';
 export const CHARACTER_PRICE = 600000;
 const CHARACTER_CODES = { LOVE51: 'boy', FAITH51: 'girl' };
+// The shop (open once a heart has been mended): the event's pieces for the
+// rider's own look, in the whole game.
+const SHOP_KEY = 'wheelie_love_shop';
+const SHOP_WEAR_KEY = 'wheelie_love_shop_wear';
+const SWEATS = { lva: 'Sweat LVA', plva: 'Sweat PLVA', 'world-love': 'Sweat World Love', 'fabulous-love-and-faith': 'Sweat Fabulous' };
+export const SHOP_ITEMS = [
+    ...Object.entries(SWEATS).map(([print, name]) => ({ id: `sweat-${print}`, print, name, price: 150000, icon: `icon-${print}.webp` })),
+    { id: 'bonnet', head: true, name: 'Bonnet & bandeau', price: 120000, icon: 'beanie.jpg' }
+];
+// The AI rider's lines in the race: off unless asked for.
+const VOICE_KEY = 'wheelie_love_voices';
+// The last race started: back after half an hour or more (or the very first
+// time), the first track is "Ne m’abandonne pas".
+const LAST_KEY = 'wheelie_love_last';
+const FRESH_MS = 30 * 60 * 1000;
 const readList = (key) => {
     try {
         const list = JSON.parse(readLocal(key) || '[]');
@@ -120,11 +135,35 @@ function addFonts() {
 // heartbeat for a broken heart, a drop for a tear.
 function createChimes() {
     let context = null;
+    let bus = null;
+    // 30 % lower, the highs softened and a little room round them: they
+    // melt into the music instead of sitting on top of it.
     const ctx = () => {
         if (!context) {
             const Context = window.AudioContext || window.webkitAudioContext;
             if (!Context) return null;
             context = new Context();
+            bus = context.createGain();
+            bus.gain.value = 0.7;
+            const soft = context.createBiquadFilter();
+            soft.type = 'lowpass';
+            soft.frequency.value = 4800;
+            soft.Q.value = 0.5;
+            bus.connect(soft);
+            soft.connect(context.destination);
+            const room = context.createConvolver();
+            const length = Math.floor(context.sampleRate * 1.3);
+            const impulse = context.createBuffer(2, length, context.sampleRate);
+            for (let channel = 0; channel < 2; channel++) {
+                const data = impulse.getChannelData(channel);
+                for (let i = 0; i < length; i++) data[i] = (Math.random() * 2 - 1) * Math.pow(1 - i / length, 3);
+            }
+            room.buffer = impulse;
+            const wet = context.createGain();
+            wet.gain.value = 0.22;
+            soft.connect(room);
+            room.connect(wet);
+            wet.connect(context.destination);
         }
         if (context.state === 'suspended') context.resume().catch(() => {});
         return context;
@@ -141,7 +180,7 @@ function createChimes() {
         gain.gain.setValueAtTime(0.0001, t);
         gain.gain.exponentialRampToValueAtTime(volume, t + 0.015);
         gain.gain.exponentialRampToValueAtTime(0.0001, t + length);
-        osc.connect(gain).connect(c.destination);
+        osc.connect(gain).connect(bus);
         osc.start(t);
         osc.stop(t + length + 0.02);
     };
@@ -181,7 +220,7 @@ function createChimes() {
             filter.Q.value = 0.7;
             const gain = c.createGain();
             gain.gain.value = 0.55 * Math.min(1.2, strength);
-            source.connect(filter).connect(gain).connect(c.destination);
+            source.connect(filter).connect(gain).connect(bus);
             source.start();
         },
         repaired() {
@@ -209,7 +248,7 @@ function createChimes() {
             filter.frequency.value = 900;
             const gain = c.createGain();
             gain.gain.value = 0.5 * strength;
-            source.connect(filter).connect(gain).connect(c.destination);
+            source.connect(filter).connect(gain).connect(bus);
             source.start();
         }
     };
@@ -229,6 +268,7 @@ export function createLoveEvent(deps) {
                 <div class="love-bar__cells" id="love-cells"></div>
                 <b class="love-bar__count" id="love-count"></b>
             </div>
+            <b class="love-points" id="love-points">0 pts</b>
             <div class="love-now" id="love-now" hidden><span>♪</span><a target="_blank" rel="noopener" id="love-now-title"></a></div>
         </div>
         <div class="love-ink" id="love-ink" aria-live="polite"></div>
@@ -282,6 +322,7 @@ export function createLoveEvent(deps) {
     const bandChoice = () => BANDS.find(([id]) => id === readLocal(BAND_KEY)) || BANDS[0];
     const riderChoice = () => (readLocal(RIDER_KEY) === 'girl' ? 'girl' : 'boy');
     const hairChoice = () => (readLocal(HAIR_KEY) === 'afro' ? 'afro' : 'vanilles');
+    const voicesOn = () => readLocal(VOICE_KEY) === '1';
     const look = () => {
         const [, , color, ink] = bandChoice();
         return { print: outfit(), band: { color, ink }, gender: riderChoice(), hair: hairChoice() };
@@ -356,6 +397,8 @@ export function createLoveEvent(deps) {
         const mode = music.mode;
         return ['La musique', 'Elle tourne au hasard pendant la course.',
             `<div class="love-choices love-choices--three">${MUSIC_MODES.map(([m, name]) => choice('music', m, mode === m, m === 'anasheed' ? '🌙' : m === 'both' ? '🔀' : '🎵', name, MUSIC_HINTS[m])).join('')}</div>
+            <button type="button" class="love-voices ${voicesOn() ? 'is-on' : ''}" data-act="voices" aria-pressed="${voicesOn()}">
+                <span>${voicesOn() ? '🗣️ Voix IA activées' : '🔇 Voix IA coupées'}</span><small>pendant la course · toucher pour changer</small></button>
             ${mode === 'anasheed' ? '' : '<div class="love-player" id="love-player-slot"></div>'}`];
     }
 
@@ -400,6 +443,9 @@ export function createLoveEvent(deps) {
         studioOn = true;
         slideAt = 0;
         deps.v2()?.setOutfit(look());
+        // SoundCloud's player loaded now (out of sight): ready for JOUER even
+        // without a look at the music slide.
+        if (music.mode !== 'anasheed') music.mount($('love-music'));
         renderStudio();
         deps.showroom(true);
         if (readLocal(TUTO_KEY) === null) tutorial(0);
@@ -565,10 +611,14 @@ export function createLoveEvent(deps) {
         Object.assign(run, {
             on: true, love: LOVE.start, shownLove: LOVE.start, nextZ: null, time: 0, ended: false, caught: 0, hits: 0,
             thoughtAt: 6 + Math.random() * 4, tearAt: 0, slot: 0, lastZ: null, hitUntil: 0, cloud: 0, outcome: null,
-            end: 0, cityHidden: false, storm: null
+            end: 0, cityHidden: false, storm: null, shownScore: 0
         });
+        $('love-points').textContent = '0 pts';
+        // The effects lower and softer, the AI voices off (unless asked for).
+        deps.mix?.(true);
         hidePanel();
         parkPlayer();
+        writeLocal(LAST_KEY, String(Date.now()));
         $('love-hud').hidden = false;
         document.body.classList.add('love-on');
         showBar();
@@ -746,6 +796,12 @@ export function createLoveEvent(deps) {
 
     function frame(dt) {
         if (!run.on) return;
+        // The wheeling's points, added to the cumulative points at the end.
+        const score = run.ended ? run.shownScore : deps.score?.() || 0;
+        if (score !== run.shownScore) {
+            run.shownScore = score;
+            $('love-points').textContent = `${fmtPoints(score)} pts`;
+        }
         const t = performance.now() / 1000;
         const v2 = deps.v2();
         const camera = deps.camera;
@@ -973,11 +1029,14 @@ export function createLoveEvent(deps) {
     }
 
     // kind: 'repaired' | 'broken' | 'fall'.
-    function finish(kind, { seconds = run.time } = {}) {
+    function finish(kind, { seconds = run.time, points = 0 } = {}) {
         run.outcome = run.outcome || kind;
         run.ended = true;
+        run.shownScore = points;
+        $('love-points').textContent = `${fmtPoints(points)} pts`;
         const best = Number(readLocal(BEST_KEY)) || 0;
         let record = false;
+        const shopNew = kind === 'repaired' && !shopOpen();
         if (kind === 'repaired') {
             deps.stat('loveRepaired');
             markWon(riderChoice());
@@ -997,8 +1056,8 @@ export function createLoveEvent(deps) {
             const who = gender === 'girl' ? 'la fille' : 'le garçon';
             const reward = kind !== 'repaired' ? ''
                 : owned(gender) ? `<p class="love-reward">Ce perso est à toi : porte-le partout dans « Personnage ».</p>`
-                    : `<div class="love-reward"><b>Débloqué : ${who} Love&amp;Faith pour tout le jeu</b>
-                        <span>${fmtPoints(CHARACTER_PRICE)} points, ou son code (dans « Personnage »)</span>
+                    : `<div class="love-reward"><b>Débloqué : ${who} pour tout le jeu</b>
+                        <span>${fmtPoints(CHARACTER_PRICE)} points, ou son code dans « Personnage »</span>
                         <button type="button" class="love-btn love-btn--gold" data-act="buy-rider" ${deps.points() < CHARACTER_PRICE ? 'disabled' : ''}>
                             ${deps.points() < CHARACTER_PRICE ? `Il te manque ${fmtPoints(CHARACTER_PRICE - deps.points())} pts` : `ACHETER · ${fmtPoints(CHARACTER_PRICE)} PTS`}</button></div>`;
             show(`
@@ -1010,11 +1069,15 @@ export function createLoveEvent(deps) {
                     <div><dt>Attrapés</dt><dd>${run.caught}</dd></div>
                     <div><dt>Touchés</dt><dd>${run.hits}</dd></div>
                 </dl>
+                <p class="love-gain"><b>+${fmtPoints(points)}</b> points cumulés</p>
                 ${record ? '<p class="love-best is-record">Nouveau record !</p>' : ''}
                 ${reward}
+                ${shopNew ? `<p class="love-reward love-reward--shop"><b>🛍️ Boutique Love&amp;Faith ouverte</b> · sweats, bonnet et bandeau, dans « Personnage »</p>` : ''}
                 ${kind === 'broken' ? '<p class="love-text">L’amour se reconstruit : remonte la barre, évite les larmes.</p>' : ''}
-                <button type="button" class="love-btn love-btn--primary" data-act="again">❤ REJOUER</button>
-                <button type="button" class="love-btn love-btn--ghost" data-act="menu">Menu</button>`, true);
+                <div class="love-end__actions">
+                    <button type="button" class="love-btn love-btn--primary" data-act="again">❤ REJOUER</button>
+                    <button type="button" class="love-btn love-btn--ghost" data-act="menu">Menu</button>
+                </div>`, true);
             $('love-card').classList.add(`love-card--${kind}`);
             // The title written by the pen, in the card.
             const holder = $('love-end-title');
@@ -1034,6 +1097,7 @@ export function createLoveEvent(deps) {
         run.on = false;
         run.ended = true;
         clearRun();
+        deps.mix?.(false);
         rain?.hide();
         clouds?.stop();
         for (const d of debris) deps.scene.remove(d.sprite);
@@ -1097,6 +1161,8 @@ export function createLoveEvent(deps) {
             open();
         } else if (act === 'prev' || act === 'next') {
             goStep(slideAt + (act === 'next' ? 1 : -1));
+        } else if (act === 'voices') {
+            setVoices(!voicesOn());
         } else if (act === 'tuto') {
             tutorial(0);
         } else if (act === 'tuto-next') {
@@ -1110,7 +1176,7 @@ export function createLoveEvent(deps) {
             // The tap starts the sound (and the chimes) now.
             if (!readLocal(RIDER_KEY)) writeLocal(RIDER_KEY, riderChoice());
             chimes.unlock();
-            music.start();
+            music.start(Date.now() - (Number(readLocal(LAST_KEY)) || 0) > FRESH_MS ? { first: FIRST_TRACK } : {});
             closeStudio(false);
             deps.startRun();
         } else if (act === 'buy-rider') {
@@ -1140,6 +1206,12 @@ export function createLoveEvent(deps) {
         if (run.on || studioOn) chosen();
     }
 
+    function setVoices(on) {
+        writeLocal(VOICE_KEY, on ? '1' : '0');
+        document.querySelectorAll('#love-settings [data-voices]').forEach((b) => b.classList.toggle('active', (b.dataset.voices === 'on') === voicesOn()));
+        if (studioOn) renderStudio(0);
+    }
+
     function setMusic(mode) {
         writeLocal(MUSIC_KEY, mode);
         music.setMode(mode);
@@ -1159,12 +1231,16 @@ export function createLoveEvent(deps) {
             ${RIDERS.map(([id, name, emoji]) => `<button type="button" class="setting-btn ${id === riderChoice() ? 'active' : ''}" data-rider="${id}">${emoji} ${name.toUpperCase()}</button>`).join('')}
             <p class="setting-desc">Musique de l’événement</p>
             ${MUSIC_MODES.map(([id, name]) => `<button type="button" class="setting-btn ${id === music.mode ? 'active' : ''}" data-music="${id}">${id === 'anasheed' ? '🌙' : id === 'both' ? '🔀' : '🎵'} ${name.toUpperCase()}</button>`).join('')}
+            <p class="setting-desc">Voix IA pendant l’événement</p>
+            <button type="button" class="setting-btn ${voicesOn() ? '' : 'active'}" data-voices="off">🔇 COUPÉES</button>
+            <button type="button" class="setting-btn ${voicesOn() ? 'active' : ''}" data-voices="on">🗣️ ACTIVÉES</button>
         </div>`;
         group.after(block);
         block.addEventListener('click', (event) => {
-            const button = event.target instanceof Element ? event.target.closest('[data-rider], [data-music]') : null;
+            const button = event.target instanceof Element ? event.target.closest('[data-rider], [data-music], [data-voices]') : null;
             if (!button) return;
-            if (button.dataset.music) setMusic(button.dataset.music);
+            if (button.dataset.voices) setVoices(button.dataset.voices === 'on');
+            else if (button.dataset.music) setMusic(button.dataset.music);
             else setRider(button.dataset.rider);
         });
     }
@@ -1196,7 +1272,6 @@ export function createLoveEvent(deps) {
     function redeem(code) {
         const gender = CHARACTER_CODES[String(code || '').trim().toUpperCase()];
         if (!gender) return null;
-        addTo(WON_KEY, gender);
         addTo(OWNED_KEY, gender);
         deps.stat('loveRiderCode');
         wear(gender);
@@ -1207,14 +1282,62 @@ export function createLoveEvent(deps) {
         applyWear();
         renderWear();
     }
-    // The chosen rider on the bike, in every mode (the event's own look
-    // while racing it).
-    function applyWear() {
-        const gender = wearing();
-        deps.v2()?.setBaseOutfit(gender ? { ...look(), gender } : null);
+
+    // The shop: open once a heart has been mended (with either rider).
+    const shopOpen = () => readList(WON_KEY).length > 0;
+    const shopOwned = (id) => readList(SHOP_KEY).includes(id);
+    function shopWorn() {
+        let saved = {};
+        try {
+            saved = JSON.parse(readLocal(SHOP_WEAR_KEY) || '{}') || {};
+        } catch {
+            saved = {};
+        }
+        const sweat = SHOP_ITEMS.find((item) => item.print && item.print === saved.print && shopOwned(item.id));
+        return { print: sweat ? sweat.print : null, head: !!saved.head && shopOwned('bonnet') };
+    }
+    // Worn on the rider's own look (a Love&Faith rider taken off for it).
+    function shopWear(pieces) {
+        writeLocal(SHOP_WEAR_KEY, JSON.stringify(pieces));
+        writeLocal(WEAR_KEY, '');
+        applyWear();
+        renderWear();
+    }
+    function shopToggle(item) {
+        const worn = shopWorn();
+        const on = wearing() === '' && (item.head ? worn.head : worn.print === item.print);
+        if (item.head) shopWear({ ...worn, head: !on });
+        else shopWear({ ...worn, print: on ? null : item.print });
+    }
+    function shopBuy(item) {
+        if (!shopOpen() || shopOwned(item.id) || !deps.spend(item.price)) return false;
+        addTo(SHOP_KEY, item.id);
+        deps.stat('loveShopBought');
+        const worn = shopWorn();
+        shopWear(item.head ? { ...worn, head: true } : { ...worn, print: item.print });
+        return true;
     }
 
-    // The rider screen: which rider to wear, what each one takes.
+    // The chosen rider on the bike, in every mode (the event's own look
+    // while racing it): a Love&Faith rider, or the shop's pieces on the
+    // rider's own livery.
+    function applyWear() {
+        const gender = wearing();
+        if (gender) {
+            deps.v2()?.setBaseOutfit({ ...look(), gender });
+            return;
+        }
+        const pieces = shopWorn();
+        deps.v2()?.setBaseOutfit(pieces.print || pieces.head ? { parts: pieces, band: look().band } : null);
+    }
+
+    // The rider screen: which rider to wear, what each one takes; the shop.
+    let wearNote = '';
+    function note(text) {
+        wearNote = text;
+        const line = document.querySelector('#love-wear .love-wear__msg');
+        if (line) line.textContent = text;
+    }
     function installWear() {
         if (!loveUnlocked() || document.getElementById('love-wear')) return;
         const anchor = document.getElementById('rider-options');
@@ -1224,52 +1347,78 @@ export function createLoveEvent(deps) {
         box.className = 'love-wear';
         anchor.after(box);
         box.addEventListener('click', (event) => {
-            const button = event.target instanceof Element ? event.target.closest('[data-wear], [data-act]') : null;
+            const button = event.target instanceof Element ? event.target.closest('[data-wear], [data-act], [data-shop]') : null;
             if (!button || button.disabled) return;
-            const message = box.querySelector('.love-wear__msg');
             if (button.dataset.act === 'love-code') {
                 const input = box.querySelector('input');
                 const gender = redeem(input.value);
                 input.value = '';
-                message.textContent = gender ? `Code bon : ${gender === 'girl' ? 'la fille' : 'le garçon'} Love&Faith est à toi.` : 'Code inconnu.';
+                note(gender ? `Code bon : ${gender === 'girl' ? 'la fille' : 'le garçon'} Love&Faith est à toi.` : 'Code inconnu.');
+                return;
+            }
+            if (button.dataset.shop) {
+                const item = SHOP_ITEMS.find((entry) => entry.id === button.dataset.shop);
+                if (!item) return;
+                if (!shopOpen()) {
+                    note('Répare ton cœur une fois dans l’événement pour ouvrir la boutique.');
+                } else if (shopOwned(item.id)) {
+                    shopToggle(item);
+                    note('');
+                } else if (deps.points() < item.price) {
+                    note(`Il te manque ${fmtPoints(item.price - deps.points())} points pour : ${item.name}.`);
+                } else if (button.dataset.confirm !== '1') {
+                    button.dataset.confirm = '1';
+                    button.querySelector('small').textContent = `Confirmer : −${fmtPoints(item.price)}`;
+                } else if (shopBuy(item)) {
+                    note(`${item.name} : acheté, sur ton perso 51WHELING.`);
+                }
                 return;
             }
             const gender = button.dataset.wear;
             if (!gender) {
                 wear('');
+                note('');
             } else if (owned(gender)) {
                 wear(gender);
+                note('');
             } else if (won(gender)) {
                 if (deps.points() < CHARACTER_PRICE) {
-                    message.textContent = `Il te manque ${fmtPoints(CHARACTER_PRICE - deps.points())} points (ou entre son code).`;
+                    note(`Il te manque ${fmtPoints(CHARACTER_PRICE - deps.points())} points (ou entre son code).`);
                 } else if (button.dataset.confirm !== '1') {
                     button.dataset.confirm = '1';
                     button.querySelector('small').textContent = `Confirmer : −${fmtPoints(CHARACTER_PRICE)}`;
                 } else if (buy(gender)) {
-                    message.textContent = 'Perso acheté : il est sur ta moto.';
+                    note('Perso acheté : il est sur ta moto.');
                 }
             } else {
-                message.textContent = `Répare ton cœur dans l’événement avec ${gender === 'girl' ? 'la fille' : 'le garçon'} pour pouvoir l’acheter (ou entre son code).`;
+                note(`Répare ton cœur dans l’événement avec ${gender === 'girl' ? 'la fille' : 'le garçon'} pour pouvoir l’acheter (ou entre son code).`);
             }
         });
-        box.querySelector?.('input')?.addEventListener('keydown', (event) => event.stopPropagation());
         renderWear();
     }
     function renderWear() {
         const box = document.getElementById('love-wear');
         if (!box) return;
         const worn = wearing();
+        const pieces = shopWorn();
         const state = (gender) => owned(gender) ? (worn === gender ? 'Porté' : 'À toi')
             : won(gender) ? `${fmtPoints(CHARACTER_PRICE)} pts` : '🔒 Gagne l’événement';
+        const on = (item) => shopOwned(item.id) && worn === '' && (item.head ? pieces.head : pieces.print === item.print);
+        const price = (item) => (shopOwned(item.id) ? (on(item) ? 'Porté' : 'À toi · porter') : `${fmtPoints(item.price)} pts`);
         const keep = box.querySelector('input')?.value || '';
         box.innerHTML = `
-            <h3 class="love-wear__title"><img src="${FILES}logo-heart.png" alt="">PERSO LOVE&amp;FAITH</h3>
+            <h3 class="love-wear__title"><img src="${FILES}logo-heart.png" alt="">LOVE&amp;FAITH</h3>
+            <p class="love-wear__label">Perso</p>
             <div class="love-wear__list">
-                <button type="button" class="${worn === '' ? 'is-on' : ''}" data-wear=""><b>51WHELING</b><small>Ton perso</small></button>
+                <button type="button" class="${worn === '' ? 'is-on' : ''}" data-wear=""><b>51WHELING</b><small>Ton perso${pieces.print || pieces.head ? ' + boutique' : ''}</small></button>
                 ${RIDERS.map(([gender, name]) => `<button type="button" class="${worn === gender ? 'is-on' : ''} ${owned(gender) ? 'is-owned' : won(gender) ? 'is-buyable' : 'is-locked'}" data-wear="${gender}">
                     <b>${esc(name)}</b><small>${state(gender)}</small></button>`).join('')}
             </div>
-            <p class="love-wear__msg" aria-live="polite"></p>
+            <p class="love-wear__label">Boutique <small>sur ton perso 51WHELING</small></p>
+            ${shopOpen() ? `<div class="love-shop">${SHOP_ITEMS.map((item) => `<button type="button" class="love-shop__item ${on(item) ? 'is-on' : ''} ${shopOwned(item.id) ? 'is-owned' : ''}" data-shop="${item.id}">
+                    <img src="${FILES}${item.icon}" alt=""><b>${esc(item.name)}</b><small>${price(item)}</small></button>`).join('')}</div>`
+                : '<p class="love-shop__locked">🔒 Répare ton cœur une fois dans l’événement pour ouvrir la boutique : sweats, bonnet et bandeau.</p>'}
+            <p class="love-wear__msg" aria-live="polite">${esc(wearNote)}</p>
             <div class="love-wear__code"><input type="text" maxlength="12" placeholder="Code d’un perso" autocomplete="off" autocapitalize="characters" spellcheck="false" aria-label="Code d’un perso">
                 <button type="button" data-act="love-code">OK</button></div>`;
         const input = box.querySelector('input');
@@ -1278,6 +1427,7 @@ export function createLoveEvent(deps) {
     }
     document.getElementById('rider-btn')?.addEventListener('click', () => {
         installWear();
+        note('');
         renderWear();
     });
     document.addEventListener('wheelie:points', () => renderWear());
@@ -1288,6 +1438,7 @@ export function createLoveEvent(deps) {
 
     return {
         applyWear,
+        voices: () => voicesOn(),
         open, unlockFromCode, installEntry, begin, spawn, step, frame, finish, leave,
         get active() { return run.on; },
         get love() { return run.love; },
@@ -1300,6 +1451,8 @@ export function createLoveEvent(deps) {
             get drops() { return puddles ? puddles.drops : 0; },
             get puddleSystem() { return puddles; },
             get music() { return music.playing; },
+            get track() { return music.current; },
+            get sounds() { return music.sounds; },
             // A puddle right in the bike's way.
             puddleAhead(width = 6, length = 12) {
                 const bike = deps.bike().position;

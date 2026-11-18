@@ -99,6 +99,14 @@ export function createAudioEngine({ effects, getManifest }) {
     let engineBus = null;
     let engineFilter = null;
     let voiceBus = null;
+    // The mix (src/event/love.js: the effects 30 % lower and softened under
+    // the music, the voices off): level, a low-pass over everything, the
+    // engine's share, the voice's.
+    let toneFilter = null;
+    // (tone: the low-pass's frequency, flat at the top of the range.)
+    const MIX = { level: 1, tone: 24000, engine: 1, voice: 1 };
+    const toneAt = (frequency) => Math.min(frequency, context.sampleRate / 2 - 10);
+    let mix = { ...MIX };
     let voice = null;
     let enabled = true;
     let running = false;
@@ -132,13 +140,18 @@ export function createAudioEngine({ effects, getManifest }) {
             limiter.attack.value = 0.003;
             limiter.release.value = 0.2;
             master = context.createGain();
-            master.gain.value = enabled ? 1 : 0;
-            master.connect(limiter);
+            master.gain.value = enabled ? mix.level : 0;
+            toneFilter = context.createBiquadFilter();
+            toneFilter.type = 'lowpass';
+            toneFilter.frequency.value = toneAt(mix.tone);
+            toneFilter.Q.value = Math.SQRT1_2;
+            master.connect(toneFilter);
+            toneFilter.connect(limiter);
             limiter.connect(context.destination);
             output = limiter;
             // The voice has its own switch: it bypasses the effects master.
             voiceBus = context.createGain();
-            voiceBus.gain.value = 0.9;
+            voiceBus.gain.value = 0.9 * mix.voice;
             voiceBus.connect(output);
 
             engineFilter = context.createBiquadFilter();
@@ -146,7 +159,7 @@ export function createAudioEngine({ effects, getManifest }) {
             engineFilter.frequency.value = 2500;
             engineFilter.Q.value = 0.4;
             engineBus = context.createGain();
-            engineBus.gain.value = 1;
+            engineBus.gain.value = mix.engine;
             engineFilter.connect(engineBus);
             engineBus.connect(master);
         }
@@ -311,7 +324,7 @@ export function createAudioEngine({ effects, getManifest }) {
             lastSplash: 0, nextSplash: 6 + Math.random() * 8, nextHorn: 12 + Math.random() * 20
         });
         engineBus.gain.cancelScheduledValues(context.currentTime);
-        engineBus.gain.setValueAtTime(1, context.currentTime);
+        engineBus.gain.setValueAtTime(mix.engine, context.currentTime);
         LOOP_IDS.forEach(startLoop);
     }
 
@@ -433,14 +446,25 @@ export function createAudioEngine({ effects, getManifest }) {
 
     function setEnabled(value) {
         enabled = value;
-        if (master && context) master.gain.setTargetAtTime(value ? 1 : 0, context.currentTime, 0.05);
+        if (master && context) master.gain.setTargetAtTime(value ? mix.level : 0, context.currentTime, 0.05);
         if (!value) stopRun();
     }
 
     // Pull the engine down a little while the rider talks.
     function duck(active) {
         if (!engineBus || !context) return;
-        engineBus.gain.setTargetAtTime(active ? 0.55 : 1, context.currentTime, 0.12);
+        engineBus.gain.setTargetAtTime((active ? 0.55 : 1) * mix.engine, context.currentTime, 0.12);
+    }
+
+    // null: the usual mix.
+    function setMix(next) {
+        mix = { ...MIX, ...(next || {}) };
+        if (!context || !master) return;
+        const t = context.currentTime;
+        master.gain.setTargetAtTime(enabled ? mix.level : 0, t, 0.08);
+        toneFilter.frequency.setTargetAtTime(toneAt(mix.tone), t, 0.08);
+        engineBus.gain.setTargetAtTime(mix.engine, t, 0.08);
+        voiceBus.gain.setTargetAtTime(0.9 * mix.voice, t, 0.08);
     }
 
     // Game paused: freeze every sound, pick up where it was on resume.
@@ -563,7 +587,8 @@ export function createAudioEngine({ effects, getManifest }) {
     }
 
     return {
-        prepare, warmUp, unlock, play, speak, say, stopSaying, registerClip, stopVoice, startRun, stopRun, update, setEnabled, duck, status, setPaused,
+        prepare, warmUp, unlock, play, speak, say, stopSaying, registerClip, stopVoice, startRun, stopRun, update, setEnabled, duck, status, setPaused, setMix,
+        get mix() { return { ...mix }; },
         get running() { return running; },
         get speaking() { return Boolean(voice); },
         get gear() { return sim.gear + 1; },
