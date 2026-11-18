@@ -481,6 +481,41 @@ let speedLines = null;
 // Free roam chase camera: its heading and the last followed position.
 let freeCamYaw = null;
 let freeCamLast = null;
+// Free roam: the camera turned by hand (a finger or the mouse dragged on the
+// picture): round the player (yaw) and up or down (pitch). Riding again, it
+// comes back behind after a moment; standing or walking, it stays.
+const FREE_ORBIT = { turn: 0.0065, tilt: 0.005, minPitch: -0.3, maxPitch: 0.95, wait: 2.2, back: 1.4 };
+const freeOrbit = { yaw: 0, pitch: 0, pointer: null, x: 0, y: 0, lastDrag: -Infinity };
+function freeOrbitOn() {
+    return IS_V2 && GAME_SETTINGS.gameMode === 'free' && state.isPlaying && !state.userPaused;
+}
+document.addEventListener('pointerdown', (event) => {
+    if (!freeOrbitOn() || freeOrbit.pointer !== null) return;
+    // Not from a button, the stick, a menu or a panel.
+    const target = event.target instanceof Element ? event.target : null;
+    if (target && target.closest('button, input, a, .ui-pad, #analog-stick-base, #analog-stick-knob, #speedometer, .screen.active, #live-root, [role="dialog"], .account-dialog')) return;
+    freeOrbit.pointer = event.pointerId;
+    freeOrbit.x = event.clientX;
+    freeOrbit.y = event.clientY;
+    freeOrbit.lastDrag = performance.now() / 1000;
+}, true);
+document.addEventListener('pointermove', (event) => {
+    if (event.pointerId !== freeOrbit.pointer) return;
+    const dx = event.clientX - freeOrbit.x;
+    const dy = event.clientY - freeOrbit.y;
+    freeOrbit.x = event.clientX;
+    freeOrbit.y = event.clientY;
+    if (!freeOrbitOn()) return;
+    freeOrbit.yaw -= dx * FREE_ORBIT.turn;
+    freeOrbit.yaw = Math.atan2(Math.sin(freeOrbit.yaw), Math.cos(freeOrbit.yaw));
+    freeOrbit.pitch = Math.max(FREE_ORBIT.minPitch, Math.min(FREE_ORBIT.maxPitch, freeOrbit.pitch + dy * FREE_ORBIT.tilt));
+    freeOrbit.lastDrag = performance.now() / 1000;
+}, true);
+for (const type of ['pointerup', 'pointercancel']) {
+    document.addEventListener(type, (event) => {
+        if (event.pointerId === freeOrbit.pointer) freeOrbit.pointer = null;
+    }, true);
+}
 
 const sharedMaterials = new Set([
     matAsphalt, matLine, matSidewalk, matBuilding, matBuilding2, matBuilding3,
@@ -1966,6 +2001,9 @@ function resetGame() {
     lastCameraBikeZ = null;
     freeCamYaw = null;
     freeCamLast = null;
+    freeOrbit.yaw = 0;
+    freeOrbit.pitch = 0;
+    freeOrbit.pointer = null;
     freeRide.speed = 0;
     freeRide.hold = 0;
     state.keys.trick = false;
@@ -3776,7 +3814,15 @@ function animate(timestamp = performance.now()) {
             }
             if (roam && roam.mode !== 'bike') {
                 const unit = CONFIG.freeModeSpeed * 3;
-                roam.move(dt, moveX / unit, moveZ / unit, { run: state.keys.run, jump: state.keys.space, boost: state.keys.boost });
+                let stickX = moveX / unit;
+                let stickZ = moveZ / unit;
+                if (roam.mode === 'walk' && freeOrbit.yaw) {
+                    const yaw = Math.PI + freeOrbit.yaw;
+                    const forward = -stickZ;
+                    stickX = moveX / unit * -Math.cos(yaw) + forward * Math.sin(yaw);
+                    stickZ = moveX / unit * Math.sin(yaw) + forward * Math.cos(yaw);
+                }
+                roam.move(dt, stickX, stickZ, { run: state.keys.run, jump: state.keys.space, boost: state.keys.boost });
                 state.freeMode.speed = roam.speed;
                 state.distance += roam.speed;
                 freeRide.speed = 0;
@@ -4599,11 +4645,30 @@ function updateCamera() {
             distanceOffset = 10;
             heightOffset = target.y + 3.4;
         }
+        // Turned by hand: riding again (or flying), it comes back behind.
+        const orbitNow = performance.now() / 1000;
+        const moving = roamMode !== 'walk' && kmh > 8;
+        if (v2 && freeOrbit.pointer === null && moving && orbitNow - freeOrbit.lastDrag > FREE_ORBIT.wait) {
+            const k = Math.min(1, FREE_ORBIT.back / 60);
+            freeOrbit.yaw -= freeOrbit.yaw * k;
+            freeOrbit.pitch -= freeOrbit.pitch * k;
+        }
+        const tilt = v2 ? freeOrbit.pitch : 0;
+        heightOffset += distanceOffset * Math.max(0, tilt) * 0.9 + Math.min(0, tilt) * (heightOffset - target.y - 0.6);
+        distanceOffset *= 1 - Math.max(0, tilt) * 0.22;
         let targetX = target.x;
         let targetZ = target.z + distanceOffset;
         const targetY = heightOffset;
         let lookX = target.x;
         let lookZ = target.z - 8;
+        if (v2 && roamMode === 'walk') {
+            // On foot: the view looks along -z, turned by hand round him.
+            const yaw = Math.PI + freeOrbit.yaw;
+            targetX = target.x - Math.sin(yaw) * distanceOffset;
+            targetZ = target.z - Math.cos(yaw) * distanceOffset;
+            lookX = target.x + Math.sin(yaw) * 8;
+            lookZ = target.z + Math.cos(yaw) * 8;
+        }
         if (v2 && roamMode !== 'walk') {
             // Riding or driving: behind the vehicle, turning with it.
             const heading = roamMode === 'car' ? v2.roam.carYaw : roamMode === 'glide' ? v2.roam.glideYaw : roamMode === 'jet' ? v2.roam.jetYaw : bikeGroup.rotation.y;
@@ -4611,10 +4676,11 @@ function updateCamera() {
             let turn = heading - freeCamYaw;
             turn = Math.atan2(Math.sin(turn), Math.cos(turn));
             freeCamYaw += turn * (roamMode === 'jet' ? 0.11 : 0.08);
-            targetX = target.x - Math.sin(freeCamYaw) * distanceOffset;
-            targetZ = target.z - Math.cos(freeCamYaw) * distanceOffset;
-            lookX = target.x + Math.sin(freeCamYaw) * 8;
-            lookZ = target.z + Math.cos(freeCamYaw) * 8;
+            const yaw = freeCamYaw + freeOrbit.yaw;
+            targetX = target.x - Math.sin(yaw) * distanceOffset;
+            targetZ = target.z - Math.cos(yaw) * distanceOffset;
+            lookX = target.x + Math.sin(yaw) * 8;
+            lookZ = target.z + Math.cos(yaw) * 8;
             // Ride along: at 140 km/h the camera must not trail far behind.
             if (freeCamLast) {
                 const dx = target.x - freeCamLast.x;
@@ -4630,9 +4696,11 @@ function updateCamera() {
         if (!freeCamLast) freeCamLast = new THREE.Vector3();
         freeCamLast.set(target.x, 0, target.z);
 
-        camera.position.x += (targetX - camera.position.x) * 0.12;
-        camera.position.z += (targetZ - camera.position.z) * 0.12;
-        camera.position.y += (targetY - camera.position.y) * 0.12;
+        // Quicker while the finger turns it.
+        const follow = freeOrbit.pointer !== null ? 0.3 : 0.12;
+        camera.position.x += (targetX - camera.position.x) * follow;
+        camera.position.z += (targetZ - camera.position.z) * follow;
+        camera.position.y += (targetY - camera.position.y) * follow;
         // Road buzz at speed.
         const buzz = v2 && roamMode !== 'walk' ? Math.max(0, Math.min(1, (kmh - 100) / 60)) : 0;
         if (buzz > 0) {
