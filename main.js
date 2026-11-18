@@ -6933,7 +6933,37 @@ function hideRunControls() {
     }
 }
 
+// The street ahead of the watched bike (the game does it in its loop):
+// built ahead, dropped behind; rebuilt round it after a jump.
+function spectateGround() {
+    if (!groundChunks.length) return;
+    const z = bikeGroup.position.z;
+    const last = groundChunks[groundChunks.length - 1];
+    if (z < last.position.z - 300 || z > groundChunks[0].position.z + 300) {
+        groundChunks.forEach(dropChunk);
+        groundChunks = [];
+        const start = Math.ceil(z / 100) * 100 + 100;
+        for (let i = 0; i < 6; i++) {
+            const chunk = makeChunk(start - i * 100);
+            scene.add(chunk);
+            groundChunks.push(chunk);
+        }
+        return;
+    }
+    while (z < groundChunks[groundChunks.length - 1].position.z + 200) {
+        const chunk = makeChunk(groundChunks[groundChunks.length - 1].position.z - 100);
+        scene.add(chunk);
+        groundChunks.push(chunk);
+        if (groundChunks.length > 6) {
+            const old = groundChunks.shift();
+            state.animatedObjects = state.animatedObjects.filter((object) => object.parent !== old);
+            dropChunk(old);
+        }
+    }
+}
+
 function spectateStop() {
+    if (v2) v2.wearLook(null);
     if (!spectator.active) return;
     spectator.active = false;
     cancelAnimationFrame(spectator.raf);
@@ -6941,8 +6971,10 @@ function spectateStop() {
     spectator.audio = false;
 }
 
-function spectateBegin(run) {
+function spectateBegin(run, rider = null) {
     spectateStop();
+    // The rider watched, as he really looks.
+    if (v2 && rider) v2.wearLook({ ...(rider.look || {}), name: rider.name });
     // A fresh run's scene: nothing left from the last one, no fall playing.
     crashSequence++;
     if (v2) v2.podiumView(false);
@@ -7043,6 +7075,7 @@ function spectateTick(now) {
             scene.remove(ramp.mesh);
             return false;
         });
+        spectateGround();
         live.watchFrame({ score: state.score, kmh: speedKmh() });
         // The end of the run reached: the fall.
         if (spectator.result && spectator.playhead >= newest - 0.5) spectateCrash();
@@ -7146,7 +7179,7 @@ live = createLive({
             startGame();
         },
         watch: {
-            begin: (run) => spectateBegin(run),
+            begin: (run, rider) => spectateBegin(run, rider),
             push: (batch) => spectatePush(batch),
             end: (result) => { spectator.result = result; },
             stop: () => spectateStop(),

@@ -572,6 +572,7 @@ export function createRealisticVersion({ scene, renderer, camera, mobile, audio,
         const livery = loadLivery();
         return {
             number: String(livery.number || '51'), hoodie: livery.hoodie, helmet: livery.helmet, bike: livery.bike, pose: chosenPose(),
+            plate: !!livery.plate && totalPoints() >= PLATE_POINTS, plateText: livery.plateText || '',
             ...unlockedLook(livery)
         };
     };
@@ -586,6 +587,10 @@ export function createRealisticVersion({ scene, renderer, camera, mobile, audio,
     return {
         world, rider, fx, roam, frame, reset, setQuality, showroom, startAd, adScreen, policeStop,
         podium, podiumView, podiumLook, riderName, skidmarks,
+        // Session live: the rider watched wears his own look (null: ours).
+        wearLook(look) {
+            rider.setLivery(look ? { ...look, name: look.name || '', plate: !!look.plate, plateText: look.plateText || '' } : riderLook());
+        },
         // The Figures Land code: the park in one of the next side streets.
         figuresLand: { summon: () => figuresLand.newRide(true) },
         get resolutionScale() { return resolution.scale; },

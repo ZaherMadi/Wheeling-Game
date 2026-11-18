@@ -1120,3 +1120,21 @@ body.live-watching :is(#score-container, #pause-btn, #angle-multiplier-display, 
     padding: 5px 6px !important;
   }
 }
+
+/* Narrow screens (a phone upright): the bar on the left, the name kept. */
+.live-watch-top b {
+  min-width: 3.5em;
+}
+
+@media (max-width: 560px) {
+  .live-watch-top {
+    left: max(10px, env(safe-area-inset-left));
+    transform: none;
+    max-width: calc(100% - 150px);
+    gap: 7px;
+  }
+
+  .live-watch-top small {
+    display: none;
+  }
+}

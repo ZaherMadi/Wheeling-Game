@@ -25,9 +25,9 @@ export function createReactor(container) {
         rim.position.set(side === 'left' ? -2 : 2, 1.6, -2);
         scene.add(rim);
         const figure = createFigure(scene);
-        const camera = new THREE.PerspectiveCamera(28, 0.8, 0.1, 30);
-        camera.position.set(0, 1.25, 4.3);
-        camera.lookAt(0, 1.02, 0);
+        const camera = new THREE.PerspectiveCamera(30, 0.8, 0.1, 30);
+        camera.position.set(0, 1.15, 5.6);
+        camera.lookAt(0, 1.08, 0);
         return {
             side, element, stage: element.querySelector('.live-reactor__stage'), name: element.querySelector('b'),
             text: element.querySelector('span'), scene, figure, camera, shownAt: -Infinity, until: -Infinity
@@ -70,6 +70,11 @@ export function createReactor(container) {
         }
         if (!shown.length) return;
         renderer.getSize(size);
+        // From the page to the picture: the canvas may not be where the
+        // window is (a phone's toolbar coming and going).
+        const canvas = renderer.domElement.getBoundingClientRect();
+        const sx = canvas.width ? size.x / canvas.width : 1;
+        const sy = canvas.height ? size.y / canvas.height : 1;
         const autoClear = renderer.autoClear;
         renderer.autoClear = false;
         renderer.setScissorTest(true);
@@ -81,11 +86,13 @@ export function createReactor(container) {
             const scale = Math.min(1, age / POP, left / POP);
             slot.figure.root.scale.setScalar(1.08 * Math.max(0.01, 1 - (1 - scale) ** 2));
             slot.figure.animate(now, 'stand', 0);
-            const x = box.left;
-            const y = size.y - box.bottom;
-            renderer.setViewport(x, y, box.width, box.height);
-            renderer.setScissor(x, y, box.width, box.height);
-            slot.camera.aspect = box.width / box.height;
+            const x = (box.left - canvas.left) * sx;
+            const y = (canvas.bottom - box.bottom) * sy;
+            const w = box.width * sx;
+            const h = box.height * sy;
+            renderer.setViewport(x, y, w, h);
+            renderer.setScissor(x, y, w, h);
+            slot.camera.aspect = w / h;
             slot.camera.updateProjectionMatrix();
             renderer.clearDepth();
             renderer.render(slot.scene, slot.camera);

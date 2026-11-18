@@ -327,7 +327,7 @@ export function createLive(deps) {
         watchEndedAt = 0;
         cursor = { run: turn.run, batch: -1 };
         lastWatchScore = 0;
-        deps.game.watch.begin(turn.run);
+        deps.game.watch.begin(turn.run, rider);
         show('watch');
         renderReacts();
         interlude(rider?.name || '?', 'Au tour de', false, 2600, runsLeft(turn.id));
