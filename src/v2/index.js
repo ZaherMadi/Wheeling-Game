@@ -63,19 +63,22 @@ export function createRealisticVersion({ scene, renderer, camera, mobile, audio,
         ...livery, name: riderName(), plate: !!livery.plate && totalPoints() >= PLATE_POINTS, plateText: livery.plateText || '',
         ...unlockedLook(livery)
     });
-    rider.setLivery(riderLook());
+    // Session live: someone else's look worn while watching him.
+    let wornLook = null;
+    const wearOwn = (livery) => rider.setLivery(wornLook || riderLook(livery));
+    wearOwn();
     const mountPanel = () => mountLiveryPanel(document.getElementById('rider-options'), (livery) => {
-        rider.setLivery(riderLook(livery));
+        wearOwn(livery);
         // The menu is a still frame: show the new look at once.
         renderer.render(scene, camera);
     }, { points: totalPoints });
     mountPanel();
     document.addEventListener('wheelie:nickname', () => {
-        rider.setLivery(riderLook());
+        wearOwn();
         renderer.render(scene, camera);
     });
     // Points earned since: the plate or the shop may have unlocked.
-    document.addEventListener('wheelie:points', () => rider.setLivery(riderLook()));
+    document.addEventListener('wheelie:points', () => wearOwn());
 
     // The 5HC intro on the bus shelter in front of the start.
     const adScreen = createAdScreen({ scene });
@@ -435,7 +438,8 @@ export function createRealisticVersion({ scene, renderer, camera, mobile, audio,
     function showroom(on) {
         if (on && showroomFrame === null) {
             mountPanel();
-            rider.setLivery(riderLook());
+            wornLook = null;
+            wearOwn();
             savedPosition.copy(camera.position);
             savedQuaternion.copy(camera.quaternion);
             const tick = () => {
@@ -589,7 +593,8 @@ export function createRealisticVersion({ scene, renderer, camera, mobile, audio,
         podium, podiumView, podiumLook, riderName, skidmarks,
         // Session live: the rider watched wears his own look (null: ours).
         wearLook(look) {
-            rider.setLivery(look ? { ...look, name: look.name || '', plate: !!look.plate, plateText: look.plateText || '' } : riderLook());
+            wornLook = look ? { ...look, name: look.name || '', plate: !!look.plate, plateText: look.plateText || '' } : null;
+            wearOwn();
         },
         // The Figures Land code: the park in one of the next side streets.
         figuresLand: { summon: () => figuresLand.newRide(true) },

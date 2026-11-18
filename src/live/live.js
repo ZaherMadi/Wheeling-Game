@@ -19,6 +19,8 @@ const LIVE_CODE = '51FRIENDS';
 const UNLOCK_KEY = 'wheelie_live_unlocked';
 const POSE_KEY = 'wheelie_live_pose';
 const LAST_KEY = 'wheelie_live_last';
+// Back in the session after a reload (the resync button, a new version).
+const RESUME_KEY = 'wheelie_live_resume';
 const POLL_MS = 1000;
 const CRASH_WAIT = 3600;
 
@@ -117,6 +119,40 @@ export function createLive(deps) {
     let endedSeen = null;
     let phrasesOpen = false;
     let lastWatchScore = 0;
+
+    // The game as published now: a newer one when the page's script is not
+    // the one the site serves (everybody in a session on the same version).
+    async function newerBuild() {
+        try {
+            const mine = document.querySelector('script[type="module"][src*="/assets/index-"]')?.getAttribute('src') || '';
+            if (!mine) return false;
+            const response = await fetch(`/?build=${Date.now()}`, { cache: 'no-store' });
+            const served = (await response.text()).match(/\/assets\/index-[A-Za-z0-9_-]+\.js/);
+            return !!served && !mine.endsWith(served[0]);
+        } catch {
+            return false;
+        }
+    }
+
+    function reloadInto(wanted) {
+        try {
+            sessionStorage.setItem(RESUME_KEY, JSON.stringify({ code: wanted, at: Date.now() }));
+        } catch {
+            // Rejoined by hand then (the recent code is offered).
+        }
+        location.reload();
+    }
+
+    // Soft: everything asked again (room, events, the run being watched).
+    function resync() {
+        if (!code) return;
+        if (ride.run === null && !waitingForCrash()) {
+            stopWatching();
+            cursor = { run: null, batch: -1 };
+        }
+        busy = false;
+        tick();
+    }
 
     const players = () => (room ? room.players : []);
     const player = (id) => players().find((p) => p.id === id) || null;
@@ -382,6 +418,7 @@ export function createLive(deps) {
             const votes = room.votes || { count: 0, needed: 1, mine: false };
             parts.push(`<button type="button" class="live-tool" data-act="vote">${votes.mine ? '✅' : '🗳'} Arrêter (${votes.count}/${votes.needed})</button>`);
         }
+        parts.push('<button type="button" class="live-tool" data-act="resync">🔄 Resynchroniser</button>');
         parts.push('<button type="button" class="live-tool" data-act="leave">🚪 Quitter</button>');
         const html = parts.join('');
         if (tools.innerHTML !== html) tools.innerHTML = html;
@@ -525,6 +562,11 @@ export function createLive(deps) {
             return;
         }
         $('live-error').textContent = 'Connexion…';
+        if (await newerBuild()) {
+            $('live-error').textContent = 'Nouvelle version du jeu : mise à jour…';
+            reloadInto(value);
+            return;
+        }
         try {
             const result = await join(value);
             if (result === 'nickname') $('live-error').textContent = 'Choisis d’abord un pseudo.';
@@ -557,7 +599,10 @@ export function createLive(deps) {
             ${host
         ? '<button type="button" class="live-btn live-btn--yellow" data-act="start">▶ LANCER LA SESSION</button>'
         : '<p class="live-text">Le maître lance la session quand il veut…</p>'}
-            <button type="button" class="live-btn live-btn--ghost" data-act="leave">🚪 Quitter la session</button>
+            <div class="live-row">
+                <button type="button" class="live-btn live-btn--ghost" data-act="resync">🔄 Resynchroniser</button>
+                <button type="button" class="live-btn live-btn--ghost" data-act="leave">🚪 Quitter la session</button>
+            </div>
             <p class="live-error" id="live-error"></p>`;
         if (panel.dataset.html !== html) {
             panel.dataset.html = html;
@@ -775,6 +820,11 @@ export function createLive(deps) {
                 receive({ ...(await call('start', {})), events: [], frames: null });
             } else if (act === 'leave') {
                 await leave();
+            } else if (act === 'resync') {
+                // The page reloaded (the latest version too), then back in.
+                target.disabled = true;
+                target.textContent = '🔄 Reconnexion…';
+                reloadInto(code);
             } else if (act === 'skip') {
                 receive({ ...(await call('skip', {})), events: [], frames: null });
             } else if (act === 'end') {
@@ -811,6 +861,41 @@ export function createLive(deps) {
 
     installEntry();
     document.addEventListener('wheelie:points', refreshEntry);
+
+    let hiddenAt = 0;
+    document.addEventListener('visibilitychange', async () => {
+        if (document.hidden) {
+            hiddenAt = performance.now();
+            return;
+        }
+        if (!code || performance.now() - hiddenAt < 3000) return;
+        if (ride.run === null && await newerBuild()) {
+            reloadInto(code);
+            return;
+        }
+        resync();
+    });
+
+    // After a reload asked for (resync, new version): back in the session.
+    let resume = null;
+    try {
+        resume = JSON.parse(sessionStorage.getItem(RESUME_KEY) || 'null');
+        sessionStorage.removeItem(RESUME_KEY);
+    } catch {
+        resume = null;
+    }
+    if (resume?.code && Date.now() - resume.at < 5 * 60 * 1000 && liveUnlocked()) {
+        setTimeout(async () => {
+            deps.game.stopAll();
+            renderJoin('Reconnexion…');
+            try {
+                await join(resume.code);
+            } catch (error) {
+                const box = $('live-error');
+                if (box) box.textContent = errorText(error);
+            }
+        }, 900);
+    }
 
     return {
         open, refreshEntry, recordFrame, recordSpawn, recordMark, turnOver, watchFrame,

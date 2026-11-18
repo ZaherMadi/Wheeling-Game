@@ -6936,10 +6936,9 @@ function hideRunControls() {
 // The street ahead of the watched bike (the game does it in its loop):
 // built ahead, dropped behind; rebuilt round it after a jump.
 function spectateGround() {
-    if (!groundChunks.length) return;
     const z = bikeGroup.position.z;
     const last = groundChunks[groundChunks.length - 1];
-    if (z < last.position.z - 300 || z > groundChunks[0].position.z + 300) {
+    if (!last || z < last.position.z - 300 || z > groundChunks[0].position.z + 300) {
         groundChunks.forEach(dropChunk);
         groundChunks = [];
         const start = Math.ceil(z / 100) * 100 + 100;
@@ -7052,6 +7051,10 @@ function spectateTick(now) {
         const a = frames[Math.max(0, index - 1)];
         const span = b[0] - a[0];
         spectateApply(a, b, span > 0 ? Math.max(0, Math.min(1, (spectator.playhead - a[0]) / span)) : 1);
+        // Joined late or jumped ahead: the camera straight behind the bike.
+        if (Math.abs(camera.position.z - bikeGroup.position.z) > 40) {
+            camera.position.set(bikeGroup.position.x, camera.position.y, bikeGroup.position.z + 6);
+        }
         // What appeared on the road, and the bonuses, when the rider saw them.
         while (spectator.spawns.length && spectator.spawns[0][1] <= spectator.playhead) {
             const item = spectator.spawns.shift();
