@@ -410,32 +410,58 @@ export function createRider({ scene }) {
     pelvis.name = 'pelvis';
     pelvis.position.copy(PELVIS_REST);
     riderGroup.add(pelvis);
-    const body = new Parts();
-    body.add(pants, sphere, transform(0, 0.03, 0, 0.2, 0.15, 0.17));
     // Hoodie body turned from a profile: waist, chest, shoulders sloping to
-    // the neck. Wider than deep, like a real torso.
-    const profile = [[0.0, 0.0], [0.15, 0.0], [0.162, 0.1], [0.18, 0.24], [0.188, 0.38], [0.178, 0.46], [0.14, 0.53], [0.085, 0.58], [0.0, 0.6]]
-        .map(([r, y]) => new THREE.Vector2(r, y));
-    const torsoGeometry = new THREE.LatheGeometry(profile, 24);
-    body.add(jersey, torsoGeometry, transform(0, 0.02, 0, 1.22, 1, 0.9));
-    for (const side of [-1, 1]) body.add(jersey, sphere, transform(side * 0.205, 0.445, 0, 0.082, 0.08, 0.08));
-    // The number across the back follows the same surface.
-    const printProfile = profile.slice(2, 6).map((point) => new THREE.Vector2(point.x * 1.012, point.y));
-    const printGeometry = new THREE.LatheGeometry(printProfile, 12, Math.PI - 0.95, 1.9);
-    body.add(jerseyPrint, printGeometry, transform(0, 0.02, 0, 1.22, 1, 0.9));
-    // Hoodie: hood resting on the back, ribbed hem, front pocket, drawstrings.
-    // Folded high against the neck: the name across the shoulders shows.
-    const hood = new THREE.SphereGeometry(1, 14, 10, 0, Math.PI * 2, 0, Math.PI * 0.55);
-    body.add(jersey, hood, HOOD_TRANSFORM());
-    body.add(jerseyDark, new THREE.TorusGeometry(0.13, 0.035, 6, 16), transform(0, 0.6, -0.02, 1.05, 1, 0.9, Math.PI / 2 - 0.25));
-    body.add(jerseyDark, new THREE.CylinderGeometry(0.165, 0.152, 0.07, 24), transform(0, 0.045, 0, 1.23, 1, 0.92));
-    body.add(jerseyDark, box, transform(0, 0.17, 0.17, 0.26, 0.13, 0.03, 0.12));
-    for (const side of [-1, 1]) body.add(cords, tube, transform(side * 0.045, 0.47, 0.16, 0.007, 0.16, 0.007, 0.25));
-    body.add(pants, tube, transform(0, 0.6, 0.01, 0.06, 0.1, 0.06));
-    body.build(pelvis);
-    torsoGeometry.dispose();
-    printGeometry.dispose();
-    hood.dispose();
+    // the neck. Wider than deep, like a real torso. Two of them: the usual
+    // one, and a woman's (the Love&Faith event's girl): narrower shoulders,
+    // a waist, rounder hips, a bust.
+    const BODY_SHAPES = {
+        boy: {
+            profile: [[0.0, 0.0], [0.15, 0.0], [0.162, 0.1], [0.18, 0.24], [0.188, 0.38], [0.178, 0.46], [0.14, 0.53], [0.085, 0.58], [0.0, 0.6]],
+            scale: [1.22, 0.9], hips: [0.2, 0.15, 0.17], shoulder: [0.205, 0.445, 0.082, 0.08], print: [2, 6], hem: [0.165, 0.152],
+            pocket: [0.17, 0.26], cords: [0.47, 0.16]
+        },
+        girl: {
+            profile: [[0.0, 0.0], [0.168, 0.0], [0.172, 0.06], [0.146, 0.17], [0.134, 0.23], [0.15, 0.31], [0.163, 0.37], [0.156, 0.44], [0.124, 0.5], [0.078, 0.555], [0.0, 0.575]],
+            scale: [1.14, 0.92], hips: [0.215, 0.16, 0.18], shoulder: [0.178, 0.415, 0.07, 0.068], print: [3, 8], hem: [0.172, 0.165],
+            pocket: [0.165, 0.22], cords: [0.45, 0.15], bust: true
+        }
+    };
+    function buildTorso(shape) {
+        const group = new THREE.Group();
+        const parts = new Parts();
+        const [sx, sz] = shape.scale;
+        parts.add(pants, sphere, transform(0, 0.03, 0, ...shape.hips));
+        const profile = shape.profile.map(([r, y]) => new THREE.Vector2(r, y));
+        const torsoGeometry = new THREE.LatheGeometry(profile, 24);
+        parts.add(jersey, torsoGeometry, transform(0, 0.02, 0, sx, 1, sz));
+        const [shoulderX, shoulderY, round, roundY] = shape.shoulder;
+        for (const side of [-1, 1]) parts.add(jersey, sphere, transform(side * shoulderX, shoulderY, 0, round, roundY, roundY));
+        if (shape.bust) {
+            // A bust under the hoodie: one soft rounded shape across the chest.
+            parts.add(jersey, sphere, transform(0, 0.33, 0.088, 0.128, 0.066, 0.072));
+        }
+        // The number (or the print) across the back follows the same surface.
+        const printProfile = profile.slice(...shape.print).map((point) => new THREE.Vector2(point.x * 1.012, point.y));
+        const printGeometry = new THREE.LatheGeometry(printProfile, 12, Math.PI - 0.95, 1.9);
+        parts.add(jerseyPrint, printGeometry, transform(0, 0.02, 0, sx, 1, sz));
+        // Hoodie: hood resting on the back, ribbed hem, front pocket, drawstrings.
+        // Folded high against the neck: the name across the shoulders shows.
+        const hood = new THREE.SphereGeometry(1, 14, 10, 0, Math.PI * 2, 0, Math.PI * 0.55);
+        parts.add(jersey, hood, HOOD_TRANSFORM());
+        parts.add(jerseyDark, new THREE.TorusGeometry(0.13, 0.035, 6, 16), transform(0, profile[profile.length - 1].y, -0.02, 1.05, 1, 0.9, Math.PI / 2 - 0.25));
+        parts.add(jerseyDark, new THREE.CylinderGeometry(shape.hem[0], shape.hem[1], 0.07, 24), transform(0, 0.045, 0, sx + 0.01, 1, sz + 0.02));
+        parts.add(jerseyDark, box, transform(0, 0.17, shape.pocket[0], shape.pocket[1], 0.13, 0.03, 0.12));
+        for (const side of [-1, 1]) parts.add(cords, tube, transform(side * 0.045, shape.cords[0], shape.cords[1], 0.007, 0.16, 0.007, 0.25));
+        parts.add(pants, tube, transform(0, profile[profile.length - 1].y, 0.01, 0.06, 0.1, 0.06));
+        parts.build(group);
+        torsoGeometry.dispose();
+        printGeometry.dispose();
+        hood.dispose();
+        pelvis.add(group);
+        return group;
+    }
+    const bodies = { boy: buildTorso(BODY_SHAPES.boy), girl: buildTorso(BODY_SHAPES.girl) };
+    bodies.girl.visible = false;
 
     const head = new THREE.Group();
     head.position.set(0, 0.74, 0.03);
@@ -551,7 +577,8 @@ export function createRider({ scene }) {
         const length = segment.length();
         mesh.position.copy(from).addScaledVector(segment, 0.5);
         mesh.quaternion.setFromUnitVectors(UP, segment.divideScalar(length || 1));
-        mesh.scale.set(1, length / nominalLength, 1);
+        const thick = mesh.userData.thick || 1;
+        mesh.scale.set(thick, length / nominalLength, thick);
     }
 
     // Two-bone IK from `root` to `target` (riderGroup space), bending towards `pole`.
@@ -1486,13 +1513,22 @@ export function createRider({ scene }) {
         const frontMaterial = new THREE.MeshStandardMaterial({
             transparent: true, roughness: 0.86, depthWrite: false, polygonOffset: true, polygonOffsetFactor: -1, polygonOffsetUnits: -1
         });
-        const chestProfile = [[0.18, 0.24], [0.188, 0.38], [0.178, 0.46]].map(([r, y]) => new THREE.Vector2(r * 1.014, y));
-        const chest = new THREE.Mesh(new THREE.LatheGeometry(chestProfile, 12, -0.56, 1.12).applyMatrix4(transform(0, 0.02, 0, 1.22, 1, 0.9)), frontMaterial);
-        chest.visible = false;
-        chest.renderOrder = 2;
-        pelvis.add(chest);
+        const chestOf = (points, sx, sz) => {
+            const lathe = new THREE.LatheGeometry(points.map(([r, y]) => new THREE.Vector2(r * 1.014, y)), 12, -0.56, 1.12);
+            const mesh = new THREE.Mesh(lathe.applyMatrix4(transform(0, 0.02, 0, sx, 1, sz)), frontMaterial);
+            mesh.visible = false;
+            mesh.renderOrder = 2;
+            pelvis.add(mesh);
+            return mesh;
+        };
+        // (The girl's a little higher: above the bust.)
+        const chests = {
+            boy: chestOf([[0.18, 0.24], [0.188, 0.38], [0.178, 0.46]], 1.22, 0.9),
+            girl: chestOf([[0.161, 0.385], [0.156, 0.44], [0.138, 0.485]], 1.14, 0.92)
+        };
+        const chest = chests.boy;
         return {
-            group, chest, frontMaterial, skin, print: null, look: null, pictures: {}, bandCanvas, bandMap, tie, tails, band: null,
+            group, chest, chests, frontMaterial, skin, print: null, look: null, pictures: {}, bandCanvas, bandMap, tie, tails, band: null,
             faceMaterial, faces, beard, hairs
         };
     }
@@ -1794,6 +1830,9 @@ export function createRider({ scene }) {
         sneaker.color.set('#f4f4f2');
         glove.color.set(0x7a4524);
         const girl = look.gender === 'girl';
+        shapeFor(girl);
+        outfit.chests.boy.visible = !girl;
+        outfit.chests.girl.visible = girl;
         const style = look.hair === 'afro' ? 'afro' : 'vanilles';
         outfit.hairs.vanilles.visible = girl && style === 'vanilles';
         outfit.hairs.afro.visible = girl && style === 'afro';
@@ -1833,17 +1872,29 @@ export function createRider({ scene }) {
         });
     }
 
+    // The body's shape: the girl's (her torso, slimmer arms and legs, the
+    // shoulders closer, a smaller head) or the usual one.
+    function shapeFor(girl) {
+        bodies.boy.visible = !girl;
+        bodies.girl.visible = girl;
+        shoulders.forEach((target, i) => { target.position.x = (i === 0 ? -1 : 1) * (girl ? 0.19 : 0.215); });
+        for (const limb of arms) limb.upper.userData.thick = limb.lower.userData.thick = girl ? 0.8 : 1;
+        for (const limb of legs) limb.upper.userData.thick = limb.lower.userData.thick = girl ? 0.84 : 1;
+        head.scale.setScalar(girl ? 0.94 : 1);
+    }
+
     // look: { print: 'lva' | 'plva' | 'world-love' | 'fabulous-love-and-faith' }, or null.
     function setEventLook(look) {
         if (look && !outfit) outfit = buildOutfit();
         if (!outfit) return;
         outfit.look = look || null;
         outfit.group.visible = !!look;
-        outfit.chest.visible = !!look;
         if (look) dressOutfit();
         else {
             outfit.print = null;
             glove.color.set(0x0e0e10);
+            outfit.chests.boy.visible = outfit.chests.girl.visible = false;
+            shapeFor(false);
         }
     }
 

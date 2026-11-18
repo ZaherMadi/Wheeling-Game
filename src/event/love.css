@@ -1308,3 +1308,352 @@ body.love-panel :is(#score-container, #speedometer, #pause-btn, #angle-multiplie
   height: 110px;
   margin-top: 8px;
 }
+
+/* --- The Love&Faith riders, in the rider screen ------------------------------------- */
+.love-wear {
+  margin: 12px 0 4px;
+  padding: 10px 12px 12px;
+  border-radius: 14px;
+  border: 1px solid rgba(255, 31, 61, 0.35);
+  background: linear-gradient(180deg, rgba(40, 6, 12, 0.85), rgba(8, 4, 6, 0.85));
+  box-shadow: 0 0 18px rgba(201, 0, 37, 0.25);
+  color: #f4ede9;
+  font-family: 'Poppins', system-ui, sans-serif;
+  text-align: left;
+}
+
+.love-wear__title {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin: 0 0 8px;
+  font: italic 900 15px/1 'Playfair Display', Georgia, serif;
+  letter-spacing: 0.04em;
+  color: #f4ede9;
+}
+
+.love-wear__title img {
+  width: 26px;
+  height: 26px;
+  object-fit: contain;
+}
+
+.love-wear__list {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 6px;
+}
+
+#love-wear .love-wear__list button {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 3px;
+  margin: 0 !important;
+  padding: 8px 4px !important;
+  border-radius: 12px;
+  border: 1px solid rgba(244, 237, 233, 0.14);
+  background: rgba(244, 237, 233, 0.05);
+  color: rgba(244, 237, 233, 0.85);
+  box-shadow: none !important;
+  cursor: pointer;
+  transform: none !important;
+}
+
+#love-wear .love-wear__list button::before {
+  content: none;
+}
+
+#love-wear .love-wear__list b {
+  font: 600 12.5px/1.2 'Poppins', system-ui, sans-serif;
+}
+
+#love-wear .love-wear__list small {
+  font-size: 10px;
+  color: rgba(244, 237, 233, 0.6);
+}
+
+#love-wear .love-wear__list .is-buyable small {
+  color: #c9a45c;
+  font-weight: 600;
+}
+
+#love-wear .love-wear__list .is-locked {
+  opacity: 0.6;
+}
+
+#love-wear .love-wear__list .is-on {
+  border-color: #ff1f3d;
+  background: linear-gradient(180deg, rgba(255, 31, 61, 0.26), rgba(118, 0, 0, 0.22));
+  color: #fff;
+  box-shadow: 0 0 12px rgba(255, 31, 61, 0.35) !important;
+}
+
+.love-wear__msg {
+  min-height: 1.2em;
+  margin: 6px 0;
+  font-size: 11px;
+  color: rgba(244, 237, 233, 0.75);
+}
+
+.love-wear__code {
+  display: flex;
+  gap: 6px;
+}
+
+#love-wear .love-wear__code input {
+  flex: 1;
+  min-width: 0;
+  padding: 8px 10px;
+  border-radius: 10px;
+  border: 1px solid rgba(244, 237, 233, 0.2);
+  background: rgba(0, 0, 0, 0.4);
+  color: #fff;
+  font: 600 13px/1 'Poppins', system-ui, sans-serif;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+}
+
+#love-wear .love-wear__code button {
+  margin: 0 !important;
+  padding: 8px 14px !important;
+  border-radius: 10px;
+  border: 1px solid rgba(201, 164, 92, 0.7);
+  background: linear-gradient(180deg, #ff2b47, #c90025);
+  color: #fff;
+  font: 700 13px/1 'Poppins', system-ui, sans-serif;
+  box-shadow: none !important;
+}
+
+/* --- The end card: the right to buy the rider ----------------------------------------- */
+.love-reward {
+  display: grid;
+  gap: 4px;
+  margin: 10px 0 2px;
+  padding: 10px 12px;
+  border-radius: 14px;
+  border: 1px solid rgba(201, 164, 92, 0.55);
+  background: linear-gradient(180deg, rgba(201, 164, 92, 0.16), rgba(201, 164, 92, 0.04));
+  font-size: 12px;
+  color: rgba(244, 237, 233, 0.85);
+}
+
+.love-reward b {
+  color: #f1d9a0;
+  font-size: 13px;
+}
+
+#love-root .love-btn--gold {
+  margin-top: 6px !important;
+  background: linear-gradient(180deg, #e7c77a, #c9a45c 55%, #8f6f2f);
+  border-color: rgba(255, 240, 200, 0.7);
+  color: #1a0e05;
+}
+
+#love-root .love-btn--gold:disabled {
+  opacity: 0.55;
+  cursor: default;
+}
+
+/* --- Phones in landscape --------------------------------------------------------------- */
+@media (orientation: landscape) and (max-height: 520px) {
+  /* The four modes: two by two, all the same size. */
+  body.v2 #mode-select-screen .ui-cards {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    width: min(720px, 92vw);
+    gap: 10px 14px;
+    margin: 0 auto 12px;
+  }
+
+  body.v2 #mode-select-screen .ui-cards > * {
+    width: 100% !important;
+    min-height: 66px;
+    box-sizing: border-box;
+  }
+
+  body.v2 #mode-select-screen .ui-btn--card {
+    padding: 12px 18px !important;
+    font-size: 16px;
+  }
+
+  #select-live.live-entry {
+    padding: 10px 16px !important;
+  }
+
+  #select-love.love-entry {
+    display: grid;
+    grid-template-columns: auto auto;
+    grid-template-rows: auto auto;
+    align-content: center;
+    justify-content: center;
+    column-gap: 12px;
+    row-gap: 2px;
+    padding: 10px 16px !important;
+  }
+
+  #select-love.love-entry img {
+    grid-row: span 2;
+    align-self: center;
+    width: 38px;
+    height: 38px;
+  }
+
+  #select-love .love-entry__title {
+    font-size: 18px;
+    text-align: left;
+  }
+
+  #select-love .love-entry__sub {
+    text-align: left;
+  }
+
+  /* The event's studio: compact, nothing squeezed. */
+  .love-screen.is-studio {
+    padding: 8px max(10px, env(safe-area-inset-right)) 8px 8px;
+  }
+
+  #love-root .love-card--studio {
+    width: min(440px, 54vw);
+    max-height: calc(100vh - 16px);
+    max-height: calc(100dvh - 16px);
+    padding: 10px 12px;
+    gap: 7px;
+  }
+
+  .love-card--studio > :not(.love-slide) {
+    flex-shrink: 0;
+  }
+
+  .love-card--studio .love-slide {
+    min-height: 0;
+  }
+
+  .love-studio__logo {
+    width: 30px;
+    height: 30px;
+  }
+
+  .love-studio__top .love-kicker {
+    display: none;
+  }
+
+  .love-studio__name {
+    font-size: 17px;
+  }
+
+  #love-root .love-studio__top .love-close {
+    width: 30px;
+    height: 30px;
+  }
+
+  #love-root .love-step {
+    padding: 6px 2px !important;
+  }
+
+  .love-slide__title {
+    font-size: 18px;
+  }
+
+  .love-slide__hint {
+    margin-bottom: 6px;
+    font-size: 11px;
+  }
+
+  #love-root .love-choice {
+    padding: 7px 6px !important;
+  }
+
+  .love-choice__icon {
+    font-size: 22px;
+  }
+
+  .love-choice small {
+    display: none;
+  }
+
+  .love-outfit img {
+    height: 40px;
+  }
+
+  .love-band-preview {
+    height: 36px;
+    font-size: 22px;
+    margin-bottom: 6px;
+  }
+
+  #love-root .love-band {
+    height: 32px;
+  }
+
+  #love-root .love-arrow {
+    width: 32px;
+    height: 32px;
+    font-size: 22px;
+  }
+
+  #love-root .love-actions .love-btn {
+    padding: 9px 12px !important;
+    font-size: 14px !important;
+  }
+
+  .love-card--studio .love-best {
+    display: none;
+  }
+
+  .love-choices--three + .love-player {
+    height: 96px;
+  }
+
+  /* The tutorial: the shot beside the words. */
+  .love-tuto__card {
+    display: grid;
+    grid-template-columns: auto 1fr;
+    grid-template-rows: auto auto 1fr auto;
+    column-gap: 14px;
+    width: min(680px, 96vw);
+    text-align: left;
+  }
+
+  .love-tuto__shot {
+    grid-row: 1 / span 4;
+    height: calc(100vh - 60px);
+    height: calc(100dvh - 60px);
+    max-height: none;
+  }
+
+  .love-tuto__title {
+    margin-top: 4px;
+  }
+
+  .love-tuto .love-nav__dots {
+    justify-content: flex-start;
+  }
+
+  .love-tuto .love-actions {
+    align-self: end;
+  }
+
+  /* The end cards: a little tighter. */
+  #love-root .love-card--wide {
+    max-height: calc(100dvh - 16px);
+    padding: 12px 16px;
+  }
+
+  .love-end__title {
+    min-height: 64px;
+  }
+}
+
+/* The win card with its reward: everything fits on a phone. */
+.love-card--repaired .love-end__title {
+  min-height: 74px;
+}
+
+.love-card--repaired .love-stats {
+  margin-bottom: 0;
+}
+
+.love-card--repaired .love-reward {
+  margin-top: 8px;
+}

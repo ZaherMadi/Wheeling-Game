@@ -40,6 +40,22 @@ const TUTORIAL = [
     ['À 0 : tempête émotionnelle', 'Elle emporte tout sur son passage. C’est perdu… et ça se recommence.']
 ];
 const STEP_LABELS = { rider: 'Perso', hair: 'Coiffure', outfit: 'Tenue', band: 'Bandeau', music: 'Musique' };
+// The Love&Faith riders for the whole game: the heart mended with him (or
+// her) gives the right to buy him, CHARACTER_PRICE points; or his code.
+// Worn everywhere once chosen in the rider screen.
+const WON_KEY = 'wheelie_love_won';
+const OWNED_KEY = 'wheelie_love_owned';
+const WEAR_KEY = 'wheelie_love_wear';
+export const CHARACTER_PRICE = 600000;
+const CHARACTER_CODES = { LOVE51: 'boy', FAITH51: 'girl' };
+const readList = (key) => {
+    try {
+        const list = JSON.parse(readLocal(key) || '[]');
+        return Array.isArray(list) ? list : [];
+    } catch {
+        return [];
+    }
+};
 const FILES = '/event/love/';
 export const LOVE = { max: 20, start: 8, sun: 12 };
 // Placement on the road: one slot every `seconds` of riding, each one a
@@ -415,6 +431,7 @@ export function createLoveEvent(deps) {
     function chosen() {
         deps.v2()?.setOutfit(look());
         if (studioOn) renderStudio(0);
+        applyWear();
     }
 
     // --- The tutorial: a screen of the game for each thing to know. ----------------
@@ -434,10 +451,13 @@ export function createLoveEvent(deps) {
                 <button type="button" class="love-btn love-btn--primary" data-act="${last ? 'tuto-done' : 'tuto-next'}">${last ? 'C’EST PARTI' : 'SUIVANT'}</button>
             </div>`;
         $('love-tuto').hidden = false;
+        // SoundCloud's player (over its place in the panel) out of the way.
+        parkPlayer();
     }
     function closeTutorial() {
         $('love-tuto').hidden = true;
         writeLocal(TUTO_KEY, '1');
+        if (studioOn) renderStudio(0);
     }
 
     // The SoundCloud player: shown over its place in the panel (a tap on it
@@ -517,6 +537,7 @@ export function createLoveEvent(deps) {
         if (first) deps.stat('loveUnlocks');
         installEntry();
         installSettings();
+        installWear();
         welcome();
     }
 
@@ -959,6 +980,7 @@ export function createLoveEvent(deps) {
         let record = false;
         if (kind === 'repaired') {
             deps.stat('loveRepaired');
+            markWon(riderChoice());
             if (!best || seconds < best) {
                 writeLocal(BEST_KEY, String(Math.round(seconds)));
                 record = !!best;
@@ -971,6 +993,14 @@ export function createLoveEvent(deps) {
             if (!run.on) return;
             const title = kind === 'repaired' ? 'Cœur réparé' : kind === 'broken' ? 'Cœur brisé' : 'Chute…';
             const sub = kind === 'repaired' ? 'MISSION RÉUSSIE' : kind === 'broken' ? 'PERDU · LA TEMPÊTE A TOUT EMPORTÉ' : 'LE CŒUR À ' + run.love + '/' + LOVE.max;
+            const gender = riderChoice();
+            const who = gender === 'girl' ? 'la fille' : 'le garçon';
+            const reward = kind !== 'repaired' ? ''
+                : owned(gender) ? `<p class="love-reward">Ce perso est à toi : porte-le partout dans « Personnage ».</p>`
+                    : `<div class="love-reward"><b>Débloqué : ${who} Love&amp;Faith pour tout le jeu</b>
+                        <span>${fmtPoints(CHARACTER_PRICE)} points, ou son code (dans « Personnage »)</span>
+                        <button type="button" class="love-btn love-btn--gold" data-act="buy-rider" ${deps.points() < CHARACTER_PRICE ? 'disabled' : ''}>
+                            ${deps.points() < CHARACTER_PRICE ? `Il te manque ${fmtPoints(CHARACTER_PRICE - deps.points())} pts` : `ACHETER · ${fmtPoints(CHARACTER_PRICE)} PTS`}</button></div>`;
             show(`
                 <p class="love-kicker">LOVE&amp;FAITH × 51WHELING</p>
                 <div class="love-end__title" id="love-end-title"></div>
@@ -981,6 +1011,7 @@ export function createLoveEvent(deps) {
                     <div><dt>Touchés</dt><dd>${run.hits}</dd></div>
                 </dl>
                 ${record ? '<p class="love-best is-record">Nouveau record !</p>' : ''}
+                ${reward}
                 ${kind === 'broken' ? '<p class="love-text">L’amour se reconstruit : remonte la barre, évite les larmes.</p>' : ''}
                 <button type="button" class="love-btn love-btn--primary" data-act="again">❤ REJOUER</button>
                 <button type="button" class="love-btn love-btn--ghost" data-act="menu">Menu</button>`, true);
@@ -1020,6 +1051,7 @@ export function createLoveEvent(deps) {
         const v2 = deps.v2();
         v2?.setSky(null);
         v2?.setOutfit(null);
+        applyWear();
         v2?.rider.setMood(0);
         if (!keepMusic) {
             music.stop();
@@ -1081,6 +1113,16 @@ export function createLoveEvent(deps) {
             music.start();
             closeStudio(false);
             deps.startRun();
+        } else if (act === 'buy-rider') {
+            if (target.dataset.confirm !== '1') {
+                target.dataset.confirm = '1';
+                target.textContent = `CONFIRMER · −${fmtPoints(CHARACTER_PRICE)} PTS`;
+                return;
+            }
+            if (buy(riderChoice())) {
+                const box = target.closest('.love-reward');
+                if (box) box.innerHTML = '<b>Perso acheté !</b><span>Il est déjà sur ta moto. Change dans « Personnage ».</span>';
+            }
         } else if (act === 'again') {
             chimes.unlock();
             music.start();
@@ -1127,10 +1169,125 @@ export function createLoveEvent(deps) {
         });
     }
 
+    // --- The riders for the whole game ----------------------------------------------
+    const fmtPoints = (value) => Math.floor(value).toLocaleString('fr-FR');
+    const won = (gender) => readList(WON_KEY).includes(gender);
+    const owned = (gender) => readList(OWNED_KEY).includes(gender);
+    const wearing = () => {
+        const gender = readLocal(WEAR_KEY);
+        return (gender === 'boy' || gender === 'girl') && owned(gender) ? gender : '';
+    };
+    function addTo(key, gender) {
+        const list = readList(key);
+        if (!list.includes(gender)) writeLocal(key, JSON.stringify([...list, gender]));
+    }
+    function markWon(gender) {
+        if (!won(gender)) deps.stat(`loveWon${gender === 'girl' ? 'Girl' : 'Boy'}`);
+        addTo(WON_KEY, gender);
+        renderWear();
+    }
+    function buy(gender) {
+        if (owned(gender) || !won(gender) || !deps.spend(CHARACTER_PRICE)) return false;
+        addTo(OWNED_KEY, gender);
+        deps.stat('loveRiderBought');
+        wear(gender);
+        return true;
+    }
+    function redeem(code) {
+        const gender = CHARACTER_CODES[String(code || '').trim().toUpperCase()];
+        if (!gender) return null;
+        addTo(WON_KEY, gender);
+        addTo(OWNED_KEY, gender);
+        deps.stat('loveRiderCode');
+        wear(gender);
+        return gender;
+    }
+    function wear(gender) {
+        writeLocal(WEAR_KEY, gender || '');
+        applyWear();
+        renderWear();
+    }
+    // The chosen rider on the bike, in every mode (the event's own look
+    // while racing it).
+    function applyWear() {
+        const gender = wearing();
+        deps.v2()?.setBaseOutfit(gender ? { ...look(), gender } : null);
+    }
+
+    // The rider screen: which rider to wear, what each one takes.
+    function installWear() {
+        if (!loveUnlocked() || document.getElementById('love-wear')) return;
+        const anchor = document.getElementById('rider-options');
+        if (!anchor) return;
+        const box = document.createElement('div');
+        box.id = 'love-wear';
+        box.className = 'love-wear';
+        anchor.after(box);
+        box.addEventListener('click', (event) => {
+            const button = event.target instanceof Element ? event.target.closest('[data-wear], [data-act]') : null;
+            if (!button || button.disabled) return;
+            const message = box.querySelector('.love-wear__msg');
+            if (button.dataset.act === 'love-code') {
+                const input = box.querySelector('input');
+                const gender = redeem(input.value);
+                input.value = '';
+                message.textContent = gender ? `Code bon : ${gender === 'girl' ? 'la fille' : 'le garçon'} Love&Faith est à toi.` : 'Code inconnu.';
+                return;
+            }
+            const gender = button.dataset.wear;
+            if (!gender) {
+                wear('');
+            } else if (owned(gender)) {
+                wear(gender);
+            } else if (won(gender)) {
+                if (deps.points() < CHARACTER_PRICE) {
+                    message.textContent = `Il te manque ${fmtPoints(CHARACTER_PRICE - deps.points())} points (ou entre son code).`;
+                } else if (button.dataset.confirm !== '1') {
+                    button.dataset.confirm = '1';
+                    button.querySelector('small').textContent = `Confirmer : −${fmtPoints(CHARACTER_PRICE)}`;
+                } else if (buy(gender)) {
+                    message.textContent = 'Perso acheté : il est sur ta moto.';
+                }
+            } else {
+                message.textContent = `Répare ton cœur dans l’événement avec ${gender === 'girl' ? 'la fille' : 'le garçon'} pour pouvoir l’acheter (ou entre son code).`;
+            }
+        });
+        box.querySelector?.('input')?.addEventListener('keydown', (event) => event.stopPropagation());
+        renderWear();
+    }
+    function renderWear() {
+        const box = document.getElementById('love-wear');
+        if (!box) return;
+        const worn = wearing();
+        const state = (gender) => owned(gender) ? (worn === gender ? 'Porté' : 'À toi')
+            : won(gender) ? `${fmtPoints(CHARACTER_PRICE)} pts` : '🔒 Gagne l’événement';
+        const keep = box.querySelector('input')?.value || '';
+        box.innerHTML = `
+            <h3 class="love-wear__title"><img src="${FILES}logo-heart.png" alt="">PERSO LOVE&amp;FAITH</h3>
+            <div class="love-wear__list">
+                <button type="button" class="${worn === '' ? 'is-on' : ''}" data-wear=""><b>51WHELING</b><small>Ton perso</small></button>
+                ${RIDERS.map(([gender, name]) => `<button type="button" class="${worn === gender ? 'is-on' : ''} ${owned(gender) ? 'is-owned' : won(gender) ? 'is-buyable' : 'is-locked'}" data-wear="${gender}">
+                    <b>${esc(name)}</b><small>${state(gender)}</small></button>`).join('')}
+            </div>
+            <p class="love-wear__msg" aria-live="polite"></p>
+            <div class="love-wear__code"><input type="text" maxlength="12" placeholder="Code d’un perso" autocomplete="off" autocapitalize="characters" spellcheck="false" aria-label="Code d’un perso">
+                <button type="button" data-act="love-code">OK</button></div>`;
+        const input = box.querySelector('input');
+        input.value = keep;
+        input.addEventListener('keydown', (event) => event.stopPropagation());
+    }
+    document.getElementById('rider-btn')?.addEventListener('click', () => {
+        installWear();
+        renderWear();
+    });
+    document.addEventListener('wheelie:points', () => renderWear());
+
     installEntry();
     installSettings();
+    installWear();
 
     return {
+        applyWear,
         open, unlockFromCode, installEntry, begin, spawn, step, frame, finish, leave,
         get active() { return run.on; },
         get love() { return run.love; },

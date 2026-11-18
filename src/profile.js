@@ -17,6 +17,8 @@ const FIRST_KEY = 'wheelie_profile_first';
 const PREFIX = 'wheelie_profile:';
 const FREE_TRICKS_KEY = 'wheelie_free_tricks';
 const LIVE_KEY = 'wheelie_live_unlocked';
+const LOVE_WON_KEY = 'wheelie_love_won';
+const LOVE_OWNED_KEY = 'wheelie_love_owned';
 const POSES_KEY = 'wheelie_podium_poses';
 const JET_CODE_KEY = 'wheelie_jetpack_code';
 const BESTS = ['bestScore', 'topKmh'];
@@ -155,6 +157,11 @@ function ownedHere() {
     }
     const poses = readJson(POSES_KEY, []);
     if (Array.isArray(poses)) poses.forEach((id) => typeof id === 'string' && owned.push(`pose:${id}`));
+    // The Love&Faith riders: won, bought.
+    for (const [key, prefix] of [[LOVE_WON_KEY, 'loveWon'], [LOVE_OWNED_KEY, 'love']]) {
+        const list = readJson(key, []);
+        if (Array.isArray(list)) list.forEach((g) => (g === 'boy' || g === 'girl') && owned.push(`${prefix}:${g}`));
+    }
     return owned;
 }
 
@@ -196,6 +203,18 @@ function applyOwned(owned) {
         }
     }
     if (changed) writeJson(POSES_KEY, [...poses]);
+    for (const [key, prefix] of [[LOVE_WON_KEY, 'loveWon'], [LOVE_OWNED_KEY, 'love']]) {
+        const list = new Set(readJson(key, []));
+        const before = list.size;
+        for (const item of owned) {
+            const [name, gender] = item.split(':');
+            if (name === prefix && (gender === 'boy' || gender === 'girl')) list.add(gender);
+        }
+        if (list.size !== before) {
+            writeJson(key, [...list]);
+            changed = true;
+        }
+    }
     return changed;
 }
 

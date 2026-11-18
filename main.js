@@ -7449,6 +7449,8 @@ loveEvent = createLoveEvent({
         document.getElementById('mode-select-screen')?.classList.add('active');
     },
     stat: (name, n = 1) => bumpStat(name, n),
+    points: () => totalPoints(),
+    spend: (n) => spendPoints(n),
     // The event's studio: the rider shown turning above its panel.
     showroom: (on) => {
         if (!v2) return;
@@ -7993,6 +7995,8 @@ document.getElementById('back-from-leaderboard')?.addEventListener('click', () =
 displayNickname();
 
 init();
+// A Love&Faith rider bought and chosen: worn from the start.
+loveEvent?.applyWear();
 releaseSplash();
 
 // The intro animation plays while the city is generated. It leaves once the

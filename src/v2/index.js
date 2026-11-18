@@ -63,6 +63,14 @@ export function createRealisticVersion({ scene, renderer, camera, mobile, audio,
         ...livery, name: riderName(), plate: !!livery.plate && totalPoints() >= PLATE_POINTS, plateText: livery.plateText || '',
         ...unlockedLook(livery)
     });
+    // The Love&Faith rider: the event's look while racing it, or one bought
+    // and worn everywhere (null: the usual rider).
+    let eventOutfit = null;
+    let baseOutfit = null;
+    function dressRider() {
+        rider.setEventLook(wornLook ? null : eventOutfit || baseOutfit);
+        if (wornLook || !(eventOutfit || baseOutfit)) wearOwn();
+    }
     // The event's sky ({ ambience, dusk }, or null: the day cycle).
     let skyOverride = null;
     let skyAmbience = 'golden';
@@ -622,12 +630,17 @@ export function createRealisticVersion({ scene, renderer, camera, mobile, audio,
             skyOverride = sky || null;
         },
         setOutfit(look) {
-            rider.setEventLook(look || null);
-            if (!look) wearOwn();
+            eventOutfit = look || null;
+            dressRider();
+        },
+        setBaseOutfit(look) {
+            baseOutfit = look || null;
+            dressRider();
         },
         wearLook(look) {
             wornLook = look ? { ...look, name: look.name || '', plate: !!look.plate, plateText: look.plateText || '' } : null;
-            wearOwn();
+            // Someone else watched: his own look, not our Love&Faith rider.
+            dressRider();
         },
         // The Figures Land code: the park in one of the next side streets.
         figuresLand: { summon: () => figuresLand.newRide(true) },
