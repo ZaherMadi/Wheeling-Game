@@ -1,4 +1,4 @@
-const CACHE_NAME = 'wheelie-king-v6';
+const CACHE_NAME = 'wheelie-king-v7';
 const APP_SHELL = [
     '/',
     '/index.html',
@@ -36,6 +36,7 @@ self.addEventListener('fetch', (event) => {
     const request = event.request;
     const url = new URL(request.url);
     if (request.method !== 'GET' || url.origin !== self.location.origin) return;
+    if (request.headers.has('range')) return;
 
     if (request.mode === 'navigate') {
         event.respondWith(

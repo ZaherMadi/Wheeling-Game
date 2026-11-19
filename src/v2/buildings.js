@@ -315,7 +315,7 @@ export function createBuildingKit({ random, atlases }) {
                 sink.both.props.block(x0, floor, c, x0 + 1.6, floor + 1.2, c + 1.1, 0xb8bcc2, 1, 'xXzZY');
                 sink.hi.props.add(PRIMS.disc, transform(x0 + 0.8, floor + 1.21, c + 0.55, 0.42, 1, 0.42), 0x3a3d42);
                 sink.hi.props.tube([vec({ x: x0 + 1.6, y: floor + 0.4, z: c + 0.5 }), vec({ x: x0 + 2.4, y: floor + 0.4, z: c + 0.5 }),
-                    vec({ x: x0 + 2.4, y: floor, z: c + 0.5 })], [0.07, 0.07], 0x9aa0a6, 5);
+                    vec({ x: x0 + 2.4, y: floor, z: c + 0.5 })], [0.07, 0.07, 0.07], 0x9aa0a6, 5);
             } else {
                 // Water tank on legs.
                 sink.hi.props.add(PRIMS.cylinder, transform(x0, floor + 1.4, c, 1.1, 2.8, 1.1), 0x8d7f6c);

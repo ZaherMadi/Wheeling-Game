@@ -73,7 +73,7 @@ export function createHorizon({ scene }) {
         for (const side of [-1, 1]) {
             mesh(box, steelMat, side * 42, 42, 0, 3.6, 84, 4.2, 0, 0, 0, g);
             mesh(box, steelMat, side * 42, 62, 0, 10, 2.5, 4.4, 0, 0, 0, g);
-            mesh(redMat, redMat, side * 42, 85, 0, 0.9, 0.9, 0.9, 0, 0, 0, g);
+            mesh(box, redMat, side * 42, 85, 0, 0.9, 0.9, 0.9, 0, 0, 0, g);
             for (let i = 1; i <= 5; i++) {
                 const span = i * 9;
                 const len = Math.hypot(span, 34);

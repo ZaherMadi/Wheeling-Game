@@ -8085,21 +8085,30 @@ document.getElementById('back-from-leaderboard')?.addEventListener('click', () =
 // Afficher le pseudo au chargement si il existe
 displayNickname();
 
-init();
-// A Love&Faith rider or shop character/outfit bought and chosen: worn from the start.
-loveEvent?.applyWear();
-applyCharacter(v2);
-applyEquippedOutfit(v2);
-shopUI?.refresh();
-releaseSplash();
+try {
+    init();
+    // A Love&Faith rider or shop character/outfit bought and chosen: worn from the start.
+    loveEvent?.applyWear();
+    applyCharacter(v2);
+    applyEquippedOutfit(v2);
+    shopUI?.refresh();
+} catch (error) {
+    console.error('Startup error:', error);
+    reportError('startup', error);
+} finally {
+    releaseSplash();
+}
 
 // The intro animation plays while the city is generated. It leaves once the
 // game is ready and the animation has finished, or on a tap once ready;
 // later visits in the same session do not wait for the end.
 function releaseSplash() {
+    window.__splashHandled = true;
+    clearTimeout(window.__splashTimer);
     const splash = document.getElementById('splash');
     const video = document.getElementById('splash-video');
     if (!splash) return;
+    if (video) video.loop = false;
     let seen = false;
     try {
         seen = sessionStorage.getItem('wheelie_splash_seen') === '1';
