@@ -15,13 +15,20 @@ import { createAccount, deviceToken } from './src/account.js';
 import { createSecretBird } from './src/secret-bird.js';
 import { SHIELD, createShields } from './src/shield.js';
 import { bestStat, bumpStat, renderStats } from './src/stats.js';
-import { configureProfile, profileStats, syncProfile } from './src/profile.js';
+import { configureProfile, deviceId, profileStats, syncProfile } from './src/profile.js';
 import { applyPadLayout, openPadEditor } from './src/pad-layout.js';
 import { startActivity } from './src/activity.js';
 import { createSpeedLines } from './src/v2/speedlines.js';
 import riderVoices from './src/rider-voices.json';
 import { createLive } from './src/live/live.js';
 import { createLoveEvent } from './src/event/love.js';
+import { configureShop } from './src/shop/store.js';
+import { applyCharacter, registerCharacters } from './src/shop/characters.js';
+import { applyEquippedOutfit, registerOutfitsAndExtras } from './src/shop/outfits.js';
+import { createMusicPlayer, registerMusic } from './src/music/player.js';
+import { registerRealCars } from './src/v2/realcars.js';
+import { installShop } from './src/shop/shop.js';
+import { beginCinematic, cinematicSpeed, endCinematic } from './src/cinematic.js';
 
 // Two versions share the same simulation, scoring and ranked replay:
 // 'v2' (realistic city, new rider) and 'classic' (the original V1 look).
@@ -45,6 +52,8 @@ let v2 = null;
 let live = null;
 let liveRecording = false;
 let liveLastFrame = -1e9;
+let musicPlayer = null;
+let shopUI = null;
 
 const CONFIG = {
     laneWidth: 10,
@@ -1411,6 +1420,7 @@ function startRoamFall(v, skidding, roam, kind = 'hit') {
     roamFall.phase = 'crash';
     roamFall.skid = 0;
     freeRide.speed = 0;
+    beginCinematic('roam-fall');
     const unitsPerSecond = Math.abs(v);
     freeWheelie.bavette = 0;
     v2.rider.startCrash(kind, unitsPerSecond, {
@@ -1429,7 +1439,8 @@ function startRoamFall(v, skidding, roam, kind = 'hit') {
 }
 
 // One frame of the fall and of getting back on.
-function updateRoamFall(dt) {
+function updateRoamFall(rawDt) {
+    const dt = rawDt * cinematicSpeed();
     const rider = v2.rider;
     roamFall.t += dt;
     const t = roamFall.t;
@@ -1484,6 +1495,7 @@ function updateRoamFall(dt) {
             bikeGroup.position.y = 0;
             rider.reset();
             roamFall.active = false;
+            endCinematic('roam-fall');
             toast('C’EST REPARTI', 'De retour sur la moto', { discreet: true, float: true });
         }
     }
@@ -2232,6 +2244,7 @@ async function startGame() {
         if (!state.loveEvent) bumpStat(GAME_SETTINGS.gameMode === 'free' ? 'freeSessions' : 'runs');
         state.speed = CONFIG.minSpeed;
         audio.startRun();
+        musicPlayer?.onRunStart(state.loveEvent);
         audio.play('rev_blip', { volume: 0.4 });
         lastVoiceAt = -Infinity;
         lastPeriodicVoiceAt = 0;
@@ -2327,6 +2340,7 @@ function pauseGame() {
     Object.keys(state.keys).forEach((key) => { state.keys[key] = false; });
     stopVoice();
     audio.setPaused(true);
+    musicPlayer?.refreshPause(state.loveEvent);
     document.getElementById('pause-screen')?.classList.add('active');
     const mobileControls = document.getElementById('mobile-controls');
     if (mobileControls) mobileControls.style.visibility = 'hidden';
@@ -2378,9 +2392,17 @@ function quitToMenu() {
     state.userPaused = false;
     state.isPlaying = false;
     crashSequence++;
+    endCinematic('crash');
+    endCinematic('police-linear');
+    endCinematic('love-end');
+    endCinematic('tow');
+    endCinematic('police');
+    endCinematic('glider-police');
+    endCinematic('roam-fall');
     stopVoice();
     audio.setPaused(false);
     audio.stopRun();
+    musicPlayer?.stopRun();
     completedRankedRun = null;
     standRiderUp();
     document.querySelectorAll('.screen').forEach((screen) => screen.classList.remove('active'));
@@ -3571,6 +3593,7 @@ async function gameOver(reason = 'crash') {
     }
     // The run ends normally: nothing to report at the next visit.
     clearLiveRun();
+    musicPlayer?.stopRun();
     speedLines?.hide();
     hidePoliceWarning();
     if (!runStats.counted) {
@@ -3797,7 +3820,8 @@ function loveFinish(kind) {
     let last = start;
     const tick = (now) => {
         if (sequence !== crashSequence || state.isPlaying || !state.loveEvent) return;
-        const dt = Math.min((now - last) / 1000, 0.05);
+        const rawDt = Math.min((now - last) / 1000, 0.05);
+        const dt = rawDt * cinematicSpeed();
         last = now;
         const cruise = kind === 'repaired' ? 45 : 0;
         speed += (cruise - speed) * Math.min(1, dt * (kind === 'repaired' ? 0.5 : 0.8));
@@ -3805,7 +3829,7 @@ function loveFinish(kind) {
         state.speed = speed / 60;
         state.bike.angle *= Math.pow(0.4, dt);
         bikePivot.rotation.x = -state.bike.angle;
-        renderScene(dt);
+        renderScene(rawDt);
         if (now - start < 60000) requestAnimationFrame(tick);
     };
     requestAnimationFrame(tick);
@@ -3840,14 +3864,19 @@ function playCrashSequence(kind, unitsPerSecond, sequence, info) {
     state.speed = 0;
     state.freeMode.speed = 0;
     updateUI();
+    beginCinematic('crash');
     let last = performance.now();
     const tick = (now) => {
-        if (sequence !== crashSequence || state.isPlaying) return;
-        const dt = Math.min((now - last) / 1000, 0.05);
+        if (sequence !== crashSequence || state.isPlaying) {
+            endCinematic('crash');
+            return;
+        }
+        const dt = Math.min((now - last) / 1000, 0.05) * cinematicSpeed();
         last = now;
         const moving = v2.rider.updateCrash(dt);
         renderScene(dt);
         if (moving) requestAnimationFrame(tick);
+        else endCinematic('crash');
     };
     requestAnimationFrame(tick);
 }
@@ -3858,16 +3887,23 @@ function playPoliceStop(sequence, variant) {
     let rolling = state.speed * 60;
     state.speed = 0;
     updateUI();
+    beginCinematic('police-linear');
     const start = performance.now();
     let last = start;
+    let elapsed = 0;
     const tick = (now) => {
-        if (sequence !== crashSequence || state.isPlaying) return;
-        const dt = Math.min((now - last) / 1000, 0.05);
+        if (sequence !== crashSequence || state.isPlaying) {
+            endCinematic('police-linear');
+            return;
+        }
+        const dt = Math.min((now - last) / 1000, 0.05) * cinematicSpeed();
         last = now;
+        elapsed += dt;
         rolling = Math.max(0, rolling - 70 * dt);
         bikeGroup.position.z -= rolling * dt;
         renderScene(dt);
-        if (now - start < 6000) requestAnimationFrame(tick);
+        if (elapsed < 6) requestAnimationFrame(tick);
+        else endCinematic('police-linear');
     };
     requestAnimationFrame(tick);
 }
@@ -5895,6 +5931,7 @@ document.getElementById('rider-btn')?.addEventListener('click', () => {
     document.getElementById('start-screen')?.classList.remove('active');
     document.getElementById('rider-screen')?.classList.add('active');
     if (v2) v2.showroom(true);
+    shopUI?.onRiderOpen();
 });
 document.getElementById('back-from-rider')?.addEventListener('click', () => {
     document.getElementById('rider-screen')?.classList.remove('active');
@@ -7454,6 +7491,36 @@ live = createLive({
     loveCode: () => loveEvent?.unlockFromCode()
 });
 
+// The shop's core (src/shop/store.js): the points it takes, the stats.
+configureShop({
+    points: () => totalPoints(),
+    spend: (n) => spendPoints(n),
+    stat: (name, n = 1) => bumpStat(name, n)
+});
+
+registerCharacters(() => v2);
+registerOutfitsAndExtras(() => v2, {
+    onLoveUnlock: () => loveEvent?.installEntry(),
+    onFreeTricksUnlock: () => document.dispatchEvent(new CustomEvent('wheelie:points'))
+});
+registerRealCars();
+registerMusic();
+musicPlayer = createMusicPlayer();
+musicPlayer.mountPause(document.getElementById('pause-music'));
+shopUI = installShop({
+    apiBase: API_BASE_URL,
+    apiFetch,
+    nickname: () => localStorage.getItem('wheelie_nickname') || '',
+    deviceId,
+    deviceToken,
+    askAccountCode: (reason, name) => account.askCode(reason, name),
+    v2: () => v2,
+    musicPlayer,
+    stat: (name, n = 1) => bumpStat(name, n),
+    onLoveUnlock: () => loveEvent?.installEntry(),
+    onFreeTricksUnlock: () => document.dispatchEvent(new CustomEvent('wheelie:points'))
+});
+
 loveEvent = createLoveEvent({
     scene, camera,
     v2: () => v2,
@@ -8019,8 +8086,11 @@ document.getElementById('back-from-leaderboard')?.addEventListener('click', () =
 displayNickname();
 
 init();
-// A Love&Faith rider bought and chosen: worn from the start.
+// A Love&Faith rider or shop character/outfit bought and chosen: worn from the start.
 loveEvent?.applyWear();
+applyCharacter(v2);
+applyEquippedOutfit(v2);
+shopUI?.refresh();
 releaseSplash();
 
 // The intro animation plays while the city is generated. It leaves once the

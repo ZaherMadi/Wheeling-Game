@@ -364,6 +364,16 @@ export function createBuildingKit({ random, atlases }) {
             sink.hi.props.block(x, floor, z, x + 1.2, floor + 0.3, z + 1, 0xd8d6d0, 1, 'xXzZ');
             sink.hi.glass.floor(x + 0.08, z + 0.08, x + 1.12, z + 0.92, floor + 0.31, 0xb8d4e6);
         }
+        // Rooftop stairwell / lift bulkhead for realism when seen from above.
+        if (width > 10 && depth > 10 && chance(0.75)) {
+            const bx = range(3.5, Math.max(4, depth - 5));
+            const bz = range(2, Math.max(2.5, width - 5));
+            if (free(bx - 0.3, bz - 0.3, bx + 3.2, bz + 2.8)) {
+                sink.both[wallKey].block(bx, floor, bz, bx + 2.8, floor + 2.4, bz + 2.4, tint, s, 'xXzZY');
+                sink.both.props.block(bx - 0.1, floor + 2.4, bz - 0.1, bx + 2.9, floor + 2.55, bz + 2.5, 0x555860, 1, 'xXyYzZ');
+                sink.hi.props.wallZ(bz + 0.7, floor, bz + 1.6, floor + 2.05, bx - 0.02, -1, 0x3b4048);
+            }
+        }
         // Vents.
         for (let i = 0; i < 2; i++) {
             const x = range(2, Math.max(2.2, depth - 2));
@@ -383,6 +393,28 @@ export function createBuildingKit({ random, atlases }) {
         const s = WALL_SCALE[wallKey];
         if (ends[0]) sink.both[wallKey].wallX(0, 0, depth, height, 0, -1, tint, [-depth / s, 0, 0, height / s]);
         if (ends[1]) sink.both[wallKey].wallX(0, 0, depth, height, width, 1, tint, [0, 0, depth / s, height / s]);
+    }
+
+    // Rear courtyard facade so buildings seen from the air or behind are solid 360°.
+    function backWall(sink, wallKey, tint, width, depth, height) {
+        const s = WALL_SCALE[wallKey];
+        sink.both[wallKey].wallZ(0, 0, width, height, depth, 1, tint, [-width / s, 0, 0, height / s]);
+        // Courtyard door & upper rear windows (batched cleanly at x = depth + 0.03).
+        if (width > 5) {
+            const dz = width * 0.5;
+            sink.hi.props.wallZ(dz - 0.65, 0, dz + 0.65, 2.35, depth + 0.03, 1, 0x2c3036);
+            sink.hi.props.block(depth, 2.35, dz - 0.9, depth + 0.9, 2.48, dz + 0.9, 0x454952, 1, 'xXyYzZ');
+        }
+        const cols = Math.max(1, Math.floor(width / 3.4));
+        const step = width / cols;
+        for (let y = GROUND_FLOOR + 0.8; y < height - 1.5; y += 3.1) {
+            for (let c = 0; c < cols; c++) {
+                if (chance(0.18)) continue;
+                const zc = (c + 0.5) * step;
+                sink.hi.window.wallZ(zc - 0.55, y, zc + 0.55, y + 1.45, depth + 0.04, 1, 0xffffff, windowCell());
+                sink.hi.props.wallZ(zc - 0.6, y - 0.06, zc + 0.6, y, depth + 0.06, 1, 0x3b3f45);
+            }
+        }
     }
 
     // --- Building types ------------------------------------------------------------
@@ -438,6 +470,7 @@ export function createBuildingKit({ random, atlases }) {
         sink.both.stone.block(-0.6, top, 0, 0, top + 0.3, width, tint, WALL_SCALE.stone, 'xyYzZ');
         mansard(sink, width, depth, top + 0.3, tint);
         endWalls(sink, 'stone', tint, width, depth, top + 0.3, options.ends);
+        backWall(sink, 'stone', tint, width, depth, top + 0.3);
         return { height: top + 3.4, units, roof: { y: top + 3.4, x0: 1.6, x1: depth - 0.1 } };
     }
 
@@ -473,6 +506,7 @@ export function createBuildingKit({ random, atlases }) {
         sink.both.stone.block(-0.4, top - 0.4, 0, 0, top, width, trim, WALL_SCALE.stone, 'xyYzZ');
         const roof = flatRoof(sink, 'brick', tint, width, depth, top);
         endWalls(sink, 'brick', tint, width, depth, top + 0.9, options.ends);
+        backWall(sink, 'brick', tint, width, depth, top + 0.9);
         if (chance(0.35)) {
             // Painted mural on the blank end wall.
             const h = Math.min(top - GROUND_FLOOR - 1, 8);
@@ -526,6 +560,8 @@ export function createBuildingKit({ random, atlases }) {
         const ps = WALL_SCALE.plain;
         sink.both.plain.wallX(2.2, top + 0.3, depth, top + 0.3 + attic, 0, -1, tint, [-depth / ps, (top + 0.3) / ps, -2.2 / ps, (top + 0.3 + attic) / ps]);
         sink.both.plain.wallX(2.2, top + 0.3, depth, top + 0.3 + attic, width, 1, tint, [2.2 / ps, (top + 0.3) / ps, depth / ps, (top + 0.3 + attic) / ps]);
+        backWall(sink, 'plain', tint, width, depth, top + 0.3);
+        sink.both.plain.wallZ(0, top + 0.3, width, top + 0.3 + attic, depth, 1, tint, [-width / ps, (top + 0.3) / ps, 0, (top + 0.3 + attic) / ps]);
         // The attic's roof: a light membrane with a few units on it.
         const atticTop = top + 0.6 + attic;
         sink.both.props.floor(2.0, 0, depth, width, atticTop + 0.01, 0xb4b8bd);
@@ -554,6 +590,8 @@ export function createBuildingKit({ random, atlases }) {
         const ends = options.ends ?? [true, true];
         if (ends[0]) sink.both.curtain.wallX(0, lobby, depth, height, 0, -1, glassTint, [0, 0, depth / cw, (height - lobby) / ch]);
         if (ends[1]) sink.both.curtain.wallX(0, lobby, depth, height, width, 1, glassTint, [0, 0, depth / cw, (height - lobby) / ch]);
+        sink.both.curtain.wallZ(0, lobby, width, height, depth, 1, glassTint, [0, 0, width / cw, (height - lobby) / ch]);
+        sink.both.concrete.wallZ(0, 0, width, lobby, depth, 1, 0xd8d6d2, [0, 0, width / WALL_SCALE.concrete, lobby / WALL_SCALE.concrete]);
         for (let i = 0; i <= fins; i++) {
             const z = Math.min(width - 0.05, Math.max(0.05, (i * width) / fins));
             sink.hi.props.block(-0.34, lobby, z - 0.05, 0, height, z + 0.05, metal, 1, 'xzZ');
@@ -603,6 +641,7 @@ export function createBuildingKit({ random, atlases }) {
         for (const o of g.rows[0].openings) windowUnit(sink, 'plain', tint, o, { frame: FRAME_DARK, depth: 0.14, transom: false });
         const roof = flatRoof(sink, 'plain', tint, width, depth, top, { parapet: 0.6 });
         endWalls(sink, 'plain', tint, width, depth, top + 0.6, options.ends);
+        backWall(sink, 'plain', tint, width, depth, top + 0.6);
         return { height: top + 0.6, units, roof };
     }
 

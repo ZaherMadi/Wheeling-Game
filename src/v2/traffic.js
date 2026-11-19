@@ -1,7 +1,8 @@
 // Free roam traffic: cars driving both ways on the avenue's four lanes.
 // They keep their distance, stop behind the player and honk, and are
 // recycled around the player so the street always looks busy.
-import { CAR_PAINTS } from './cars.js';
+import { CAR_PAINTS, STANDARD_CAR_MODELS } from './cars.js';
+import { REAL_CAR_MODELS, pickRealCarPaint } from './realcars.js';
 
 const LANES = [
     { x: 2.6, dir: -1 }, { x: 7.3, dir: -1 },
@@ -27,10 +28,18 @@ export function createTraffic({ scene, world, onHonk }) {
         car.group.rotation.y = car.lane.dir < 0 ? Math.PI : 0;
     }
 
+    function spawnCarMesh() {
+        if (Math.random() < 0.14) {
+            const model = pick(REAL_CAR_MODELS);
+            return world.createCar(model, pickRealCarPaint(model));
+        }
+        const model = pick(STANDARD_CAR_MODELS.filter((name) => name !== 'coupe' || Math.random() < 0.3));
+        return world.createCar(model, pick(CAR_PAINTS));
+    }
+
     function ensure(focusZ) {
         while (cars.filter((car) => !car.special).length < count) {
-            const model = pick(world.carModels.filter((name) => name !== 'coupe' || Math.random() < 0.3));
-            const group = world.createCar(model, pick(CAR_PAINTS));
+            const group = spawnCarMesh();
             scene.add(group);
             const car = { group, lane: LANES[0], speed: 0, cruise: 0, honked: false };
             place(car, focusZ, true);
@@ -88,8 +97,15 @@ export function createTraffic({ scene, world, onHonk }) {
                 // A patrol car that has pulled someone over stays until it is done.
                 if (car.special) {
                     if (!car.hold) gone.push(car);
+                } else {
+                    // Refresh occasional realistic traffic models so players cross every model.
+                    if (Math.random() < 0.16) {
+                        scene.remove(car.group);
+                        car.group = spawnCarMesh();
+                        scene.add(car.group);
+                    }
+                    place(car, focus.z, false);
                 }
-                else place(car, focus.z, false);
             }
         }
         gone.forEach(leave);

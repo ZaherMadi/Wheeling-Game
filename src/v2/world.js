@@ -15,6 +15,8 @@ import {
 import { createVegetation } from './vegetation.js';
 import { createBuildingKit } from './buildings.js';
 import { addCarLights, buildCarGeometries, createCarMesh, createCarModels } from './cars.js';
+import { REAL_CAR_MODELS, pickRealCarPaint } from './realcars.js';
+import { createHorizon } from './horizon.js';
 import {
     FACADE_LINE, KERB, LAYBY_EDGE, ROAD_HALF, SHADOW_PER_METRE, createStreetKit
 } from './street.js';
@@ -578,21 +580,56 @@ export function createWorld({ scene, renderer, mobile }) {
         }
 
         // Behind the street, the city goes on (seen from the hang glider and
-        // the jetpack): two rows of blocks each side, x 52 to 136, with a
-        // street between them and behind, courtyards, now and then a park
-        // with trees. Simple buildings printed with the distant facades,
-        // flat roofs with a parapet and a few units, landed on like the
-        // others (roofAt).
+        // the jetpack): courtyards behind front buildings, two detailed rows
+        // of blocks (x 52..136) with roofs landed on via roofAt, plus outer
+        // districts, avenues, parks and sports pitches extending to x = 420 so
+        // flying high or sideways never reveals an empty void.
         const behind = sink.both.props;
-        behind.floor(46, -HALF, 52, HALF, 0.03, 0x8c8c88);
-        const ROWS = [{ x0: 52, x1: 90, low: 12, high: 38 }, { x0: 96, x1: 136, low: 16, high: 70 }];
+        // Courtyard plazas & gardens behind the front buildings (x = 34..46).
+        behind.floor(33, -HALF, 420, HALF, -0.02, 0x565a54);
+        behind.floor(46, -HALF, 52, HALF, 0.03, 0x3b3e44);
+        for (let z = -HALF + 5; z < HALF - 4; z += 14) {
+            if (inCrossing(z - 5, z + 5, 2)) continue;
+            behind.floor(34, z - 5, 45.5, z + 5, 0.03, 0x728a58);
+            behind.floor(35.5, z - 1.2, 44.5, z + 1.2, 0.04, 0xaea698);
+            for (const dz of [-3, 3]) {
+                const tx = range(36, 43);
+                const tz = z + dz;
+                behind.add(PRIMS.cylinder6, transform(tx, 1.3, tz, 0.16, 2.6, 0.16), 0x5a4030);
+                behind.add(PRIMS.blob, transform(tx, 3.3, tz, 1.5, 1.4, 1.5), pick([0x4f7a38, 0x5d8a3e, 0x46703a]));
+            }
+        }
+        const ROWS = [
+            { x0: 52, x1: 90, low: 14, high: 42, walk: true },
+            { x0: 96, x1: 136, low: 18, high: 72, walk: true },
+            { x0: 144, x1: 214, low: 12, high: 48, walk: false },
+            { x0: 224, x1: 318, low: 10, high: 36, walk: false }
+        ];
         for (const row of ROWS) {
-            behind.floor(row.x1, -HALF, row.x1 + 6, HALF, 0.03, 0x3a3d42);
-            for (let z = -HALF + 6; z < HALF; z += 12) behind.floor(row.x1 + 2.9, z, row.x1 + 3.1, z + 5, 0.04, 0xd8d8d0);
-            if (random() < 0.2) {
-                // A park: lawn, paths, trees.
+            behind.floor(row.x1, -HALF, row.x1 + 7, HALF, 0.03, 0x3a3d42);
+            for (let z = -HALF + 6; z < HALF; z += 12) behind.floor(row.x1 + 3.4, z, row.x1 + 3.6, z + 5, 0.04, 0xd8d8d0);
+            const roll = random();
+            if (roll < 0.16) {
+                // Sports pitch (football or basketball court) surrounded by lawn & trees.
+                behind.floor(row.x0, -HALF, row.x1, HALF, 0.03, 0x587942);
+                const cx = (row.x0 + row.x1) / 2;
+                const pw = Math.min(24, (row.x1 - row.x0) * 0.62);
+                behind.floor(cx - pw / 2, -HALF + 14, cx + pw / 2, HALF - 14, 0.05, 0x3a7a42);
+                behind.floor(cx - pw / 2 + 0.5, -HALF + 14.5, cx + pw / 2 - 0.5, -HALF + 14.9, 0.06, 0xf2f2ec);
+                behind.floor(cx - pw / 2 + 0.5, HALF - 14.9, cx + pw / 2 - 0.5, HALF - 14.5, 0.06, 0xf2f2ec);
+                behind.floor(cx - pw / 2 + 0.5, -0.2, cx + pw / 2 - 0.5, 0.2, 0.06, 0xf2f2ec);
+                for (let i = 0; i < 10; i++) {
+                    const x = random() < 0.5 ? range(row.x0 + 1.5, cx - pw / 2 - 1.5) : range(cx + pw / 2 + 1.5, row.x1 - 1.5);
+                    const z = range(-HALF + 3, HALF - 3);
+                    behind.add(PRIMS.cylinder6, transform(x, 1.3, z, 0.18, 2.6, 0.18), 0x5a4030);
+                    behind.add(PRIMS.blob, transform(x, 3.8, z, 1.8, 1.6, 1.8), pick([0x4f7a38, 0x5d8a3e, 0x6b8f3f]));
+                }
+                continue;
+            } else if (roll < 0.32) {
+                // A park: lawn, curved paths, pond, trees.
                 behind.floor(row.x0, -HALF, row.x1, HALF, 0.03, 0x5f8145);
-                behind.floor((row.x0 + row.x1) / 2 - 1.2, -HALF, (row.x0 + row.x1) / 2 + 1.2, HALF, 0.04, 0xc8b89a);
+                behind.floor((row.x0 + row.x1) / 2 - 1.4, -HALF, (row.x0 + row.x1) / 2 + 1.4, HALF, 0.04, 0xc8b89a);
+                behind.floor(row.x0 + 5, -10, row.x0 + 14, 10, 0.045, 0x2c5674);
                 for (let i = 0; i < 16; i++) {
                     const x = range(row.x0 + 2, row.x1 - 2);
                     const z = range(-HALF + 2, HALF - 2);
@@ -623,22 +660,34 @@ export function createWorld({ scene, renderer, mobile }) {
                 batch.wallZ(z, 0, z + width, height, x1, 1, tint, uv);
                 batch.wallX(x0, 0, x1, height, z + width, 1, tint, sideUv);
                 batch.wallX(x0, 0, x1, height, z, -1, tint, sideUv);
-                // The roof: a finish, a parapet, a unit or two.
-                behind.floor(x0, z, x1, z + width, height, pick([0x6e7076, 0xa7abb0, 0x5d7a45, 0x8f8a80]));
+                // The roof: finish, parapet, rooftop penthouse/AC/solar details.
+                const roofCol = pick([0x6e7076, 0xa7abb0, 0x5d7a45, 0x8f8a80]);
+                behind.floor(x0, z, x1, z + width, height, roofCol);
                 behind.block(x0, height, z, x1, height + 0.5, z + 0.25, 0xd9d4c8, 1, 'zZY');
                 behind.block(x0, height, z + width - 0.25, x1, height + 0.5, z + width, 0xd9d4c8, 1, 'zZY');
                 behind.block(x0, height, z, x0 + 0.25, height + 0.5, z + width, 0xd9d4c8, 1, 'xXY');
                 behind.block(x1 - 0.25, height, z, x1, height + 0.5, z + width, 0xd9d4c8, 1, 'xXY');
-                for (let i = 0; i < 2; i++) {
+                for (let i = 0; i < (row.walk ? 3 : 1); i++) {
                     const ux = range(x0 + 3, Math.max(x0 + 3.5, x1 - 4));
                     const uz = range(z + 2, Math.max(z + 2.5, z + width - 3));
-                    if (random() < 0.5) behind.block(ux, height, uz, ux + 1.8, height + 1.3, uz + 1.2, 0xb8bcc2, 1, 'xXzZY');
+                    if (random() < 0.45) behind.block(ux, height, uz, ux + 2.2, height + 1.4, uz + 1.5, 0xb8bcc2, 1, 'xXzZY');
+                    else if (random() < 0.7) behind.block(ux, height, uz, ux + 2.6, height + 2.2, uz + 2.2, 0xcac6bc, 1, 'xXzZY');
                     else behind.add(PRIMS.cylinder, transform(ux, height + 1.6, uz, 1.1, 3.2, 1.1), 0x8d7f6c);
                 }
-                roofs.push(side > 0 ? { x0: x0 + 0.4, x1: x1 - 0.4, z0: z + 0.4, z1: z + width - 0.4, y: height, side, kind: 'back' }
-                    : { x0: -(x1 - 0.4), x1: -(x0 + 0.4), z0: -(z + width - 0.4), z1: -(z + 0.4), y: height, side, kind: 'back' });
+                if (row.walk) {
+                    roofs.push(side > 0 ? { x0: x0 + 0.4, x1: x1 - 0.4, z0: z + 0.4, z1: z + width - 0.4, y: height, side, kind: 'back' }
+                        : { x0: -(x1 - 0.4), x1: -(x0 + 0.4), z0: -(z + width - 0.4), z1: -(z + 0.4), y: height, side, kind: 'back' });
+                }
                 z += width + gap;
             }
+        }
+        // Suburban green belt & tree clusters from x = 325..420.
+        behind.floor(325, -HALF, 420, HALF, 0.03, 0x567742);
+        for (let i = 0; i < 12; i++) {
+            const tx = range(330, 412);
+            const tz = range(-HALF + 4, HALF - 4);
+            const sz = range(2.2, 3.8);
+            behind.add(PRIMS.blob, transform(tx, sz * 1.1, tz, sz, sz * 0.9, sz), pick([0x476b35, 0x587f3f, 0x628945]));
         }
 
         // One billboard per block on a tall right-hand facade.
@@ -661,16 +710,18 @@ export function createWorld({ scene, renderer, mobile }) {
         const sink = new Sink(KEYS);
         const crossingZ = theme.crossing ? Math.round(range(-22, 18)) : null;
         street.parked.length = 0;
+        street.realSlots.length = 0;
         street.shelters.length = 0;
         roofs = [];
         for (const side of [1, -1]) buildSide(sink, side, theme, crossingZ, index);
         const parked = street.parked.slice();
+        const realSlots = street.realSlots.slice();
         const shelters = street.shelters.slice();
         const { hi, lo } = sink.build();
         const toSpecs = (geometries) => Object.entries(geometries)
             .filter(([, geometry]) => geometry)
             .map(([key, geometry]) => ({ key, geometry, material: materials[key], renderOrder: RENDER_ORDER[key] || 0 }));
-        return { hi: toSpecs(hi), lo: toSpecs(lo), free: [], theme: theme.name, crossingZ, parked, shelters, roofs };
+        return { hi: toSpecs(hi), lo: toSpecs(lo), free: [], theme: theme.name, crossingZ, parked, realSlots, shelters, roofs };
     }
 
     const variants = [];
@@ -750,10 +801,42 @@ export function createWorld({ scene, renderer, mobile }) {
         for (const spec of variant.lo) lo.add(staticMesh(spec.geometry, spec.material, spec.renderOrder));
         lo.visible = false;
         chunk.userData.parked = instanceParkedCars(variant, hi);
+        chunk.userData.parkedReal = [];
         chunk.add(hi, lo);
         chunk.userData.variant = variant;
         chunk.userData.lod = { hi, lo };
         return chunk;
+    }
+
+    const realPool = {};
+    function borrowRealCar(model, paint) {
+        const list = (realPool[model] ||= []);
+        const mesh = list.pop() || createCar(model, paint);
+        mesh.visible = true;
+        const bodyMesh = mesh.children[0];
+        if (bodyMesh?.material?.color) bodyMesh.material.color.set(paint);
+        return mesh;
+    }
+    function populateRealCars(chunk) {
+        const slots = chunk.userData.variant.realSlots || [];
+        const hi = chunk.userData.lod.hi;
+        for (const slot of slots) {
+            const model = REAL_CAR_MODELS[Math.floor(random() * REAL_CAR_MODELS.length)];
+            const paint = pickRealCarPaint(model);
+            const mesh = borrowRealCar(model, paint);
+            mesh.position.set(slot.x, 0, slot.z);
+            mesh.rotation.set(0, slot.yaw, 0);
+            hi.add(mesh);
+            chunk.userData.parkedReal.push({ model, paint, x: slot.x, z: slot.z, yaw: slot.yaw, mesh, taken: false });
+        }
+    }
+    function releaseRealCars(chunk) {
+        const list = chunk.userData.parkedReal || [];
+        for (const entry of list) {
+            entry.mesh.parent?.remove(entry.mesh);
+            (realPool[entry.model] ||= []).push(entry.mesh);
+        }
+        chunk.userData.parkedReal = [];
     }
 
     let lastVariant = -1;
@@ -765,12 +848,14 @@ export function createWorld({ scene, renderer, mobile }) {
         const pooled = variant.free.pop();
         const chunk = pooled || instantiate(variant);
         if (pooled) restoreParkedCars(chunk);
+        populateRealCars(chunk);
         chunk.position.set(0, 0, z);
         active.add(chunk);
         return chunk;
     }
 
     function releaseChunk(chunk) {
+        releaseRealCars(chunk);
         active.delete(chunk);
         chunk.userData.variant.free.push(chunk);
     }
@@ -823,13 +908,38 @@ export function createWorld({ scene, renderer, mobile }) {
                     best = { entry, chunk, x: entry.x, z: chunk.position.z + entry.z, yaw: entry.yaw, model: entry.model, paint: entry.paint };
                 }
             }
+            for (const entry of chunk.userData.parkedReal || []) {
+                if (entry.taken) continue;
+                const distance = Math.hypot(entry.x - x, chunk.position.z + entry.z - z);
+                if (distance < bestDistance) {
+                    bestDistance = distance;
+                    best = { entry, chunk, x: entry.x, z: chunk.position.z + entry.z, yaw: entry.yaw, model: entry.model, paint: entry.paint };
+                }
+            }
         }
         return best;
+    }
+
+    function realCarsNear(x, z, radius) {
+        const found = [];
+        for (const chunk of active) {
+            for (const entry of chunk.userData.parkedReal || []) {
+                if (entry.taken) continue;
+                if (Math.hypot(entry.x - x, chunk.position.z + entry.z - z) < radius) {
+                    found.push({ model: entry.model, x: entry.x, z: chunk.position.z + entry.z });
+                }
+            }
+        }
+        return found;
     }
 
     function takeParked(found) {
         const { entry } = found;
         entry.taken = true;
+        if (entry.mesh) {
+            entry.mesh.visible = false;
+            return;
+        }
         entry.body.setMatrixAt(entry.index, hidden);
         entry.rest.setMatrixAt(entry.index, hidden);
         entry.body.instanceMatrix.needsUpdate = true;
@@ -856,7 +966,7 @@ export function createWorld({ scene, renderer, mobile }) {
         lastVariant = -1;
     }
 
-    // --- Distant skyline ------------------------------------------------------
+    // --- Distant skyline & approaching competitive horizon --------------------
     const skyline = new THREE.Mesh(
         new THREE.PlaneGeometry(1150, 170),
         new THREE.MeshBasicMaterial({ map: createSkylineTexture(), transparent: true, depthWrite: false, fog: false })
@@ -864,6 +974,7 @@ export function createWorld({ scene, renderer, mobile }) {
     skyline.renderOrder = -1;
     skyline.frustumCulled = false;
     scene.add(skyline);
+    const horizonBackdrop = createHorizon({ scene });
 
     // --- Obstacles ----------------------------------------------------------------
     const box = new THREE.BoxGeometry(1, 1, 1);
@@ -1004,6 +1115,7 @@ export function createWorld({ scene, renderer, mobile }) {
         materials.shade.opacity = mix(a.shadows, b.shadows, t);
         for (let i = 0; i < FACADE_STYLES.length; i++) materials[`bg${i}`].emissiveIntensity = mix(a.towers, b.towers, t);
         skyline.material.color.setScalar(mix(a.skyline, b.skyline, t));
+        horizonBackdrop.setDusk(t);
         atmosphere.uHazeTint.value.set(...a.haze.map((value, i) => mix(value, b.haze[i], t)));
     }
 
@@ -1017,13 +1129,14 @@ export function createWorld({ scene, renderer, mobile }) {
     let highQuality = true;
     setDusk(0);
 
-    function update(camera, focus) {
+    function update(camera, focus, { freeMode = false } = {}) {
         atmosphere.uTime.value = performance.now() / 1000;
         sun.target.position.set(focus.x, 0, focus.z - 3);
         sun.position.copy(sun.target.position).addScaledVector(SUN_LIGHT, 50);
         goldFill.target.position.set(focus.x, 0, focus.z);
         goldFill.position.copy(goldFill.target.position).add(GOLD_LIGHT);
         skyline.position.set(camera.position.x * 0.85, 60, camera.position.z - 640);
+        horizonBackdrop.update(camera, atmosphere.uTime.value, freeMode);
         // Detailed blocks near the camera, light versions further away.
         for (const chunk of active) {
             const near = Math.max(0, Math.abs(chunk.position.z - camera.position.z) - HALF) < lodDistance;
@@ -1053,8 +1166,9 @@ export function createWorld({ scene, renderer, mobile }) {
 
     return {
         acquireChunk, releaseChunk, createObstacle, update, setDusk, setAmbience, setQuality, reseed, sharedMaterials, sun,
-        setSkylineVisible(visible) { skyline.visible = visible; },
-        crossings, busShelters, parkedNear, takeParked, createCar, carModels: Object.keys(cars), roofAt,
+        setSkylineVisible(visible) { skyline.visible = visible; horizonBackdrop.setVisible(visible); },
+        resetHorizon: () => horizonBackdrop.reset(),
+        crossings, busShelters, parkedNear, realCarsNear, takeParked, createCar, carModels: Object.keys(cars), roofAt,
         ambiences: Object.keys(AMBIENCES),
         stats: () => variants.map((variant) => ({
             theme: variant.theme,

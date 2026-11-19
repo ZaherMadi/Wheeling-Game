@@ -9,7 +9,11 @@ import { createStreetTalk } from './street-talk.js';
 import { createHangGlider } from './glider.js';
 import { createJetpack } from './jetpack.js';
 import { createOfficer, decoratePoliceCar } from './police.js';
-import { CAR_NAMES, CAR_UNLOCKS } from './cars.js';
+import { BASE_CAR_MODEL, CAR_NAMES, CAR_UNLOCKS } from './cars.js';
+import { isRealCar, ownedCars, ownsRealCar, realCarInfo } from './realcars.js';
+import { noteSeen } from '../shop/store.js';
+import { createTowService, deliveryCost } from './towtruck.js';
+import { beginCinematic, boostCinematic, cinematicSpeed, endCinematic } from '../cinematic.js';
 import { noteRankedTotal, profileBalance } from '../profile.js';
 
 const POINTS_KEY = 'wheelie_total_points';
@@ -138,6 +142,7 @@ export function createFreeRoam({ scene, world, rider, audio, onTurn, playerVoice
     });
     const people = createPeople({ scene });
     const talk = createStreetTalk({ audio, people, playerVoice });
+    const tow = createTowService({ scene, world, audio });
     let frozen = false;
     const toast = (title, text) => document.dispatchEvent(new CustomEvent('wheelie:toast', { detail: { title, text } }));
     // A fine and what it costs: cars that can no longer be driven, a
@@ -322,9 +327,11 @@ export function createFreeRoam({ scene, world, rider, audio, onTurn, playerVoice
             }
         } else if (mode === 'car') {
             // Speeds in metres per frame (1/60 s): accelerations in m/s² / 3600.
+            const info = realCarInfo(drive.model);
             const throttle = -nz;
             const boosting = now() < boost.until;
-            const top = CAR_TOP_SPEED * (boosting ? 1.3 : 1);
+            const top = (info ? info.topSpeed : CAR_TOP_SPEED) * (boosting ? 1.3 : 1);
+            const basePull = info ? info.accel : 3;
             if (throttle * drive.speed < 0 && Math.abs(drive.speed) > 0.003) {
                 // Braking (pressing against the motion).
                 drive.speed -= Math.sign(drive.speed) * Math.min(Math.abs(drive.speed), 9.5 / 3600 * Math.abs(throttle));
@@ -332,7 +339,7 @@ export function createFreeRoam({ scene, world, rider, audio, onTurn, playerVoice
             } else if (throttle > 0.05) {
                 // Pulls harder the longer the pedal is held.
                 drive.hold = (drive.hold || 0) + 1 / 60;
-                const pull = (3 + Math.min(4, drive.hold * 2.5)) * throttle / 3600;
+                const pull = (basePull + Math.min(4.5, drive.hold * 2.5)) * throttle / 3600;
                 drive.speed += pull * Math.max(0, 1 - Math.pow(Math.max(0, drive.speed) / top, 3));
             } else if (throttle < -0.05) {
                 drive.speed = Math.max(-0.07, drive.speed - 2.5 / 3600 * -throttle); // reverse, 15 km/h at most
@@ -349,7 +356,7 @@ export function createFreeRoam({ scene, world, rider, audio, onTurn, playerVoice
             drive.braking = throttle * drive.speed < 0 && Math.abs(drive.speed) > 0.01;
             drive.group.userData.lights?.set(drive.braking || drive.reversing || (throttle < -0.05 && Math.abs(drive.speed) < 0.02), drive.reversing);
             const grip = Math.min(1, Math.abs(drive.speed) / 0.12);
-            const calm = 1 - 0.45 * Math.min(1, Math.abs(drive.speed) / CAR_TOP_SPEED);
+            const calm = 1 - 0.45 * Math.min(1, Math.abs(drive.speed) / top);
             drive.yaw -= nx * 0.032 * grip * calm * Math.sign(drive.speed || 1);
             const group = drive.group;
             const previous = group.position.clone();
@@ -641,6 +648,7 @@ export function createFreeRoam({ scene, world, rider, audio, onTurn, playerVoice
         const stage = carStage || {};
         Object.assign(stage, { kind, police, officer, side, forward, stopZ, step: 'arrive', t: 0, time: stage.time || 0 });
         glide.scene = stage;
+        beginCinematic('glider-police');
         audio.play('police_siren', { volume: 0.6 });
     }
 
@@ -672,9 +680,10 @@ export function createFreeRoam({ scene, world, rider, audio, onTurn, playerVoice
         stage.t = 0;
     }
 
-    function updateGliderPolice(dt) {
+    function updateGliderPolice(rawDt) {
         const stage = glide.scene;
         if (!stage) return;
+        const dt = rawDt * cinematicSpeed();
         stage.t += dt;
         stage.time += dt;
         const { driver } = stage;
@@ -768,6 +777,7 @@ export function createFreeRoam({ scene, world, rider, audio, onTurn, playerVoice
             glide.group.scale.setScalar(1);
         }
         frozen = false;
+        endCinematic('glider-police');
         if (bike) bike.visible = true;
     }
 
@@ -953,9 +963,15 @@ export function createFreeRoam({ scene, world, rider, audio, onTurn, playerVoice
     }
 
     function lockLabel(model) {
-        const needed = CAR_UNLOCKS[model] ?? 0;
+        if (isRealCar(model)) {
+            const info = realCarInfo(model);
+            noteSeen(info.id);
+            return ownsRealCar(model) ? null : `${info.name} · À acheter en boutique`;
+        }
+        const base = BASE_CAR_MODEL(model);
+        const needed = CAR_UNLOCKS[base] ?? 0;
         const have = totalPoints();
-        return have >= needed ? null : `${CAR_NAMES[model]} : ${needed} pts (tu as ${have})`;
+        return have >= needed ? null : `${CAR_NAMES[model] || CAR_NAMES[base]} : ${needed} pts (tu as ${have})`;
     }
 
     function refreshPrompt() {
@@ -1094,6 +1110,9 @@ export function createFreeRoam({ scene, world, rider, audio, onTurn, playerVoice
             rider.updateWalk(dt, walker.x, walker.z, walker.yaw, walker.speed, walker.y, walker.running, false, { ground: walker.roof ? walker.roof.y : 0 });
         }
         if (glide.scene) updateGliderPolice(dt);
+        tow.update(dt, here);
+        checkCarDiscovery(here);
+        emitTowState(here);
         jetVisuals(dt);
         // Cars left behind on another block go away.
         for (let i = dropped.length - 1; i >= 0; i--) {
@@ -1141,6 +1160,7 @@ export function createFreeRoam({ scene, world, rider, audio, onTurn, playerVoice
     }
 
     function reset() {
+        tow.cancel();
         endGlide();
         jetpack.hide();
         walker.roof = null;
@@ -1162,7 +1182,94 @@ export function createFreeRoam({ scene, world, rider, audio, onTurn, playerVoice
         people.clear();
         prompt = null;
         emit('', false);
+        lastTowKey = '';
+        document.dispatchEvent(new CustomEvent('wheelie:tow', { detail: { show: false } }));
     }
+
+    function checkCarDiscovery(here) {
+        const nearby = [];
+        for (const c of world.realCarsNear?.(here.x, here.z, 22) || []) nearby.push(c.model);
+        for (const car of traffic.cars) {
+            const m = car.group?.userData?.model;
+            if (isRealCar(m) && Math.hypot(car.group.position.x - here.x, car.group.position.z - here.z) < 25) nearby.push(m);
+        }
+        for (const model of nearby) {
+            const info = realCarInfo(model);
+            if (info && noteSeen(info.id)) {
+                audio.play('new_record', { volume: 0.3, rate: 1.3 });
+                toast(`🚗 Voiture repérée : ${info.name}`, 'Prix dévoilé dans la boutique !');
+            }
+        }
+    }
+
+    function deliveryOptions(here) {
+        const dist = bike ? Math.hypot(bike.position.x - here.x, bike.position.z - here.z) : 0;
+        const pts = totalPoints();
+        const opts = [];
+        if (!bikeConfiscated()) {
+            opts.push({ kind: 'bike', model: null, name: 'Ma moto 51', cost: deliveryCost('bike', { distance: dist }) });
+        }
+        for (const car of ownedCars()) {
+            opts.push({ kind: 'car', model: car.model, name: car.name, cost: deliveryCost('car', { carPrice: car.price, totalPoints: pts }) });
+        }
+        return { dist, opts };
+    }
+
+    let lastTowKey = '';
+    function emitTowState(here) {
+        const { dist, opts } = deliveryOptions(here);
+        const owned = ownedCars();
+        const eligible = !frozen && !turning && !glide.scene && mode !== 'glide' && mode !== 'jet'
+            && ((mode !== 'bike' && !bikeConfiscated() && dist > 12) || (owned.length > 0 && mode !== 'bike'));
+        const show = tow.active || eligible;
+        const key = `${show}|${tow.active}|${opts.map((o) => `${o.kind}:${o.model || ''}:${o.cost}`).join(',')}`;
+        if (key === lastTowKey) return;
+        lastTowKey = key;
+        document.dispatchEvent(new CustomEvent('wheelie:tow', {
+            detail: { show, active: tow.active, distance: Math.round(dist), options: opts }
+        }));
+    }
+
+    function requestDelivery(choice = null) {
+        if (tow.active) {
+            boostCinematic();
+            return true;
+        }
+        if (frozen || turning || glide.scene || mode === 'glide' || mode === 'jet') return false;
+        const here = getFocus();
+        const { opts } = deliveryOptions(here);
+        if (!opts.length) return false;
+        const picked = choice
+            ? opts.find((o) => o.kind === choice.kind && (o.model || null) === (choice.model || null))
+            : opts.length === 1 ? opts[0] : null;
+        if (!picked) {
+            document.dispatchEvent(new CustomEvent('wheelie:tow-choose', { detail: { options: opts } }));
+            return false;
+        }
+        if (totalPoints() < picked.cost) {
+            toast('PAS ASSEZ DE POINTS', `Livraison : ${picked.cost.toLocaleString('fr-FR')} pts (tu as ${totalPoints().toLocaleString('fr-FR')} pts)`);
+            audio.play('brake', { volume: 0.25, rate: 1.5 });
+            return false;
+        }
+        if (walker.roof) toast('🚚 LIVRAISON EN BAS', 'La dépanneuse dépose ton véhicule dans la rue');
+        tow.startDelivery({
+            kind: picked.kind,
+            model: picked.model,
+            cost: picked.cost,
+            playerPos: here,
+            bikeGroup: bike,
+            onDelivered: ({ kind, model, group, cost }) => {
+                if (!spendPoints(cost)) finePoints(cost);
+                stat('towDeliveries');
+                if (kind === 'car' && group) dropped.push({ group, model });
+            },
+            onDone: () => { lastTowKey = ''; }
+        });
+        lastTowKey = '';
+        emitTowState(here);
+        return true;
+    }
+    document.addEventListener('wheelie:tow-request', (event) => requestDelivery(event.detail || null));
 
     return {
         move, update, action, clampBike, afterTurn, reset, tryBoost, boostState,

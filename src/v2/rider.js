@@ -1714,8 +1714,97 @@ export function createRider({ scene }) {
         });
         // The girl's hairstyles: vanilles (black two-strand twists, beads
         // at the ends) by default, or the vanilla-coloured afro.
-        const hairs = { vanilles: buildVanilles(), afro: buildHair() };
-        group.add(hairs.vanilles, hairs.afro);
+        const hairs = { vanilles: buildVanilles(), afro: buildHair(), short: buildShortHair() };
+        group.add(hairs.vanilles, hairs.afro, hairs.short);
+
+        // Additional character accessories: street baseball cap, tactical ski mask,
+        // sunglasses, full beard, and procedural eyed face for non-blindfolded characters.
+        const capGroup = new THREE.Group();
+        capGroup.visible = false;
+        const capMat = standard(0x181a1f, 0.78);
+        const capTrim = standard(0xf6c416, 0.45);
+        const capDome = new THREE.Mesh(new THREE.SphereGeometry(1, 22, 12, 0, Math.PI * 2, 0, Math.PI * 0.54), capMat);
+        capDome.scale.set(0.179, 0.145, 0.186);
+        capDome.position.set(0, 0.085, -0.002);
+        const capBrim = new THREE.Mesh(new THREE.BoxGeometry(0.24, 0.014, 0.14), capMat);
+        capBrim.position.set(0, 0.095, -0.18);
+        capBrim.rotation.x = 0.18;
+        const capEmblem = new THREE.Mesh(new THREE.BoxGeometry(0.06, 0.032, 0.015), capTrim);
+        capEmblem.position.set(0, 0.135, 0.175);
+        capGroup.add(capDome, capBrim, capEmblem);
+        group.add(capGroup);
+
+        const maskGroup = new THREE.Group();
+        maskGroup.visible = false;
+        const maskMat = standard(0x14161a, 0.9);
+        const maskDome = new THREE.Mesh(new THREE.SphereGeometry(1, 22, 16), maskMat);
+        maskDome.scale.set(0.175, 0.197, 0.182);
+        maskDome.position.set(0, 0.04, 0.005);
+        const maskNeck = new THREE.Mesh(tube, maskMat);
+        maskNeck.scale.set(0.082, 0.12, 0.082);
+        maskNeck.position.set(0, -0.115, -0.004);
+        const maskEyeSlot = new THREE.Mesh(new THREE.BoxGeometry(0.19, 0.055, 0.04), skin);
+        maskEyeSlot.position.set(0, 0.075, 0.168);
+        maskGroup.add(maskDome, maskNeck, maskEyeSlot);
+        group.add(maskGroup);
+
+        const glassesGroup = new THREE.Group();
+        glassesGroup.visible = false;
+        const lensMat = new THREE.MeshPhysicalMaterial({ color: 0x0b0e14, metalness: 0.65, roughness: 0.06, clearcoat: 1 });
+        const frameMat = standard(0x1c1e24, 0.35, 0.7);
+        const visorBar = new THREE.Mesh(new THREE.BoxGeometry(0.25, 0.054, 0.03), lensMat);
+        visorBar.position.set(0, 0.072, 0.175);
+        const topFrame = new THREE.Mesh(new THREE.BoxGeometry(0.26, 0.012, 0.035), frameMat);
+        topFrame.position.set(0, 0.102, 0.175);
+        for (const side of [-1, 1]) {
+            const arm = new THREE.Mesh(new THREE.BoxGeometry(0.012, 0.014, 0.18), frameMat);
+            arm.position.set(side * 0.13, 0.085, 0.09);
+            glassesGroup.add(arm);
+        }
+        glassesGroup.add(visorBar, topFrame);
+        group.add(glassesGroup);
+
+        const fullBeardMat = standard(0x16110e, 0.92);
+        const fullBeard = new THREE.Mesh(
+            new THREE.SphereGeometry(1, 20, 10, Math.PI / 2 - 1.25, 2.5, Math.PI * 0.6, Math.PI * 0.34),
+            fullBeardMat
+        );
+        fullBeard.scale.set(0.176, 0.198, 0.184);
+        fullBeard.position.set(0, 0.036, 0.008);
+        fullBeard.visible = false;
+        group.add(fullBeard);
+
+        const openFaceCache = {};
+        const openFace = (toneHex, female) => {
+            const key = `${toneHex}:${female ? 1 : 0}`;
+            if (openFaceCache[key]) return openFaceCache[key];
+            const c = document.createElement('canvas');
+            c.width = 256; c.height = 192;
+            const ctx = c.getContext('2d');
+            ctx.fillStyle = '#00000000';
+            ctx.clearRect(0, 0, 256, 192);
+            // Brows + sharp eyes
+            ctx.fillStyle = '#181310';
+            ctx.fillRect(62, 48, 42, 9);
+            ctx.fillRect(152, 48, 42, 9);
+            ctx.fillStyle = '#f5f5f2';
+            ctx.beginPath(); ctx.ellipse(83, 70, 14, 8, 0, 0, Math.PI * 2); ctx.fill();
+            ctx.beginPath(); ctx.ellipse(173, 70, 14, 8, 0, 0, Math.PI * 2); ctx.fill();
+            ctx.fillStyle = '#201814';
+            ctx.beginPath(); ctx.arc(83, 70, 6.5, 0, Math.PI * 2); ctx.fill();
+            ctx.beginPath(); ctx.arc(173, 70, 6.5, 0, Math.PI * 2); ctx.fill();
+            // Subtle nose shadow + mouth
+            ctx.fillStyle = 'rgba(25,12,6,0.22)';
+            ctx.fillRect(121, 78, 14, 34);
+            ctx.fillStyle = female ? '#9e3848' : '#582e24';
+            ctx.beginPath();
+            ctx.ellipse(128, 134, 24, female ? 9 : 6, 0, 0, Math.PI * 2);
+            ctx.fill();
+            const tex = new THREE.CanvasTexture(c);
+            tex.colorSpace = THREE.SRGBColorSpace;
+            openFaceCache[key] = tex;
+            return tex;
+        };
         // The creation on the chest (the back's own print takes the number's place).
         const frontMaterial = new THREE.MeshStandardMaterial({
             transparent: true, roughness: 0.86, depthWrite: false, polygonOffset: true, polygonOffsetFactor: -1, polygonOffsetUnits: -1
@@ -1742,8 +1831,22 @@ export function createRider({ scene }) {
         const chest = chests.boy;
         return {
             group, chest, chests, frontMaterial, skin, print: null, look: null, pictures: {}, bandCanvas, bandMap, tie, tails, band: null,
-            faceMaterial, faces, beard, hairs
+            faceMaterial, faces, beard, fullBeard, hairs, beanie, bandGroup, capGroup, capMat, capTrim, maskGroup, maskMat, glassesGroup, lensMat, openFace,
+            beanieCrownMat: crown.material, beanieCuffMat: cuff.material,
+            beanieCrownMap: knitMaps.crown, beanieCuffMap: knitMaps.cuff
         };
+    }
+
+    function buildShortHair() {
+        const g = new THREE.Group();
+        g.visible = false;
+        const mat = standard(0x161210, 0.94);
+        const top = new THREE.Mesh(new THREE.SphereGeometry(1, 20, 10, 0, Math.PI * 2, 0, Math.PI * 0.56), mat);
+        top.scale.set(0.176, 0.175, 0.184);
+        top.position.set(0, 0.068, 0.002);
+        top.rotation.x = -0.14;
+        g.add(top);
+        return g;
     }
 
     // A few days' stubble: fine dark dots, thicker on the chin and the jaw.
@@ -2040,10 +2143,12 @@ export function createRider({ scene }) {
     function dressOutfit() {
         const look = outfit.look;
         // The whole outfit (the event, a Love&Faith rider), or a few pieces
-        // from the shop over the rider's own livery ({ parts: { print, head } }).
+        // from the shop over the rider's own livery ({ parts: { print, head } }),
+        // or a named character preset ({ character: true, headwear, skin, ... }).
         const pieces = look.parts || null;
-        const headOn = !pieces || !!pieces.head;
-        const wanted = pieces ? pieces.print || null : look.print;
+        const headwear = look.headwear || (pieces ? (pieces.head ? 'beanie' : 'helmet') : 'beanie');
+        const headOn = headwear !== 'helmet';
+        const wanted = pieces ? pieces.print || null : look.print || null;
         outfit.group.visible = headOn;
         if (headOn) {
             classicHead.visible = false;
@@ -2054,26 +2159,62 @@ export function createRider({ scene }) {
             jerseyAccent.set('#f1f0ec');
             jerseyDark.color.set('#dcdad5');
         }
-        if (!pieces) {
+        if (!pieces && look.skin) outfit.skin.color.set(look.skin);
+        else if (!pieces) outfit.skin.color.set(0x7a4524);
+        if (!pieces && !look.character) {
             sneaker.color.set('#f4f4f2');
             glove.color.set(0x7a4524);
         }
         const girl = !pieces && look.gender === 'girl';
-        shapeFor(girl);
+        shapeFor(girl, look.build || (girl ? 'girl' : 'standard'));
         outfit.chests.boy.visible = !!wanted && !girl;
         outfit.chests.girl.visible = !!wanted && girl;
-        const style = look.hair === 'afro' ? 'afro' : 'vanilles';
-        outfit.hairs.vanilles.visible = girl && style === 'vanilles';
-        outfit.hairs.afro.visible = girl && style === 'afro';
-        outfit.beard.visible = !girl;
-        const face = outfit.faces[girl ? 'girl' : 'boy'];
+
+        outfit.beanie.visible = headwear === 'beanie';
+        outfit.capGroup.visible = headwear === 'cap';
+        outfit.maskGroup.visible = headwear === 'mask';
+        outfit.bandGroup.visible = headwear === 'beanie' && look.band !== null && (!look.character || !!look.band);
+        outfit.glassesGroup.visible = !!look.glasses && look.glasses !== 'none';
+        if (outfit.glassesGroup.visible) {
+            const lensCols = { dark: 0x0b0e14, gold: 0xd9a21b, cyan: 0x2fd8ff, rose: 0xff62a0 };
+            outfit.lensMat.color.setHex(lensCols[look.glasses] ?? 0x0b0e14);
+        }
+        if (look.capColor) outfit.capMat.color.set(look.capColor);
+        if (look.capTrim) outfit.capTrim.color.set(look.capTrim);
+        if (look.maskColor) outfit.maskMat.color.set(look.maskColor);
+        if (look.beanieColor) {
+            outfit.beanieCrownMat.map = null;
+            outfit.beanieCrownMat.color.set(look.beanieColor);
+            outfit.beanieCrownMat.needsUpdate = true;
+            outfit.beanieCuffMat.map = null;
+            outfit.beanieCuffMat.color.set(look.beanieColor);
+            outfit.beanieCuffMat.needsUpdate = true;
+        } else if (outfit.beanieCrownMat.map !== outfit.beanieCrownMap) {
+            outfit.beanieCrownMat.map = outfit.beanieCrownMap;
+            outfit.beanieCrownMat.color.setHex(0xffffff);
+            outfit.beanieCrownMat.needsUpdate = true;
+            outfit.beanieCuffMat.map = outfit.beanieCuffMap;
+            outfit.beanieCuffMat.color.setHex(0xffffff);
+            outfit.beanieCuffMat.needsUpdate = true;
+        }
+
+        const style = look.hair || (girl ? 'vanilles' : 'none');
+        outfit.hairs.vanilles.visible = (style === 'vanilles') && (headwear === 'beanie' || headwear === 'cap' || headwear === 'hair' || headwear === 'open');
+        outfit.hairs.afro.visible = (style === 'afro') && (headwear === 'beanie' || headwear === 'hair' || headwear === 'open');
+        outfit.hairs.short.visible = style === 'short' && (headwear === 'hair' || headwear === 'cap' || headwear === 'open');
+        const beardMode = look.beard ?? (girl ? 'none' : 'stubble');
+        outfit.beard.visible = beardMode === 'stubble' || beardMode === 'full';
+        outfit.fullBeard.visible = beardMode === 'full';
+        const face = (!look.band && look.character)
+            ? outfit.openFace(look.skin || '#7a4524', girl)
+            : outfit.faces[girl ? 'girl' : 'boy'];
         if (outfit.faceMaterial.map !== face) {
             outfit.faceMaterial.map = face;
             outfit.faceMaterial.needsUpdate = true;
         }
         const band = look.band || { color: '#c90025', ink: '#ffffff' };
         const bandKey = `${band.color}/${band.ink}`;
-        if (outfit.band !== bandKey) {
+        if (outfit.bandGroup.visible && outfit.band !== bandKey) {
             outfit.band = bandKey;
             drawBand(band.color, band.ink);
             // Again once the pen's font has come.
@@ -2106,19 +2247,24 @@ export function createRider({ scene }) {
     }
 
     // The body's shape: the girl's (her torso, slimmer arms and legs, the
-    // shoulders closer, a smaller head) or the usual one.
-    function shapeFor(girl) {
+    // shoulders closer, a smaller head) or builds ('standard' | 'athletic' | 'heavy' | 'slim').
+    function shapeFor(girl, build = girl ? 'girl' : 'standard') {
         bodies.boy.visible = !girl;
         bodies.girl.visible = girl;
-        shoulders.forEach((target, i) => target.position.set((i === 0 ? -1 : 1) * (girl ? 0.182 : 0.215), girl ? 0.47 : 0.49, 0));
-        hips.forEach((target, i) => target.position.set((i === 0 ? -1 : 1) * (girl ? 0.13 : 0.12), 0, 0.02));
+        const scale = build === 'heavy' ? [1.22, 1.03, 1.24] : build === 'athletic' ? [1.12, 1.02, 1.08] : build === 'slim' ? [0.92, 1, 0.92] : [1, 1, 1];
+        bodies.boy.scale.set(...scale);
+        const thick = build === 'heavy' ? 1.2 : build === 'athletic' ? 1.08 : build === 'slim' ? 0.9 : 1;
+        shoulders.forEach((target, i) => target.position.set((i === 0 ? -1 : 1) * (girl ? 0.182 : 0.215 * scale[0]), girl ? 0.47 : 0.49, 0));
+        hips.forEach((target, i) => target.position.set((i === 0 ? -1 : 1) * (girl ? 0.13 : 0.12 * scale[0]), 0, 0.02));
         const shape = (limb, own) => {
             limb.upper.geometry = girl ? own[0] : limb.upper.userData.own;
             limb.lower.geometry = girl ? own[1] : limb.lower.userData.own;
+            limb.upper.userData.thick = girl ? 1 : thick;
+            limb.lower.userData.thick = girl ? 1 : thick;
         };
         arms.forEach((limb) => shape(limb, GIRL_LIMBS.arm));
         legs.forEach((limb) => shape(limb, GIRL_LIMBS.leg));
-        hands.forEach((hand) => hand.scale.setScalar(girl ? 0.86 : 1));
+        hands.forEach((hand) => hand.scale.setScalar(girl ? 0.86 : thick));
         shoes.forEach((shoe) => shoe.scale.setScalar(girl ? 0.9 : 1));
         head.scale.setScalar(girl ? 0.94 : 1);
     }
@@ -2155,9 +2301,12 @@ export function createRider({ scene }) {
     const luminance = (color) => 0.2126 * color.r + 0.7152 * color.g + 0.0722 * color.b;
     function setLivery({
         number = '51', hoodie = '#f6c416', helmet: helmetColor = '#0a0a0c', bike = '#f2c014', name = '', plate: withPlate = false, plateText: text = '',
-        helmetStyle = 'classic', shoes = '#f2f2f0', bikeModel = 'standard'
+        helmetStyle = 'classic', shoes = '#f2f2f0', bikeModel = 'standard', pants: pantsColor = '#16181d', glove: gloveColor = '#0e0e10', visor: visorColor = '#0a0e16'
     } = {}) {
         sneaker.color.set(shoes);
+        pants.color.set(pantsColor);
+        glove.color.set(gloveColor);
+        visor.color.set(visorColor);
         const araiOn = helmetStyle === 'arai';
         classicHead.visible = !araiOn;
         araiHead.visible = araiOn;

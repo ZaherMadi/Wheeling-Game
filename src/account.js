@@ -107,6 +107,7 @@ export function createAccount({ post, nickname, onStatus = () => {}, stats = nul
 
     function close(result = false) {
         dialog.hidden = true;
+        dialog.querySelector('.account-card')?.classList.remove('is-stats');
         codeName = null;
         if (pendingCode) {
             const resolve = pendingCode;
@@ -122,17 +123,20 @@ export function createAccount({ post, nickname, onStatus = () => {}, stats = nul
     const showStatsButton = (on) => {
         statsButton.hidden = !on || !stats;
         title.textContent = 'Mon compte';
+        dialog.querySelector('.account-card')?.classList.remove('is-stats');
     };
     statsButton.addEventListener('click', () => {
         body.textContent = '';
         say('');
         statsButton.hidden = true;
         title.textContent = 'Mes stats';
+        const cardEl = dialog.querySelector('.account-card');
+        cardEl?.classList.add('is-stats');
         stats(body);
         const back = actionButton('← Mon compte', 'account-btn account-btn--quiet');
         back.addEventListener('click', () => open());
         body.append(back);
-        dialog.querySelector('.account-card').scrollTop = 0;
+        if (cardEl) cardEl.scrollTop = 0;
     });
     dialog.addEventListener('click', (event) => {
         if (event.target === dialog) close(false);

@@ -9,6 +9,7 @@
 // (its stats, its points); another nickname on the same device only what is
 // done under it from then on.
 import { statsSnapshot } from './stats.js';
+import { applyProfileOwned, profileOwned } from './shop/store.js';
 
 const POINTS_KEY = 'wheelie_total_points';
 const PENALTY_KEY = 'wheelie_points_penalty';
@@ -55,7 +56,7 @@ function writeJson(key, value) {
     }
 }
 
-function deviceId() {
+export function deviceId() {
     let id = null;
     try {
         id = localStorage.getItem(DEVICE_KEY);
@@ -166,6 +167,8 @@ function ownedHere() {
         const list = readJson(key, []);
         if (Array.isArray(list)) list.forEach((item) => typeof item === 'string' && valid(item) && owned.push(`${prefix}:${item}`));
     }
+    // The shop's articles (src/shop/store.js).
+    owned.push(...profileOwned());
     return owned;
 }
 
@@ -221,6 +224,7 @@ function applyOwned(owned) {
             changed = true;
         }
     }
+    if (applyProfileOwned(owned)) changed = true;
     return changed;
 }
 

@@ -1344,6 +1344,7 @@
 
   <!-- START SCREEN -->
   <div id="start-screen" class="screen active">
+    <button id="shop-btn" class="shop-start-btn v2-only" type="button">🛍️ BOUTIQUE</button>
     <div id="player-nickname" style="position: absolute; top: 20px; right: 20px; color: #FFD700; font-size: 16px; font-weight: bold; text-shadow: 2px 2px 4px rgba(0,0,0,0.8); display: none;">
       🎮 <span id="nickname-display"></span>
     </div>
@@ -1513,6 +1514,9 @@
     </div>
   </div>
 
+  <!-- BOUTIQUE SCREEN (V2) -->
+  <div id="shop-screen" class="screen v2-only" aria-label="Boutique 51"></div>
+
   <!-- GAME OVER SCREEN -->
   <div id="game-over-screen" class="screen">
     <img src="/Logo51.png" alt="Wheelie King Logo" style="width: 100px; margin-bottom: 20px; filter: grayscale(100%);">
@@ -1528,6 +1532,7 @@
   <!-- PAUSE SCREEN -->
   <div id="pause-screen" class="screen">
     <h1>PAUSE</h1>
+    <div id="pause-music" class="pause-music" hidden></div>
     <button id="resume-btn">REPRENDRE</button>
     <button id="pause-restart-btn" style="margin-top: 10px; background: #888;">RECOMMENCER</button>
     <button id="pause-menu-btn" style="margin-top: 10px; background: #444;">MENU</button>

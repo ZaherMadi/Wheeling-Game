@@ -9,7 +9,7 @@
 import * as THREE from 'three';
 import { PRIMS, transform } from './geometry.js';
 import { PAVING_SCALE } from './cityatlas.js';
-import { CAR_PAINTS, addCar } from './cars.js';
+import { CAR_PAINTS, STANDARD_CAR_MODELS, addCar } from './cars.js';
 
 export const ROAD_HALF = 10;
 export const KERB = 0.15;
@@ -79,6 +79,8 @@ export function createStreetKit({ random, atlases, vegetation, cars }) {
     let currentSide = 1;
     // Parked cars of the block being built, in block coordinates.
     const parked = [];
+    // Slots (~1 in 15) reserved for realistic worked-on shop cars.
+    const realSlots = [];
     // Bus shelters of the block (their ad panel), in block coordinates.
     const shelters = [];
     // Every other shelter is sponsored by 5HC (no draw from the block's
@@ -372,11 +374,19 @@ export function createStreetKit({ random, atlases, vegetation, cars }) {
     return {
         paving, kerbZ, kerbX, asphalt, decal, shade, castShade, setEdge, setSide, lamp, bench, bin, bollards, hydrant, bikeRack, poleSign,
         trafficLight, busShelter, mupi, adColumn, planter, cafeTerrace, streetTree,
-        parked, shelters,
+        parked, realSlots, shelters,
         parkedCar(sink, x, z) {
-            const name = pick(Object.keys(cars));
-            const model = cars[name];
             const yaw = (chance(0.85) ? Math.PI : 0) + range(-0.02, 0.02);
+            // ~1 in 15 parked cars on average is a realistic detailed car (assigned at chunk spawn).
+            if (chance(1 / 15)) {
+                realSlots.push({
+                    x: x * currentSide, z: z * currentSide, yaw: yaw + (currentSide < 0 ? Math.PI : 0)
+                });
+                castShade(sink, 'box', x, z, 0.96, 2.3, 0, 1.35, 0.9);
+                return 4.6;
+            }
+            const name = pick(STANDARD_CAR_MODELS);
+            const model = cars[name];
             const paint = pick(CAR_PAINTS);
             // Detailed version drawn as an instance; the distant stand-in stays merged.
             addCar(sink, model, x, z, yaw, paint, false);

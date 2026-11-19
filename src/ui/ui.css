@@ -3024,3 +3024,129 @@ body.v2:has(.screen.active) #ui-police-warn {
     scale: 0.72;
   }
 }
+
+/* Free roam: tow truck delivery button & vehicle chooser modal */
+body.v2 #ui-tow-btn {
+  position: absolute;
+  left: calc(16px + var(--safe-l));
+  bottom: calc(144px + var(--safe-b));
+  z-index: 25;
+  display: inline-flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 2px;
+  padding: 9px 15px;
+  border-radius: 10px;
+  border: 1px solid rgba(246, 196, 22, 0.55);
+  background: linear-gradient(180deg, rgba(32, 36, 44, 0.92), rgba(14, 16, 22, 0.94));
+  color: var(--text);
+  font-family: var(--display);
+  font-size: 13px;
+  letter-spacing: 0.04em;
+  cursor: pointer;
+  transform: skewX(var(--slant));
+  box-shadow: 0 8px 22px rgba(0, 0, 0, 0.5);
+  touch-action: manipulation;
+}
+body.v2 #ui-tow-btn[hidden],
+body.v2:has(.screen.active) #ui-tow-btn {
+  display: none;
+}
+body.v2 #ui-tow-btn span,
+body.v2 #ui-tow-btn small {
+  transform: skewX(calc(var(--slant) * -1));
+  pointer-events: none;
+}
+body.v2 #ui-tow-btn small {
+  font-family: Roboto, sans-serif;
+  font-size: 11px;
+  color: var(--y);
+  font-weight: 700;
+}
+body.v2 #ui-tow-btn.is-active {
+  border-color: #ff9c2a;
+  background: linear-gradient(180deg, rgba(160, 75, 10, 0.92), rgba(75, 32, 4, 0.95));
+  animation: ui-tow-pulse 1s ease-in-out infinite;
+}
+@keyframes ui-tow-pulse {
+  50% { box-shadow: 0 0 24px rgba(255, 166, 26, 0.65); }
+}
+
+#ui-tow-modal {
+  position: fixed;
+  inset: 0;
+  z-index: 9500;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 18px;
+  background: rgba(6, 8, 12, 0.78);
+  -webkit-backdrop-filter: blur(8px);
+  backdrop-filter: blur(8px);
+}
+#ui-tow-modal[hidden] { display: none; }
+.ui-tow-card {
+  width: min(400px, 94vw);
+  max-height: 80vh;
+  overflow-y: auto;
+  background: #141821;
+  border: 1px solid rgba(246, 196, 22, 0.45);
+  border-radius: 16px;
+  padding: 18px;
+  color: #f4f5f7;
+  box-shadow: 0 22px 55px rgba(0, 0, 0, 0.65);
+}
+.ui-tow-card h3 {
+  margin: 0 0 12px;
+  font-family: 'Russo One', sans-serif;
+  color: #f6c416;
+  font-size: 17px;
+}
+.ui-tow-list {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+.ui-tow-opt {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  width: 100%;
+  padding: 11px 14px;
+  border-radius: 11px;
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  background: #1c222e;
+  color: #fff;
+  font-family: Roboto, sans-serif;
+  font-size: 14px;
+  font-weight: 700;
+  cursor: pointer;
+}
+.ui-tow-opt:hover {
+  border-color: #f6c416;
+  background: #232a38;
+}
+.ui-tow-opt__cost {
+  color: #f6c416;
+  font-family: 'Russo One', sans-serif;
+  font-size: 13px;
+}
+.ui-tow-cancel {
+  margin-top: 12px;
+  width: 100%;
+  padding: 10px;
+  border-radius: 10px;
+  border: 1px solid rgba(255, 255, 255, 0.16);
+  background: transparent;
+  color: #a3a8b3;
+  font-weight: 600;
+  cursor: pointer;
+}
+@media (pointer: coarse) {
+  body.v2 #ui-tow-btn {
+    left: calc(14px + var(--safe-l));
+    bottom: auto;
+    top: calc(74px + var(--safe-t));
+  }
+}

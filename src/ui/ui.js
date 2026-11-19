@@ -533,6 +533,64 @@ function installPrompt() {
             if (label && text) label.textContent = available ? text.split(/[ :]/)[0] : 'VERROUILLÉ';
         }
     });
+
+    // Tow truck ("Livraison moto") button + owned vehicle choice sheet.
+    const towBtn = document.createElement('button');
+    towBtn.type = 'button';
+    towBtn.id = 'ui-tow-btn';
+    towBtn.hidden = true;
+    document.getElementById('ui-layer')?.append(towBtn);
+
+    const towModal = document.createElement('div');
+    towModal.id = 'ui-tow-modal';
+    towModal.hidden = true;
+    towModal.innerHTML = '<div class="ui-tow-card"><h3>🚚 Quel véhicule livrer ?</h3><div class="ui-tow-list"></div><button type="button" class="ui-tow-cancel">Annuler</button></div>';
+    document.body.append(towModal);
+
+    towBtn.addEventListener('pointerdown', (event) => {
+        event.preventDefault();
+        event.stopPropagation();
+        document.dispatchEvent(new CustomEvent('wheelie:tow-request'));
+    });
+    towModal.addEventListener('click', (event) => {
+        const optBtn = event.target.closest('[data-tow-kind]');
+        if (optBtn) {
+            towModal.hidden = true;
+            document.dispatchEvent(new CustomEvent('wheelie:tow-request', {
+                detail: { kind: optBtn.dataset.towKind, model: optBtn.dataset.towModel || null }
+            }));
+            return;
+        }
+        if (event.target === towModal || event.target.closest('.ui-tow-cancel')) {
+            towModal.hidden = true;
+        }
+    });
+    document.addEventListener('wheelie:tow', (event) => {
+        const d = event.detail || {};
+        towBtn.hidden = !d.show;
+        if (!d.show) {
+            towModal.hidden = true;
+            return;
+        }
+        towBtn.classList.toggle('is-active', !!d.active);
+        const firstCost = d.options?.[0]?.cost;
+        towBtn.innerHTML = d.active
+            ? '<span>🚚 DÉPANNEUSE EN ROUTE</span><small>Appuie pour accélérer &gt;&gt;</small>'
+            : d.options?.length > 1
+                ? '<span>🚚 Livraison moto</span><small>Moto ou voiture achetée</small>'
+                : `<span>🚚 Livraison moto</span><small>${firstCost ? `${firstCost} pts` : ''}</small>`;
+    });
+    document.addEventListener('wheelie:tow-choose', (event) => {
+        const options = event.detail?.options || [];
+        const list = towModal.querySelector('.ui-tow-list');
+        if (!list) return;
+        list.innerHTML = options.map((o) =>
+            `<button type="button" class="ui-tow-opt" data-tow-kind="${o.kind}" data-tow-model="${o.model || ''}">` +
+            `<span class="ui-tow-opt__name">${o.kind === 'bike' ? '🏍️' : '🚗'} ${o.name}</span>` +
+            `<span class="ui-tow-opt__cost">${Number(o.cost).toLocaleString('fr-FR')} pts</span></button>`
+        ).join('');
+        towModal.hidden = false;
+    });
 }
 
 export function installRacingUI() {

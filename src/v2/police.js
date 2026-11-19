@@ -2,6 +2,7 @@
 // (on the bike or in a car) and it pulls over: two officers get out, walk up
 // to you, fine you 100 points, then drive off.
 import * as THREE from 'three';
+import { beginCinematic, cinematicSpeed, endCinematic } from '../cinematic.js';
 
 const S = 1.02;
 const range = (min, max) => min + Math.random() * (max - min);
@@ -264,6 +265,7 @@ export function createPolicePatrol({ scene, world, traffic, audio, talk, onFine,
         if (!car || record !== car || stop || car.towing) return;
         car.hold = true;
         stop = { phase: 'brake', t: 0, speaker: 0, context: 'bump', fined: 0, token: 0, hits: 0 };
+        beginCinematic('police');
         audio.play('police_siren', { volume: 0.6 });
     }
 
@@ -307,6 +309,7 @@ export function createPolicePatrol({ scene, world, traffic, audio, talk, onFine,
 
     function startChase() {
         stop.token++;
+        endCinematic('police');
         talk.reset();
         hideOfficers();
         audio.play('car_door', { volume: 0.5 });
@@ -333,6 +336,7 @@ export function createPolicePatrol({ scene, world, traffic, audio, talk, onFine,
         group.rotation.y = Math.atan2(-dx, -dz);
         freezePlayer?.(true);
         onCaught?.();
+        beginCinematic('police');
         stop.context = 'chase';
         stop.phase = 'out';
         stop.t = 0;
@@ -372,6 +376,7 @@ export function createPolicePatrol({ scene, world, traffic, audio, talk, onFine,
         car.chasing = true;
         car.ghost = true;
         stop = { phase: 'cut', t: 0, speaker: 0, context: 'wheelie', fined: 0, token: 0, hits: 0, side: player.x > 0 ? -1 : 1 };
+        beginCinematic('police');
         document.dispatchEvent(new CustomEvent('wheelie:stat', { detail: { name: 'policeCuts' } }));
         audio.play('police_siren', { volume: 0.7 });
         audio.play('brake', { volume: 0.5, delay: 0.6 });
@@ -469,7 +474,10 @@ export function createPolicePatrol({ scene, world, traffic, audio, talk, onFine,
     }
 
     // player: { x, z, radius, mode, heading, speed (m/s), wheeling }
-    function update(dt, focus, player, bike) {
+    function update(rawDt, focus, player, bike) {
+        const cine = stop && stop.phase !== 'chase';
+        const mult = cine ? cinematicSpeed() : 1;
+        const dt = rawDt * mult;
         clock += dt;
         if (!car && clock > nextAt) spawn(focus);
         if (!car) {
@@ -481,7 +489,7 @@ export function createPolicePatrol({ scene, world, traffic, audio, talk, onFine,
         }
         group.userData.flash(clock);
         if (car.towing) tow(bike);
-        updateWarn(dt, player);
+        updateWarn(rawDt, player);
         if (stop && stop.phase === 'cut') {
             stop.t += dt;
             updateCut(dt, player);
@@ -540,7 +548,8 @@ export function createPolicePatrol({ scene, world, traffic, audio, talk, onFine,
                 return;
             }
             officers.forEach((officer, index) => face(officer, player.x, player.z, index === stop.speaker, dt));
-            if (stop.t > 16) {
+            if (stop.t > 16 || (mult >= 3 && stop.t > 2.4)) {
+                talk.reset();
                 stop.phase = 'back';
                 stop.t = 0;
             }
@@ -584,6 +593,7 @@ export function createPolicePatrol({ scene, world, traffic, audio, talk, onFine,
                 car.hold = false;
                 if (stop.towing) car.towing = true;
                 stop = null;
+                endCinematic('police');
             }
         }
     }
@@ -605,6 +615,7 @@ export function createPolicePatrol({ scene, world, traffic, audio, talk, onFine,
         if (car) traffic.leave(car);
         car = null;
         stop = null;
+        endCinematic('police');
         hideOfficers();
         freezePlayer?.(false);
         nextAt = clock + range(30, 180);

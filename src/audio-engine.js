@@ -8,9 +8,44 @@ const LOOP_IDS = [
     'engine_idle', 'engine_mid', 'engine_high', 'wind', 'tire_wet', 'city_ambience', 'scrape', 'footsteps',
     'car_engine_petrol', 'car_engine_diesel', 'car_engine_sport', 'car_reverse', 'reverse_beeper', 'tire_screech'
 ];
-// Free roam cars: which engine each model has.
-const CAR_ENGINES = { hatch: 'car_engine_petrol', sedan: 'car_engine_petrol', van: 'car_engine_diesel', suv: 'car_engine_diesel', coupe: 'car_engine_sport' };
-const CAR_PITCH = { hatch: 1.12, sedan: 0.95, van: 0.9, suv: 1.0, coupe: 0.95 };
+// Free roam cars: which engine profile each model has (standard & realistic cars).
+const CAR_ENGINES = {
+    hatch: 'car_engine_petrol', hatch_sr: 'car_engine_petrol',
+    sedan: 'car_engine_petrol', sedan_sr: 'car_engine_petrol',
+    van: 'car_engine_diesel',
+    suv: 'car_engine_diesel', suv_sr: 'car_engine_diesel',
+    coupe: 'car_engine_sport',
+    'citron-c5-air': 'car_engine_diesel',
+    'reno-3009': 'car_engine_petrol',
+    'kupra-formento': 'car_engine_sport',
+    'golfe-8': 'car_engine_sport',
+    'audo-rs3': 'car_engine_sport',
+    'merso-a45': 'car_engine_sport',
+    'audo-rsq3': 'car_engine_sport',
+    'bm-m340': 'car_engine_sport',
+    'porsh-makane': 'car_engine_sport',
+    'porsh-911': 'car_engine_sport',
+    'lambo-uruz': 'car_engine_sport'
+};
+const CAR_PITCH = {
+    hatch: 1.12, hatch_sr: 1.12, sedan: 0.95, sedan_sr: 0.95, van: 0.9, suv: 1.0, suv_sr: 1.0, coupe: 0.95,
+    'citron-c5-air': 0.96, 'reno-3009': 0.94, 'kupra-formento': 1.04, 'golfe-8': 1.12,
+    'audo-rs3': 1.18, 'merso-a45': 1.24, 'audo-rsq3': 1.08, 'bm-m340': 1.02,
+    'porsh-makane': 0.92, 'porsh-911': 1.32, 'lambo-uruz': 0.82
+};
+// Secondary harmonic layer & overrun crackles for worked-on realistic cars.
+const CAR_LAYERS = {
+    'reno-3009': { id: 'car_engine_diesel', mix: 0.25, pitch: 1.08 },
+    'kupra-formento': { id: 'car_engine_petrol', mix: 0.35, pitch: 1.22, crackle: 0.35 },
+    'golfe-8': { id: 'car_engine_petrol', mix: 0.4, pitch: 1.28, crackle: 0.55 },
+    'audo-rs3': { id: 'car_engine_diesel', mix: 0.42, pitch: 1.48, crackle: 0.85 },
+    'audo-rsq3': { id: 'car_engine_diesel', mix: 0.4, pitch: 1.36, crackle: 0.75 },
+    'merso-a45': { id: 'car_engine_petrol', mix: 0.35, pitch: 1.42, crackle: 0.8 },
+    'bm-m340': { id: 'car_engine_petrol', mix: 0.45, pitch: 1.34, crackle: 0.65 },
+    'porsh-makane': { id: 'car_engine_petrol', mix: 0.42, pitch: 1.15, crackle: 0.55 },
+    'porsh-911': { id: 'car_engine_petrol', mix: 0.3, pitch: 1.55, crackle: 0.7 },
+    'lambo-uruz': { id: 'car_engine_diesel', mix: 0.48, pitch: 1.12, crackle: 0.9 }
+};
 
 const clamp01 = (value) => Math.max(0, Math.min(1, value));
 
@@ -380,13 +415,26 @@ export function createAudioEngine({ effects, getManifest }) {
         const engineLevel = vehicle === 'bike' ? 1 : 0;
         const carEngine = inCar ? CAR_ENGINES[frame.carModel] || 'car_engine_petrol' : null;
         const carPitch = CAR_PITCH[frame.carModel] || 1;
+        const carLayer = inCar ? CAR_LAYERS[frame.carModel] || null : null;
         const reversing = inCar && !!frame.reversing;
         const carLoad = 0.55 + sim.throttle * 0.45;
         for (const id of ['car_engine_petrol', 'car_engine_diesel', 'car_engine_sport']) {
             const on = id === carEngine;
-            // In reverse the engine stays low; the gearbox whines over it.
+            const layered = carLayer && carLayer.id === id;
             const rate = reversing ? 0.8 + rpm * 0.3 : 0.7 + rpm * 0.85;
-            setLoop(id, on ? (reversing ? 0.32 : 0.5) * carLoad : 0, rate * carPitch);
+            if (on) {
+                setLoop(id, (reversing ? 0.32 : 0.5) * carLoad, rate * carPitch);
+            } else if (layered) {
+                setLoop(id, (reversing ? 0.14 : 0.45 * carLayer.mix) * carLoad, rate * carLayer.pitch);
+            } else {
+                setLoop(id, 0, rate);
+            }
+        }
+        // Exhaust overrun pops & crackles on high-performance cars when lifting off at speed.
+        if (inCar && carLayer?.crackle && !throttle && sim.wasThrottle && rpm > 0.48 && sim.time - sim.lastBackfire > 1.4 && Math.random() < carLayer.crackle) {
+            play('backfire', { volume: 0.32 + carLayer.crackle * 0.18, rate: 1.05 + Math.random() * 0.35, delay: 0.05 });
+            if (carLayer.crackle > 0.7) play('backfire', { volume: 0.24, rate: 1.25 + Math.random() * 0.25, delay: 0.18 });
+            sim.lastBackfire = sim.time;
         }
         const reverseSpeed = reversing ? clamp01(kmh / 45) : 0;
         setLoop('car_reverse', reversing ? 0.12 + reverseSpeed * 0.3 : 0, 0.85 + reverseSpeed * 0.5);

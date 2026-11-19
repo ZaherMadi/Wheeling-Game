@@ -3,6 +3,9 @@
 // the account window. Kept in localStorage, written a moment after each
 // change and when the page is hidden.
 import { track } from './activity.js';
+import { nextReward } from './unlocks.js';
+import { ownedIds, seen } from './shop/store.js';
+import { ownedCars, REAL_CARS } from './v2/realcars.js';
 
 const KEY = 'wheelie_stats';
 
@@ -90,16 +93,22 @@ export function renderStats(container, { points = 0, codes = {}, all = null, ser
         stats.liveWins = Math.max(stats.liveWins || 0, liveStats.wins || 0);
         stats.liveTrophyCounts = liveStats.trophies || {};
     }
+    const totalSeconds = (stats.seconds || 0) + (stats.freeSeconds || 0);
+    const avgScore = stats.runs ? Math.round((stats.score || 0) / stats.runs) : 0;
+    const carsSeenCount = REAL_CARS.filter((c) => seen(c.id)).length;
+    const carsOwnedCount = ownedCars().length;
+
     const groups = [
-        ['Général', [
+        ['🎮 Général', [
             ['Parties classées', whole(stats.runs)],
-            ['Temps de jeu', duration((stats.seconds || 0) + (stats.freeSeconds || 0))],
+            ['Temps de jeu total', duration(totalSeconds)],
             ['Score cumulé', whole(stats.score)],
+            ['Moyenne par partie', whole(avgScore)],
             ['Meilleur score', whole(stats.bestScore)],
-            ['Points cumulés (à dépenser)', whole(points)],
+            ['Points cumulés (dispo)', whole(points)],
             ['Vitesse max', `${whole(stats.topKmh)} km/h`]
         ]],
-        ['Wheeling', [
+        ['🔥 Wheeling', [
             ['Bavettes réussies', whole(stats.bavettes)],
             ['Plaques arrachées', whole(stats.plates)],
             ['Chutes', whole(stats.falls)],
@@ -107,7 +116,7 @@ export function renderStats(container, { points = 0, codes = {}, all = null, ser
             ['Dérapages', whole(stats.skids)],
             ['Rattrapés par le frein auto', whole(stats.autoBrakes)]
         ]],
-        ['Sauts et figures', [
+        ['🤸 Sauts et figures', [
             ['Sauts', whole(stats.jumps)],
             ['Figures', whole(stats.tricks)],
             ['Backflips', whole(stats.flips)],
@@ -116,20 +125,28 @@ export function renderStats(container, { points = 0, codes = {}, all = null, ser
             ['Figures tenues (60 % du saut)', whole(stats.heldTricks)],
             ['Boosts', whole(stats.boosts)]
         ]],
-        ['Boucliers', [
+        ['🛡️ Boucliers', [
             ['Ramassés', whole(stats.shields)],
             ['Obstacles encaissés', whole(stats.shieldSaves)]
         ]],
-        ['Mode libre', [
+        ['🏙️ Mode libre', [
             ['Sorties', whole(stats.freeSessions)],
-            ['Temps', duration(stats.freeSeconds)],
+            ['Temps en libre', duration(stats.freeSeconds)],
             ['Figures Land trouvée', whole(stats.figuresLand)],
             ['Vols en jetpack', whole(stats.jetpacks)]
+        ]],
+        ['🛍️ Boutique & Garage', [
+            ['Articles possédés', whole(ownedIds().length)],
+            ['Achats en boutique', whole(stats.shopBought)],
+            ['Cadeaux offerts', whole(stats.shopGifted)],
+            ['Codes activés', whole(stats.shopCodeUsed)],
+            ['Voitures croisées', `${carsSeenCount} / ${REAL_CARS.length}`],
+            ['Voitures achetées', `${carsOwnedCount} / ${REAL_CARS.length}`]
         ]]
     ];
     // The Love&Faith event (testers), once played.
     if (stats.loveRuns) {
-        groups.push(['Événement Love&Faith', [
+        groups.push(['💖 Événement Love&Faith', [
             ['Courses', whole(stats.loveRuns)],
             ['Cœurs réparés', whole(stats.loveRepaired)],
             ['Cœurs brisés', whole(stats.loveBroken)],
@@ -139,7 +156,7 @@ export function renderStats(container, { points = 0, codes = {}, all = null, ser
     }
     if (stats.liveSessions || stats.liveTurns || stats.liveReactions) {
         const trophies = LIVE_TROPHIES.filter(([id]) => stats.liveTrophyCounts?.[id]).map(([id, label]) => [label, whole(stats.liveTrophyCounts[id])]);
-        groups.push(['Sessions live', [
+        groups.push(['📡 Sessions live', [
             ['Sessions jouées', whole(stats.liveSessions)],
             ['Sessions gagnées', whole(stats.liveWins)],
             ['Tours joués', whole(stats.liveTurns)],
@@ -151,10 +168,33 @@ export function renderStats(container, { points = 0, codes = {}, all = null, ser
     const secret = [];
     if (codes.glider || stats.gliders) secret.push(['Séances de deltaplane', whole(stats.gliders)]);
     if (codes.tricks || stats.codeTricks) secret.push(['Parties sans obstacles', whole(stats.codeTricks)]);
-    if (secret.length) groups.push(['Codes secrets', secret]);
+    if (secret.length) groups.push(['🔑 Codes secrets', secret]);
 
     const wrap = document.createElement('div');
     wrap.className = 'stats';
+
+    const next = nextReward(points);
+    const pct = next ? Math.max(0, Math.min(100, Math.round((points / next.points) * 100))) : 100;
+    const hero = document.createElement('section');
+    hero.className = 'stats-hero';
+    hero.innerHTML = `
+      <div class="stats-kpis">
+        <div class="stats-kpi"><span>🏆 Meilleur score</span><strong>${whole(stats.bestScore)}</strong></div>
+        <div class="stats-kpi is-gold"><span>🪙 Points dispo</span><strong>${whole(points)}</strong></div>
+        <div class="stats-kpi"><span>⏱️ Temps de jeu</span><strong>${duration(totalSeconds)}</strong></div>
+        <div class="stats-kpi"><span>🚀 Vitesse max</span><strong>${whole(stats.topKmh)} km/h</strong></div>
+      </div>
+      <div class="stats-progress">
+        <div class="stats-progress__head">
+          <span>${next ? `Prochain palier : <strong>${next.name}</strong>` : '🎉 Tous les paliers débloqués'}</span>
+          <span>${next ? `${whole(points)} / ${whole(next.points)} pts (${pct}%)` : '100%'}</span>
+        </div>
+        <div class="stats-progress__bar"><i style="width:${pct}%"></i></div>
+      </div>`;
+    wrap.append(hero);
+
+    const grid = document.createElement('div');
+    grid.className = 'stats-grid';
     for (const [title, rows] of groups) {
         const section = document.createElement('section');
         section.className = 'stats-group';
@@ -169,8 +209,9 @@ export function renderStats(container, { points = 0, codes = {}, all = null, ser
             list.append(name, figure);
         }
         section.append(heading, list);
-        wrap.append(section);
+        grid.append(section);
     }
+    wrap.append(grid);
     const note = document.createElement('p');
     note.className = 'stats-note';
     const since = new Date(stats.since || Date.now());

@@ -15,6 +15,7 @@ import { createSkidMarks } from './skidmarks.js';
 import { RAINBOW_KEY, createFiguresLand, rainbowUnlocked } from './figures-land.js';
 import { chosenPose } from './poses.js';
 import { installRacingUI } from '../ui/ui.js';
+import { beginCinematic, cinematicSpeed, endCinematic } from '../cinematic.js';
 
 const DAY_CYCLE_SECONDS = 600;
 
@@ -63,18 +64,35 @@ export function createRealisticVersion({ scene, renderer, camera, mobile, audio,
         ...livery, name: riderName(), plate: !!livery.plate && totalPoints() >= PLATE_POINTS, plateText: livery.plateText || '',
         ...unlockedLook(livery)
     });
-    // The Love&Faith rider: the event's look while racing it, or one bought
-    // and worn everywhere (null: the usual rider).
+    // The Love&Faith rider or selected character: the event's look while
+    // racing it, a showroom preview, or the equipped character/base outfit.
     let eventOutfit = null;
     let baseOutfit = null;
+    let characterLook = null;
+    let previewLook = null;
+    function mergeOutfit(char, outfit) {
+        if (!outfit) return char;
+        if (!char || outfit.parts || outfit.character) return outfit;
+        return {
+            ...char,
+            ...outfit,
+            headwear: char.headwear || outfit.headwear,
+            livery: { ...char.livery, ...outfit.livery }
+        };
+    }
     function dressRider() {
-        const look = wornLook ? null : eventOutfit || baseOutfit;
-        // The shop's pieces go over the rider's own livery.
-        if (!look || look.parts) {
+        const preview = previewLook?.isOutfit ? mergeOutfit(characterLook, previewLook) : previewLook;
+        const active = wornLook ? null : eventOutfit || preview || mergeOutfit(characterLook, baseOutfit);
+        if (!active || active.parts) {
             rider.setEventLook(null);
             wearOwn();
         }
-        if (look) rider.setEventLook(look);
+        if (active) {
+            if (active.character || active.livery) {
+                wearOwn({ ...loadLivery(), ...active.livery });
+            }
+            rider.setEventLook(active);
+        }
     }
     // The event's sky ({ ambience, dusk }, or null: the day cycle).
     let skyOverride = null;
@@ -202,6 +220,7 @@ export function createRealisticVersion({ scene, renderer, camera, mobile, audio,
         p.variant = variant;
         p.from.copy(p.group.position);
         p.fromYaw = p.group.rotation.y;
+        beginCinematic('police-linear');
         while (officers.length < 2) officers.push(createOfficer(scene));
         officers.forEach((officer) => {
             officer.group.visible = false;
@@ -209,7 +228,8 @@ export function createRealisticVersion({ scene, renderer, camera, mobile, audio,
         });
     }
 
-    function updateArrest(dt) {
+    function updateArrest(rawDt) {
+        const dt = rawDt * cinematicSpeed();
         const p = patrol;
         const b = rider.bikeGroup.position;
         p.time += dt;
@@ -268,6 +288,8 @@ export function createRealisticVersion({ scene, renderer, camera, mobile, audio,
 
     function reset() {
         if (seed !== null) world.reseed(seed);
+        world.resetHorizon?.();
+        endCinematic('police-linear');
         if (patrol) {
             patrol.stopping = false;
             patrol.out = false;
@@ -407,7 +429,7 @@ export function createRealisticVersion({ scene, renderer, camera, mobile, audio,
                 document.dispatchEvent(new CustomEvent('wheelie:figuresland', { detail: { first } }));
             }
         }
-        world.update(camera, roaming ? roam.focus : bike.position);
+        world.update(camera, roaming ? roam.focus : bike.position, { freeMode: roaming });
         renderer.getDrawingBufferSize(viewport);
         fx.update(dt, camera, viewport.y);
     }
@@ -436,19 +458,39 @@ export function createRealisticVersion({ scene, renderer, camera, mobile, audio,
         return { width, height, x0: 0, x1: Math.max(width * 0.4, panel.left - 6), y0: 0, y1: height };
     }
 
+    let showroomCar = null;
+    function setShowroomCar(model, colour = 0xf2c014) {
+        if (showroomCar) {
+            scene.remove(showroomCar);
+            showroomCar = null;
+        }
+        if (!model) {
+            rider.bikeGroup.visible = true;
+            return;
+        }
+        showroomCar = world.createCar(model, colour);
+        const b = rider.bikeGroup.position;
+        showroomCar.position.set(b.x, 0, b.z);
+        showroomCar.scale.setScalar(1.15);
+        scene.add(showroomCar);
+        rider.bikeGroup.visible = false;
+    }
+
     function frameShowroom(angle) {
         const area = freeArea();
         const halfTan = Math.tan(THREE.MathUtils.degToRad(camera.fov) / 2);
         // Half-angles of the free area as seen from the camera.
         const halfV = Math.atan(halfTan * (area.y1 - area.y0) / area.height);
         const halfH = Math.atan(halfTan * camera.aspect * (area.x1 - area.x0) / area.width);
-        const distance = Math.max(5.4, SUBJECT_RADIUS / Math.sin(Math.min(halfV, halfH)));
+        const radius = showroomCar ? 3.5 : SUBJECT_RADIUS;
+        const height = showroomCar ? 1.15 : SUBJECT_HEIGHT;
+        const distance = Math.max(showroomCar ? 6.4 : 5.4, radius / Math.sin(Math.min(halfV, halfH)));
         const b = rider.bikeGroup.position;
         camera.position.set(
             b.x + Math.sin(angle) * distance,
-            SUBJECT_HEIGHT + 0.6 * distance / 5.4,
+            height + 0.65 * distance / 5.4,
             b.z + Math.cos(angle) * distance);
-        look.set(b.x, SUBJECT_HEIGHT, b.z);
+        look.set(b.x, height, b.z);
         camera.lookAt(look);
         // The rider drawn at the centre of the free area, not of the screen.
         const centreX = (area.x0 + area.x1) / 2;
@@ -460,11 +502,16 @@ export function createRealisticVersion({ scene, renderer, camera, mobile, audio,
     // resumes a few seconds after.
     let showroomAngle = 0.9;
     let showroomHeld = 0;
-    dragToTurn(document.getElementById('rider-screen'), (radians) => {
+    const onShowroomDrag = (radians) => {
         showroomAngle += radians;
         showroomHeld = performance.now();
-    }, {
+    };
+    dragToTurn(document.getElementById('rider-screen'), onShowroomDrag, {
         accept: (event) => !event.target.closest('.rider-panel, button, input'),
+        onStart: () => { showroomHeld = performance.now(); }
+    });
+    dragToTurn(document.getElementById('shop-screen'), onShowroomDrag, {
+        accept: (event) => !event.target.closest('.shop-panel, .shop-confirm-dock, button, input'),
         onStart: () => { showroomHeld = performance.now(); }
     });
     function showroom(on, panel = '#rider-screen .rider-panel') {
@@ -472,7 +519,7 @@ export function createRealisticVersion({ scene, renderer, camera, mobile, audio,
         if (on && showroomFrame === null) {
             mountPanel();
             wornLook = null;
-            wearOwn();
+            dressRider();
             savedPosition.copy(camera.position);
             savedQuaternion.copy(camera.quaternion);
             const tick = () => {
@@ -485,6 +532,9 @@ export function createRealisticVersion({ scene, renderer, camera, mobile, audio,
         } else if (!on && showroomFrame !== null) {
             cancelAnimationFrame(showroomFrame);
             showroomFrame = null;
+            setShowroomCar(null);
+            previewLook = null;
+            dressRider();
             camera.clearViewOffset();
             camera.position.copy(savedPosition);
             camera.quaternion.copy(savedQuaternion);
@@ -515,9 +565,12 @@ export function createRealisticVersion({ scene, renderer, camera, mobile, audio,
             rider.bikeGroup.visible = false;
             let last = performance.now();
             const tick = (now) => {
-                const dt = Math.min(0.05, Math.max(0, (now - last) / 1000));
+                const rawDt = Math.min(0.05, Math.max(0, (now - last) / 1000));
                 last = now;
-                podium.update(dt);
+                const active = podium.remaining() > 0.05;
+                if (active) beginCinematic('podium');
+                else endCinematic('podium');
+                podium.update(rawDt * (active ? cinematicSpeed() : 1));
                 podium.frame(camera, stageArea());
                 renderer.render(scene, camera);
                 podiumFrame = requestAnimationFrame(tick);
@@ -526,6 +579,7 @@ export function createRealisticVersion({ scene, renderer, camera, mobile, audio,
         } else if (!on && podiumFrame !== null) {
             cancelAnimationFrame(podiumFrame);
             podiumFrame = null;
+            endCinematic('podium');
             podium.group.visible = false;
             rider.bikeGroup.visible = true;
             camera.clearViewOffset();
@@ -641,6 +695,26 @@ export function createRealisticVersion({ scene, renderer, camera, mobile, audio,
         setBaseOutfit(look) {
             baseOutfit = look || null;
             dressRider();
+        },
+        setCharacterLook(look) {
+            characterLook = look || null;
+            dressRider();
+        },
+        previewLook(look) {
+            setShowroomCar(null);
+            previewLook = look || null;
+            dressRider();
+            if (showroomFrame !== null) renderer.render(scene, camera);
+        },
+        previewCar(model, colour) {
+            setShowroomCar(model, colour);
+            if (showroomFrame !== null) {
+                frameShowroom(showroomAngle);
+                renderer.render(scene, camera);
+            }
+        },
+        renderOnce() {
+            renderer.render(scene, camera);
         },
         wearLook(look) {
             wornLook = look ? { ...look, name: look.name || '', plate: !!look.plate, plateText: look.plateText || '' } : null;
