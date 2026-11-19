@@ -408,6 +408,21 @@ body.ui-modern .shop-m-card.is-selected {
   box-shadow: 0 6px 16px rgba(0, 0, 0, 0.45);
 }
 
+body.ui-modern .shop-m-card.is-featured {
+  border-color: rgba(246, 196, 22, 0.55);
+  box-shadow: 0 6px 20px rgba(246, 196, 22, 0.14);
+}
+
+body.ui-modern .shop-m-card.is-blocked {
+  opacity: 0.72;
+}
+
+body.ui-modern .shop-m-card.is-blocked .shop-m-card__pill {
+  background: rgba(127, 29, 29, 0.92);
+  border-color: rgba(248, 113, 113, 0.55);
+  color: #fecaca;
+}
+
 body.ui-modern .shop-m-card__media {
   position: relative;
   flex-shrink: 0;

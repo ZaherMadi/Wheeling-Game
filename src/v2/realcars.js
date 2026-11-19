@@ -1,7 +1,7 @@
 // Realistic worked-on cars (approximate parody names, hidden prices until
 // met in free roam, varied paints, sunroofs, custom engine profiles, plus
 // exclusive shop-code GT 51 Cabrio unlocked with 5HPORSHE).
-import { owns, registerItems, seen } from '../shop/store.js';
+import { owns, registerItems } from '../shop/store.js';
 
 const PAINT_STORAGE_KEY = 'wheelie_car_paints';
 
@@ -218,7 +218,7 @@ export function registerRealCars() {
         tagline: car.tagline,
         badge: car.badge || undefined,
         secret: !car.codeOnly,
-        available: car.codeOnly ? () => false : () => seen(car.id),
+        codeOnly: !!car.codeOnly,
         locked: car.codeOnly ? 'Entre le code 5HPORSHE dans la boutique' : 'Croise-la en mode libre pour révéler son prix',
         giftable: !car.codeOnly,
         slot: 'car',

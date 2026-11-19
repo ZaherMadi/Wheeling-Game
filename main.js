@@ -22,7 +22,7 @@ import { createSpeedLines } from './src/v2/speedlines.js';
 import riderVoices from './src/rider-voices.json';
 import { createLive } from './src/live/live.js';
 import { createLoveEvent } from './src/event/love.js';
-import { configureShop } from './src/shop/store.js';
+import { configureShop, loadCatalogOverrides } from './src/shop/store.js';
 import { applyCharacter, registerCharacters } from './src/shop/characters.js';
 import { applyEquippedOutfit, registerOutfitsAndExtras } from './src/shop/outfits.js';
 import { createMusicPlayer, registerMusic } from './src/music/player.js';
@@ -7539,6 +7539,7 @@ shopUI = installShop({
     onLoveUnlock: () => loveEvent?.installEntry(),
     onFreeTricksUnlock: () => document.dispatchEvent(new CustomEvent('wheelie:points'))
 });
+loadCatalogOverrides(API_BASE_URL, apiFetch);
 
 loveEvent = createLoveEvent({
     scene, camera,

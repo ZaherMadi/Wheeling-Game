@@ -7,7 +7,7 @@ import { isModernUI, subscribeUITheme } from '../ui/theme.js';
 import { modernIcon } from '../ui/modern-icons.js';
 import {
     buy, canBuy, CATEGORIES, equip, equipped, gifted, grant,
-    item, items, markGifted, noteSeen, owns, points, seen
+    item, items, loadCatalogOverrides, markGifted, noteSeen, owns, points, seen
 } from './store.js';
 import {
     applyCharacter, CHARACTERS, characterPortraitSvg, equipCharacter,
@@ -19,6 +19,29 @@ import { createHeroCarThumbnail } from '../v2/hero-car-pbr.js';
 
 const fmt = (n) => Math.max(0, Math.floor(Number(n) || 0)).toLocaleString('fr-FR');
 const esc = (s) => String(s ?? '').replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
+const RIDER_DOCK_HIDDEN_KEY = 'wheelie_rider_dock_hidden';
+
+function formatRemaining(iso) {
+    if (!iso) return '';
+    const secs = Math.max(0, Math.floor((Date.parse(iso) - Date.now()) / 1000));
+    if (!secs) return '';
+    if (secs < 3600) return `${Math.max(1, Math.ceil(secs / 60))} min`;
+    if (secs < 86400) return `${Math.floor(secs / 3600)}h ${String(Math.floor((secs % 3600) / 60)).padStart(2, '0')}`;
+    return `${Math.floor(secs / 86400)}j`;
+}
+
+function priceHtml(entry, revealed = true) {
+    if (!revealed) return '??? pts';
+    const hasDiscount = (entry.defaultPrice > entry.price) && (entry.free || entry.price < entry.defaultPrice);
+    const oldPart = hasDiscount ? `<s class="shop-price-old">${fmt(entry.defaultPrice)}</s> ` : '';
+    if (entry.free) return `${oldPart}Gratuit`;
+    return `${oldPart}${fmt(entry.price)} pts`;
+}
+
+function blockedActionText(entry) {
+    const rem = formatRemaining(entry?.blockedUntil);
+    return `🔒 ${entry?.blockedReason || 'Temporairement indisponible'}${rem ? ` (${rem})` : ''}`;
+}
 
 function carBadgeSvg(model, colourHex, secret) {
     const hex = secret ? '#252936' : `#${Number(colourHex || 0xf6c416).toString(16).padStart(6, '0')}`;
@@ -78,6 +101,9 @@ export function installShop(deps) {
     let returnScreen = startScreen;
     let stageView = 'spin';
     let stageZoom = false;
+    let riderDockHidden = (() => {
+        try { return localStorage.getItem(RIDER_DOCK_HIDDEN_KEY) === '1'; } catch { return false; }
+    })();
 
     // Build Gift / Code unboxing modal once.
     const giftOverlay = document.createElement('div');
@@ -389,6 +415,11 @@ export function installShop(deps) {
         // Local promo / unlock codes supported smoothly alongside API codes.
         if (raw === '5HPORSHE') {
             const carId = 'cars:gt-cabrio-5hc';
+            const carEntry = item(carId);
+            if (carEntry?.blocked) {
+                setMsg(carEntry.blockedReason || 'Article temporairement bloqué.');
+                return;
+            }
             noteSeen(carId);
             grant(carId, 'code');
             saveCarPaint('gt-cabrio-5hc', 0xffd510);
@@ -471,6 +502,7 @@ export function installShop(deps) {
             const list = Array.isArray(data.items) ? data.items : [];
             let firstEntry = null;
             for (const id of list) {
+                if (typeof id === 'string' && id.startsWith('cars:')) noteSeen(id);
                 grant(id, 'code');
                 if (!firstEntry) firstEntry = item(id);
             }
@@ -496,15 +528,20 @@ export function installShop(deps) {
         const owned = isItemOwned(entry.id);
         const revealed = !entry.secret || seen(entry.id) || owned;
         if (activeFilter === 'owned') return owned;
-        if (activeFilter === 'available') return !owned && revealed && (!entry.available || entry.available());
-        if (activeFilter === 'locked') return !owned && (!revealed || (entry.available && !entry.available()) || points() < entry.price);
+        if (activeFilter === 'available') {
+            return !owned && revealed && !entry.blocked && !entry.codeOnly && (!entry.available || entry.available());
+        }
+        if (activeFilter === 'locked') {
+            return !owned && (!revealed || entry.blocked || entry.codeOnly || (entry.available && !entry.available()) || points() < entry.price);
+        }
         return true;
     }
 
     function renderShopDock() {
         const dock = document.getElementById('shop-confirm-dock');
         if (!dock) return;
-        const entry = item(selectedId) || items(activeCategory)[0];
+        const visibleList = items(activeCategory);
+        const entry = visibleList.find((e) => e.id === selectedId) || visibleList[0];
         if (!entry) {
             dock.innerHTML = '';
             return;
@@ -519,11 +556,7 @@ export function installShop(deps) {
         const musicState = deps.musicPlayer?.state?.();
         const isPlayingThis = isMusic && musicState?.playing && musicState?.currentId === entry.id;
 
-        const priceLabel = !revealed
-            ? 'Prix caché'
-            : entry.free
-                ? 'Gratuit'
-                : `${fmt(entry.price)} pts`;
+        const priceLabelHtml = !revealed ? 'Prix caché' : priceHtml(entry, true);
 
         let swatchesHtml = '';
         if (isCar && revealed && carInfo?.colours?.length) {
@@ -564,22 +597,30 @@ export function installShop(deps) {
                     actionHtml += `<button type="button" class="shop-btn shop-btn--gift" data-shop-gift="${entry.id}" ${giftSending ? 'disabled' : ''}>${giftSending ? 'Envoi…' : '🎁 Offrir'}</button>`;
                 }
             }
+        } else if (entry.blocked) {
+            actionHtml = `<button type="button" class="shop-btn" disabled>${esc(blockedActionText(entry))}</button>`;
+        } else if (entry.codeOnly) {
+            actionHtml = `<button type="button" class="shop-btn" disabled>🔑 ${esc(entry.locked || 'Déblocable uniquement par code')}</button>`;
         } else if (entry.available && !entry.available()) {
             actionHtml = `<button type="button" class="shop-btn" disabled>🔒 ${esc(entry.locked || 'Indisponible')}</button>`;
         } else if (pts < entry.price) {
             actionHtml = `<button type="button" class="shop-btn" disabled>Il manque ${fmt(entry.price - pts)} pts</button>`;
         } else if (pendingConfirmId === entry.id) {
+            const costTxt = entry.price === 0 ? 'Gratuit' : `−${fmt(entry.price)} pts`;
             actionHtml = `
-              <button type="button" class="shop-btn shop-btn--confirm" data-shop-confirm="${entry.id}">✓ Confirmer l’achat (−${fmt(entry.price)} pts)</button>
+              <button type="button" class="shop-btn shop-btn--confirm" data-shop-confirm="${entry.id}">✓ Confirmer l’achat (${costTxt})</button>
               <button type="button" class="shop-btn shop-btn--ghost" data-shop-cancel="1">✕</button>`;
         } else {
-            actionHtml = `<button type="button" class="shop-btn shop-btn--gold" data-shop-arm="${entry.id}">✓ Valider & Acheter · ${fmt(entry.price)} pts</button>`;
+            const buyLabel = entry.free || entry.price === 0
+                ? '✓ Obtenir gratuitement'
+                : `✓ Valider & Acheter · ${fmt(entry.price)} pts`;
+            actionHtml = `<button type="button" class="shop-btn shop-btn--gold" data-shop-arm="${entry.id}">${buyLabel}</button>`;
         }
 
         dock.innerHTML = `
           <div class="shop-dock__head">
             <span class="shop-dock__badge">${esc(revealed ? (entry.badge || CATEGORIES.find((c) => c.id === entry.category)?.name || '') : 'Secret')}</span>
-            <span class="shop-dock__price">${esc(priceLabel)}</span>
+            <span class="shop-dock__price">${priceLabelHtml}</span>
           </div>
           <h3 class="shop-dock__title">${esc(revealed ? entry.name : 'Véhicule inconnu (???)')}</h3>
           <p class="shop-dock__desc">${esc(revealed ? (entry.tagline || '') : 'Croise cette voiture garée ou en circulation dans le monde libre pour débloquer son prix et son aperçu 3D.')}</p>
@@ -673,27 +714,36 @@ export function installShop(deps) {
                     const revealed = !entry.secret || seen(entry.id) || owned;
                     const selected = entry.id === selectedId;
                     const media = mediaUrlFor(entry);
+                    const blocked = !owned && entry.blocked;
                     const pill = !revealed
                         ? `${modernIcon('lock')}<span>Secret</span>`
                         : eq
                             ? `${modernIcon('check')}<span>Équipé</span>`
                             : owned
                                 ? `${modernIcon('check')}<span>Possédé</span>`
-                                : entry.free
-                                    ? `${modernIcon('check')}<span>Gratuit</span>`
-                                    : `${modernIcon('lock')}<span>Verrouillé</span>`;
+                                : blocked
+                                    ? `${modernIcon('lock')}<span>Bloqué</span>`
+                                    : entry.codeOnly
+                                        ? `${modernIcon('lock')}<span>Code</span>`
+                                        : entry.free
+                                            ? `${modernIcon('check')}<span>Gratuit</span>`
+                                            : `${modernIcon('lock')}<span>Verrouillé</span>`;
                     const desc = !revealed
                         ? 'Croise ce modèle en mode libre pour révéler son prix.'
-                        : (entry.tagline || '');
+                        : blocked
+                            ? entry.blockedReason
+                            : (entry.tagline || '');
                     const foot = !revealed
                         ? `${modernIcon('lock')}<span>??? pts</span>`
                         : entry.free
-                            ? '<span>Gratuit</span>'
-                            : `${modernIcon('coin')}<span>${fmt(entry.price)} pts</span>`;
-                    return `<button type="button" class="shop-m-card ${selected ? 'is-selected' : ''} ${owned ? 'is-owned' : 'is-unowned'} ${eq ? 'is-equipped' : ''} ${!revealed ? 'is-secret' : ''}" data-shop-select="${entry.id}" style="--i:${idx}">
+                            ? `<span>${priceHtml(entry, true)}</span>`
+                            : `${modernIcon('coin')}<span>${priceHtml(entry, true)}</span>`;
+                    const promoTag = entry.promoLabel ? `<span class="shop-card__promo">${esc(entry.promoLabel)}</span>` : '';
+                    return `<button type="button" class="shop-m-card ${selected ? 'is-selected' : ''} ${owned ? 'is-owned' : 'is-unowned'} ${eq ? 'is-equipped' : ''} ${!revealed ? 'is-secret' : ''} ${blocked ? 'is-blocked' : ''} ${entry.featured ? 'is-featured' : ''}" data-shop-select="${entry.id}" style="--i:${idx}">
                       <div class="shop-m-card__media">
                         ${!revealed ? '<span class="shop-card__secret-q">???</span>' : `<img class="${!owned && entry.category === 'characters' ? 'is-grayscale' : ''}" src="${media}" alt="">`}
                         <span class="shop-m-card__pill">${pill}</span>
+                        ${promoTag}
                       </div>
                       <div class="shop-m-card__body">
                         <span class="shop-m-card__name">${esc(revealed ? entry.name : 'Modèle secret')}</span>
@@ -707,6 +757,7 @@ export function installShop(deps) {
                     const owned = isItemOwned(entry.id);
                     const eq = isItemEquipped(entry);
                     const revealed = !entry.secret || seen(entry.id) || owned;
+                    const blocked = !owned && entry.blocked;
                     const selected = entry.id === selectedId;
                     const media = mediaUrlFor(entry);
                     const status = !revealed
@@ -715,17 +766,22 @@ export function installShop(deps) {
                             ? 'Porté'
                             : owned
                                 ? 'À toi'
-                                : entry.free
-                                    ? 'Inclus'
-                                    : 'Verrouillé';
-                    const priceTxt = !revealed ? '??? pts' : entry.free ? 'Gratuit' : `${fmt(entry.price)} pts`;
-                    return `<button type="button" class="shop-card ${selected ? 'is-selected' : ''} ${owned ? 'is-owned' : 'is-unowned'} ${eq ? 'is-equipped' : ''} ${!revealed ? 'is-secret' : ''}" data-shop-select="${entry.id}" style="--i:${idx}">
+                                : blocked
+                                    ? 'Bloqué'
+                                    : entry.codeOnly
+                                        ? 'Code'
+                                        : entry.free
+                                            ? 'Gratuit'
+                                            : 'Verrouillé';
+                    const promoTag = entry.promoLabel ? `<span class="shop-card__promo">${esc(entry.promoLabel)}</span>` : '';
+                    return `<button type="button" class="shop-card ${selected ? 'is-selected' : ''} ${owned ? 'is-owned' : 'is-unowned'} ${eq ? 'is-equipped' : ''} ${!revealed ? 'is-secret' : ''} ${blocked ? 'is-blocked' : ''} ${entry.featured ? 'is-featured' : ''}" data-shop-select="${entry.id}" style="--i:${idx}">
                       <div class="shop-card__media">
                         ${!revealed ? '<span class="shop-card__secret-q">???</span>' : `<img class="${!owned && entry.category === 'characters' ? 'is-grayscale' : ''}" src="${media}" alt="">`}
+                        ${promoTag}
                       </div>
                       <div class="shop-card__name">${esc(revealed ? entry.name : 'Modèle secret')}</div>
                       <div class="shop-card__foot">
-                        <span class="shop-card__price">${esc(priceTxt)}</span>
+                        <span class="shop-card__price">${priceHtml(entry, revealed)}</span>
                         <span class="shop-card__status">${esc(status)}</span>
                       </div>
                     </button>`;
@@ -874,6 +930,7 @@ export function installShop(deps) {
         if (activeCategory === 'outfits') deps.v2?.()?.showroomPreset?.('front');
         previewInShowroom(item(selectedId));
         renderShop();
+        loadCatalogOverrides(deps.apiBase, deps.apiFetch);
     }
 
     function closeShop() {
@@ -898,9 +955,109 @@ export function installShop(deps) {
 
     startBtn?.addEventListener('click', () => openShop('characters', startScreen));
 
-    // --- #rider-screen visual character gallery + confirmation dock ---------------
+    // --- #rider-screen visual character gallery + dismissible dock ---------------
     let galleryWrap = null;
     let riderStageDock = null;
+
+    function syncRiderDockVisibility() {
+        if (riderStageDock) {
+            riderStageDock.classList.toggle('is-hidden', riderDockHidden);
+        }
+        const toggleBtn = document.getElementById('rider-toggle-dock');
+        if (toggleBtn) {
+            toggleBtn.textContent = riderDockHidden ? '🪪 Fiche perso' : '✕ Masquer fiche';
+            toggleBtn.setAttribute('aria-pressed', String(!riderDockHidden));
+        }
+    }
+
+    function setRiderDockHidden(hidden) {
+        riderDockHidden = !!hidden;
+        try {
+            localStorage.setItem(RIDER_DOCK_HIDDEN_KEY, riderDockHidden ? '1' : '0');
+        } catch {
+            // Ignore storage errors.
+        }
+        syncRiderDockVisibility();
+    }
+
+    function visibleCharacters() {
+        const synced = items('characters');
+        if (synced.length) return synced;
+        return CHARACTERS.map((char) => ({
+            ...char,
+            defaultPrice: char.price,
+            defaultFree: !!char.free,
+            promoLabel: '',
+            codeOnly: false,
+            blocked: false
+        }));
+    }
+
+    function riderActionHtml(char, owned, eq, pts) {
+        if (owned) {
+            return `<button type="button" class="shop-btn shop-btn--equip" data-rider-equip="${char.id}">${eq ? '✓ Personnage équipé' : '✨ Valider & Porter ce perso'}</button>`;
+        }
+        if (char.blocked) {
+            return `<button type="button" class="shop-btn" disabled>${esc(blockedActionText(char))}</button>`;
+        }
+        if (char.codeOnly) {
+            return `<button type="button" class="shop-btn" disabled>🔑 ${esc(char.locked || 'Déblocable uniquement par code')}</button>`;
+        }
+        if (pts < char.price) {
+            return `<button type="button" class="shop-btn" disabled>Il manque ${fmt(char.price - pts)} pts</button>`;
+        }
+        if (pendingRiderConfirmId === char.id) {
+            const costTxt = char.price === 0 ? 'Gratuit' : `−${fmt(char.price)} pts`;
+            return `
+              <button type="button" class="shop-btn shop-btn--confirm" data-rider-confirm="${char.id}">✓ Confirmer (${costTxt})</button>
+              <button type="button" class="shop-btn shop-btn--ghost" data-rider-cancel="1">✕</button>`;
+        }
+        const label = char.free || char.price === 0
+            ? '✓ Obtenir gratuitement'
+            : `✓ Valider & Acheter · ${fmt(char.price)} pts`;
+        return `<button type="button" class="shop-btn shop-btn--gold" data-rider-arm="${char.id}">${label}</button>`;
+    }
+
+    function handleRiderActionClick(event) {
+        const target = event.target instanceof Element ? event.target : null;
+        if (!target) return;
+        if (target.closest('[data-rider-hide-dock]')) {
+            setRiderDockHidden(true);
+            return;
+        }
+        const armBtn = target.closest('[data-rider-arm]');
+        if (armBtn) {
+            pendingRiderConfirmId = armBtn.dataset.riderArm;
+            renderRiderDock();
+            return;
+        }
+        if (target.closest('[data-rider-cancel]')) {
+            pendingRiderConfirmId = null;
+            renderRiderDock();
+            return;
+        }
+        const confirmBtn = target.closest('[data-rider-confirm]');
+        if (confirmBtn) {
+            const id = confirmBtn.dataset.riderConfirm;
+            if (buy(id)) {
+                pendingRiderConfirmId = null;
+                equipCharacter(deps.v2?.(), id);
+                applyEquippedOutfit(deps.v2?.());
+            }
+            renderRiderGallery();
+            return;
+        }
+        const equipBtn = target.closest('[data-rider-equip]');
+        if (equipBtn) {
+            equipCharacter(deps.v2?.(), equipBtn.dataset.riderEquip);
+            applyEquippedOutfit(deps.v2?.());
+            renderRiderGallery();
+            return;
+        }
+        if (target.closest('[data-rider-shop]')) {
+            openShop('characters', riderScreen);
+        }
+    }
 
     function ensureRiderDom() {
         if (!riderOptions || galleryWrap) return;
@@ -910,9 +1067,13 @@ export function installShop(deps) {
         galleryWrap.innerHTML = `
           <div class="rider-gallery-head">
             <span>Personnages</span>
-            <button type="button" class="shop-btn shop-btn--ghost" id="rider-open-shop" style="padding:4px 9px;font-size:10.5px;">🛍️ Ouvrir la Boutique</button>
+            <div class="rider-gallery-head__btns">
+              <button type="button" class="shop-btn shop-btn--ghost rider-dock-toggle" id="rider-toggle-dock"></button>
+              <button type="button" class="shop-btn shop-btn--ghost" id="rider-open-shop" style="padding:4px 9px;font-size:10.5px;">🛍️ Boutique</button>
+            </div>
           </div>
           <div class="rider-gallery" id="rider-gallery"></div>
+          <div class="rider-inline-action" id="rider-inline-action" hidden></div>
           <div class="rider-livery-label">Personnalisation moto & livrée</div>`;
         riderOptions.before(galleryWrap);
 
@@ -920,103 +1081,100 @@ export function installShop(deps) {
         riderStageDock.className = 'rider-stage-dock';
         riderStageDock.id = 'rider-stage-dock';
         riderScreen.append(riderStageDock);
+        syncRiderDockVisibility();
 
         galleryWrap.addEventListener('click', (event) => {
+            if (event.target.closest('#rider-toggle-dock')) {
+                setRiderDockHidden(!riderDockHidden);
+                return;
+            }
             if (event.target.closest('#rider-open-shop')) {
                 openShop('characters', riderScreen);
                 return;
             }
             const card = event.target.closest('[data-rider-char]');
-            if (!card) return;
-            selectedRiderId = card.dataset.riderChar;
-            pendingRiderConfirmId = null;
-            previewCharacter(deps.v2?.(), selectedRiderId);
-            renderRiderGallery();
-        });
-
-        riderStageDock.addEventListener('click', (event) => {
-            const target = event.target instanceof Element ? event.target : null;
-            if (!target) return;
-            const armBtn = target.closest('[data-rider-arm]');
-            if (armBtn) {
-                pendingRiderConfirmId = armBtn.dataset.riderArm;
-                renderRiderDock();
-                return;
-            }
-            if (target.closest('[data-rider-cancel]')) {
+            if (card) {
+                const id = card.dataset.riderChar;
+                selectedRiderId = id;
                 pendingRiderConfirmId = null;
-                renderRiderDock();
-                return;
-            }
-            const confirmBtn = target.closest('[data-rider-confirm]');
-            if (confirmBtn) {
-                const id = confirmBtn.dataset.riderConfirm;
-                if (buy(id)) {
-                    pendingRiderConfirmId = null;
+                if (isCharacterOwned(id)) {
                     equipCharacter(deps.v2?.(), id);
                     applyEquippedOutfit(deps.v2?.());
+                } else {
+                    previewCharacter(deps.v2?.(), id);
                 }
                 renderRiderGallery();
                 return;
             }
-            const equipBtn = target.closest('[data-rider-equip]');
-            if (equipBtn) {
-                equipCharacter(deps.v2?.(), equipBtn.dataset.riderEquip);
-                applyEquippedOutfit(deps.v2?.());
-                renderRiderGallery();
-                return;
-            }
-            if (target.closest('[data-rider-shop]')) {
-                openShop('characters', riderScreen);
+            if (event.target.closest('#rider-inline-action')) {
+                handleRiderActionClick(event);
             }
         });
+
+        riderStageDock.addEventListener('click', handleRiderActionClick);
     }
 
     function renderRiderDock() {
-        if (!riderStageDock) return;
-        const char = CHARACTERS.find((c) => c.id === selectedRiderId) || CHARACTERS[0];
+        const list = visibleCharacters();
+        const char = list.find((c) => c.id === selectedRiderId) || list[0] || CHARACTERS[0];
+        if (!char) return;
         const owned = isCharacterOwned(char.id);
         const eq = equippedCharacterId() === char.id;
         const pts = points();
-        const priceLabel = char.free ? 'Gratuit' : `${fmt(char.price)} pts`;
+        const action = riderActionHtml(char, owned, eq, pts);
 
-        let action = '';
-        if (owned) {
-            action = `<button type="button" class="shop-btn shop-btn--equip" data-rider-equip="${char.id}">${eq ? '✓ Personnage équipé' : '✨ Valider & Porter ce perso'}</button>`;
-        } else if (pts < char.price) {
-            action = `<button type="button" class="shop-btn" disabled>Il manque ${fmt(char.price - pts)} pts</button>`;
-        } else if (pendingRiderConfirmId === char.id) {
-            action = `
-              <button type="button" class="shop-btn shop-btn--confirm" data-rider-confirm="${char.id}">✓ Confirmer (−${fmt(char.price)} pts)</button>
-              <button type="button" class="shop-btn shop-btn--ghost" data-rider-cancel="1">✕</button>`;
-        } else {
-            action = `<button type="button" class="shop-btn shop-btn--gold" data-rider-arm="${char.id}">✓ Valider & Acheter · ${fmt(char.price)} pts</button>`;
+        if (riderStageDock) {
+            riderStageDock.innerHTML = `
+              <div class="shop-dock__head">
+                <span class="shop-dock__badge">${esc(char.badge || 'Perso')}</span>
+                <div class="rider-dock__head-right">
+                  <span class="shop-dock__price">${priceHtml(char, true)}</span>
+                  <button type="button" class="rider-dock-close" data-rider-hide-dock="1" aria-label="Masquer la fiche personnage" title="Masquer la fiche">✕</button>
+                </div>
+              </div>
+              <h3 class="shop-dock__title">${esc(char.name)}</h3>
+              <p class="shop-dock__desc">${esc(char.blocked ? (char.blockedReason || char.tagline) : char.tagline)}</p>
+              <div class="shop-dock__actions">
+                ${action}
+                <button type="button" class="shop-btn shop-btn--ghost" data-rider-shop="1">🛍️ Boutique</button>
+              </div>`;
+            syncRiderDockVisibility();
         }
 
-        riderStageDock.innerHTML = `
-          <div class="shop-dock__head">
-            <span class="shop-dock__badge">${esc(char.badge || 'Perso')}</span>
-            <span class="shop-dock__price">${esc(priceLabel)}</span>
-          </div>
-          <h3 class="shop-dock__title">${esc(char.name)}</h3>
-          <p class="shop-dock__desc">${esc(char.tagline)}</p>
-          <div class="shop-dock__actions">
-            ${action}
-            <button type="button" class="shop-btn shop-btn--ghost" data-rider-shop="1">🛍️ Boutique</button>
-          </div>`;
+        const inlineBar = document.getElementById('rider-inline-action');
+        if (inlineBar) {
+            if (owned) {
+                inlineBar.hidden = true;
+                inlineBar.innerHTML = '';
+            } else {
+                inlineBar.hidden = false;
+                inlineBar.innerHTML = `
+                  <div class="rider-inline-action__info">
+                    <strong>${esc(char.name)}</strong>
+                    <span>${priceHtml(char, true)}</span>
+                  </div>
+                  <div class="rider-inline-action__btns">${action}</div>`;
+            }
+        }
     }
 
     function renderRiderGallery() {
         ensureRiderDom();
         const grid = document.getElementById('rider-gallery');
         if (!grid) return;
+        const list = visibleCharacters();
+        if (!list.some((c) => c.id === selectedRiderId) && list.length) {
+            const eqId = equippedCharacterId();
+            selectedRiderId = list.some((c) => c.id === eqId) ? eqId : list[0].id;
+        }
         const eqId = equippedCharacterId();
-        grid.innerHTML = CHARACTERS.map((char) => {
+        grid.innerHTML = list.map((char) => {
             const owned = isCharacterOwned(char.id);
             const selected = char.id === selectedRiderId;
             const eq = char.id === eqId;
-            const price = char.free ? 'Gratuit' : owned ? (eq ? 'Porté' : 'À toi') : `${fmt(char.price)} pts`;
-            return `<button type="button" class="rider-char-card ${selected ? 'is-selected' : ''} ${owned ? 'is-owned' : 'is-unowned'} ${eq ? 'is-equipped' : ''}" data-rider-char="${char.id}">
+            const blocked = !owned && char.blocked;
+            const price = char.free ? 'Gratuit' : owned ? (eq ? 'Porté' : 'À toi') : blocked ? 'Bloqué' : char.codeOnly ? 'Code' : `${fmt(char.price)} pts`;
+            return `<button type="button" class="rider-char-card ${selected ? 'is-selected' : ''} ${owned ? 'is-owned' : 'is-unowned'} ${eq ? 'is-equipped' : ''} ${blocked ? 'is-blocked' : ''}" data-rider-char="${char.id}">
               <img src="${characterPortraitSvg(char.id)}" alt="">
               <span class="rider-char-card__name">${esc(char.name)}</span>
               <span class="rider-char-card__price">${esc(price)}</span>
@@ -1030,6 +1188,7 @@ export function installShop(deps) {
         pendingRiderConfirmId = null;
         renderRiderGallery();
         previewCharacter(deps.v2?.(), selectedRiderId);
+        loadCatalogOverrides(deps.apiBase, deps.apiFetch);
     }
 
     backFromRider?.addEventListener('click', () => {
