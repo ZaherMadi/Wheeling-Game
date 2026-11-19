@@ -15,7 +15,8 @@ import {
 } from './characters.js';
 import { applyEquippedOutfit, outfitLookFor, syncLegacyShopKeys } from './outfits.js';
 import { realCarInfo, saveCarPaint, savedCarPaint } from '../v2/realcars.js';
-import { createHeroCarThumbnail } from '../v2/hero-car-pbr.js';
+import { createGreyStormThumbnail, createHeroCarThumbnail } from '../v2/hero-car-pbr.js';
+import { closeGt51UnlockReveal, showGt51UnlockReveal, stopPorscheTrack } from '../gt51-porsche.js';
 
 const fmt = (n) => Math.max(0, Math.floor(Number(n) || 0)).toLocaleString('fr-FR');
 const esc = (s) => String(s ?? '').replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
@@ -66,6 +67,9 @@ function mediaUrlFor(entry, colour) {
     if (entry.category === 'characters') return characterPortraitSvg(entry.id);
     if (entry.category === 'cars') {
         const revealed = !entry.secret || seen(entry.id) || owns(entry.id);
+        if (entry.preview?.model === 'grey-storm' && revealed) {
+            return createGreyStormThumbnail(colour ?? savedCarPaint('grey-storm') ?? entry.preview?.colour);
+        }
         if (entry.preview?.model === 'gt-cabrio-5hc' && revealed) {
             return createHeroCarThumbnail(colour ?? savedCarPaint('gt-cabrio-5hc') ?? entry.preview?.colour);
         }
@@ -421,7 +425,7 @@ export function installShop(deps) {
         const setMsg = (txt) => { if (codeMsg) codeMsg.textContent = txt; };
 
         // Local promo / unlock codes supported smoothly alongside API codes.
-        if (raw === '5HPORSHE') {
+        if (raw === '5HPORSHE' || raw === '51PORSCHE' || raw === '51PORCHE') {
             const carId = 'cars:gt-cabrio-5hc';
             const carEntry = item(carId);
             if (carEntry?.blocked) {
@@ -449,13 +453,7 @@ export function installShop(deps) {
             syncStageControls();
             setMsg(`${unlocked?.name || 'GT 51 Cabrio'} débloquée !`);
             deps.stat?.('shopCodeUsed');
-            showGiftModal({
-                title: '🏎️ Voiture exclusive débloquée !',
-                message: `${unlocked?.name || 'GT 51 Cabrio'} est maintenant dans ton garage, garée dès ton arrivée en Mode Libre et livrable partout via la dépanneuse.`,
-                value: unlocked?.price || 950000,
-                imageUrl: mediaUrlFor(unlocked, 0xffd510),
-                equipId: carId
-            });
+            showGt51UnlockReveal({ v2: deps.v2?.(), name: unlocked?.name || 'GT 51 Cabrio' });
             return;
         }
         if (raw === '5HC') {
@@ -942,6 +940,8 @@ export function installShop(deps) {
     }
 
     function closeShop() {
+        closeGt51UnlockReveal();
+        stopPorscheTrack();
         deps.musicPlayer?.stopPreview?.();
         pendingConfirmId = null;
         stageView = 'spin';

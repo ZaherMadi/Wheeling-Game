@@ -286,15 +286,15 @@ function makeSideStations() {
     const zSet = new Set([
         NOSE_SPLIT_Z, 1.88, 1.76,
         +(FRONT_Z + ARCH_F_R + 0.008).toFixed(4),
-        ...Array.from({ length: 15 }, (_, k) => {
-            const a = (k / 14) * Math.PI;
+        ...Array.from({ length: 23 }, (_, k) => {
+            const a = (k / 22) * Math.PI;
             return +(FRONT_Z + Math.cos(a) * ARCH_F_R).toFixed(4);
         }),
         +(FRONT_Z - ARCH_F_R - 0.008).toFixed(4),
-        0.74, 0.56, 0.34, 0.10, -0.16, -0.40, -0.62,
+        0.74, 0.68, 0.56, 0.44, 0.34, 0.22, 0.10, -0.03, -0.16, -0.28, -0.40, -0.51, -0.62,
         +(REAR_Z + ARCH_R_R + 0.008).toFixed(4),
-        ...Array.from({ length: 15 }, (_, k) => {
-            const a = (k / 14) * Math.PI;
+        ...Array.from({ length: 23 }, (_, k) => {
+            const a = (k / 22) * Math.PI;
             return +(REAR_Z + Math.cos(a) * ARCH_R_R).toFixed(4);
         }),
         +(REAR_Z - ARCH_R_R - 0.008).toFixed(4),
@@ -318,13 +318,14 @@ function buildPaintBodyParts() {
             const hw = sampleCurve(HALF_W_KNOTS, z);
             const belt = sampleCurve(BELT_Y_KNOTS, z);
             const sill = sillHeightAt(z);
-            const midBulge = Math.abs(z - (-1.18)) < 0.72 ? 0.022 : 0.012;
+            const rearHaunch = Math.exp(-Math.pow((z + 1.18) / 0.72, 2));
+            const midBulge = 0.012 + rearHaunch * 0.018;
             const col = [];
-            const rowV = [0, 0.14, 0.38, 0.68, 0.90, 1.0];
+            const rowV = [0, 0.08, 0.16, 0.28, 0.42, 0.56, 0.68, 0.78, 0.90, 0.96, 1.0];
             for (const v of rowV) {
                 const y = belt - v * (belt - sill);
                 let x = hw * (1 - 0.05 * (1 - v));
-                if (v > 0.15 && v < 0.75) x += Math.sin(((v - 0.15) / 0.6) * Math.PI) * midBulge;
+                if (v > 0.10 && v < 0.82) x += Math.sin(((v - 0.10) / 0.72) * Math.PI) * midBulge;
                 if (v >= 0.9) x -= (v - 0.86) * 0.22;
                 col.push([side * x, y, z]);
             }
@@ -335,8 +336,8 @@ function buildPaintBodyParts() {
 
     // 2. Elliptical Wrap-Around Front Bumper & Tail Bumper Fascias + continuous top-apron overlap (zero nose gap!)
     {
-        const nu = 23;
-        const rowV = [-0.04, 0.08, 0.26, 0.50, 0.74, 0.90, 1.0];
+        const nu = 31;
+        const rowV = [-0.04, 0.02, 0.10, 0.20, 0.34, 0.50, 0.64, 0.76, 0.88, 0.96, 1.0];
         const fGrid = [];
         const rGrid = [];
         for (let iu = 0; iu < nu; iu++) {
@@ -362,8 +363,8 @@ function buildPaintBodyParts() {
 
     // 3. Sculpted Front Frunk Hood & Proud Front Fenders (z = +2.26 down to windshield cowl +0.74)
     {
-        const hz = [NOSE_APEX_Z, 2.21, 2.13, 2.00, 1.84, 1.66, 1.46, 1.26, 1.04, 0.86, 0.74];
-        const nu = 19;
+        const hz = [NOSE_APEX_Z, 2.23, 2.19, 2.13, 2.06, 2.00, 1.92, 1.84, 1.74, 1.66, 1.56, 1.46, 1.36, 1.26, 1.16, 1.04, 0.94, 0.86, 0.80, 0.74];
+        const nu = 31;
         const grid = [];
         for (let iu = 0; iu < nu; iu++) {
             const u = -1 + (2 * iu) / (nu - 1);
@@ -376,8 +377,9 @@ function buildPaintBodyParts() {
                 const belt = sampleCurve(BELT_Y_KNOTS, z);
                 const cDelta = sampleCurve(CROWN_DELTA_KNOTS, z);
                 const absU = Math.abs(u);
-                const wingBump = Math.exp(-Math.pow((absU - 0.72) / 0.22, 2)) * (z > 0.92 && z < 1.92 ? 0.026 : 0.006);
-                const y = belt + (1 - absU * absU) * cDelta + wingBump;
+                const wingBump = Math.exp(-Math.pow((absU - 0.72) / 0.18, 2)) * (z > 0.92 && z < 1.92 ? 0.032 : 0.008);
+                const shoulderRadius = Math.pow(1 - absU, 1.35);
+                const y = belt + (1 - absU * absU) * cDelta + wingBump * shoulderRadius;
                 col.push([u * hw, y, z]);
             }
             grid.push(col);
@@ -387,8 +389,8 @@ function buildPaintBodyParts() {
 
     // 4. Rear Tonneau Decklid & Curved Boat-Tail Spoiler Shelf (z = -0.86 down to tail -2.26)
     {
-        const rz = [-0.86, -1.04, -1.24, -1.46, -1.70, -1.94, -2.06, -2.17, TAIL_APEX_Z];
-        const nu = 17;
+        const rz = [-0.86, -0.94, -1.04, -1.14, -1.24, -1.34, -1.46, -1.58, -1.70, -1.82, -1.94, -2.02, -2.06, -2.12, -2.17, -2.22, TAIL_APEX_Z];
+        const nu = 29;
         const grid = [];
         for (let iu = 0; iu < nu; iu++) {
             const u = -1 + (2 * iu) / (nu - 1);
@@ -401,7 +403,8 @@ function buildPaintBodyParts() {
                 const belt = sampleCurve(BELT_Y_KNOTS, z);
                 const cDelta = sampleCurve(CROWN_DELTA_KNOTS, z);
                 const absU = Math.abs(u);
-                const y = belt + (1 - absU * absU) * cDelta;
+                const boatTail = Math.pow(1 - absU, 1.18);
+                const y = belt + (1 - absU * absU) * cDelta - Math.exp(-Math.pow((z + 1.78) / 0.38, 2)) * boatTail * 0.018;
                 col.push([u * hw, y, z]);
             }
             grid.push(col);
@@ -470,7 +473,7 @@ function buildPaintBodyParts() {
         [REAR_Z, REAR_R, ARCH_R_R, 0.922]
     ]) {
         for (const side of [-1, 1]) {
-            const lip = new THREE.TorusGeometry(r + 0.014, 0.02, 8, 22, Math.PI * 0.94);
+            const lip = new THREE.TorusGeometry(r + 0.014, 0.026, 16, 32, Math.PI * 0.94);
             lip.rotateY(Math.PI / 2);
             transformGeo(lip, side * trackX, cy, cz, -0.04, 0, 0, 1.35, 1, 1);
             parts.push(lip);
@@ -482,8 +485,8 @@ function buildPaintBodyParts() {
 
 function buildSoftTopGeo() {
     // Exterior woven charcoal fabric canvas dome + flush C-pillar sails + interior dark acoustic headliner
-    const tz = [0.045, -0.12, -0.30, -0.52, -0.76, -1.00, -1.18, -1.27];
-    const nu = 17;
+    const tz = [0.045, -0.08, -0.12, -0.20, -0.30, -0.41, -0.52, -0.64, -0.76, -0.88, -1.00, -1.10, -1.18, -1.23, -1.27];
+    const nu = 29;
     const outerGrid = [];
     const innerGrid = [];
 

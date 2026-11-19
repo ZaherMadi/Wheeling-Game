@@ -782,12 +782,12 @@ export function createCarPaintMaterial(hexColor = 0xffd510, opts = {}) {
         color: hexColor,
         map: shared.paintMaps.map,
         normalMap: shared.paintMaps.normalMap,
-        normalScale: new THREE.Vector2(0.14, 0.14),
+        normalScale: new THREE.Vector2(0.10, 0.10),
         roughnessMap: shared.paintMaps.roughnessMap,
-        roughness: 0.2,
-        metalness: 0.14,
+        roughness: 0.16,
+        metalness: 0.18,
         clearcoat: 1.0,
-        clearcoatRoughness: 0.04,
+        clearcoatRoughness: 0.028,
         reflectivity: 0.96,
         envMapIntensity: 1.48
     });
@@ -1000,5 +1000,132 @@ export function createHeroCarThumbnail(colourHex = 0xf6d117) {
 
     const url = canvas.toDataURL('image/png');
     thumbCache.set(hexKey, url);
+    return url;
+}
+
+const greyStormThumbCache = new Map();
+
+export function createGreyStormThumbnail(colourHex = 0x777d84) {
+    const hexKey = Number(colourHex || 0x777d84) >>> 0;
+    if (greyStormThumbCache.has(hexKey)) return greyStormThumbCache.get(hexKey);
+
+    const w = 400;
+    const h = 240;
+    const [canvas, ctx] = makeCanvas(w, h);
+    const bodyHex = `#${hexKey.toString(16).padStart(6, '0')}`;
+    const c = new THREE.Color(hexKey);
+    const lightCol = `#${c.clone().offsetHSL(0, 0.02, 0.16).getHexString()}`;
+    const darkCol = `#${c.clone().offsetHSL(0, 0.01, -0.22).getHexString()}`;
+
+    const bg = ctx.createRadialGradient(200, 112, 12, 200, 126, 210);
+    bg.addColorStop(0, '#252b36');
+    bg.addColorStop(0.58, '#121620');
+    bg.addColorStop(1, '#080a0f');
+    ctx.fillStyle = bg;
+    ctx.fillRect(0, 0, w, h);
+
+    ctx.fillStyle = 'rgba(0, 0, 0, 0.72)';
+    ctx.beginPath();
+    ctx.ellipse(204, 182, 158, 16, 0, 0, Math.PI * 2);
+    ctx.fill();
+
+    const paint = ctx.createLinearGradient(0, 106, 0, 178);
+    paint.addColorStop(0, lightCol);
+    paint.addColorStop(0.45, bodyHex);
+    paint.addColorStop(1, darkCol);
+
+    ctx.fillStyle = paint;
+    ctx.beginPath();
+    ctx.moveTo(42, 158);
+    ctx.quadraticCurveTo(48, 138, 68, 126);
+    ctx.quadraticCurveTo(112, 108, 158, 106);
+    ctx.lineTo(190, 74);
+    ctx.quadraticCurveTo(214, 62, 250, 70);
+    ctx.quadraticCurveTo(292, 78, 318, 104);
+    ctx.quadraticCurveTo(346, 116, 358, 137);
+    ctx.lineTo(358, 158);
+    ctx.lineTo(318, 166);
+    ctx.lineTo(78, 166);
+    ctx.closePath();
+    ctx.fill();
+
+    ctx.fillStyle = '#11161d';
+    ctx.beginPath();
+    ctx.moveTo(186, 80);
+    ctx.quadraticCurveTo(214, 66, 248, 73);
+    ctx.quadraticCurveTo(286, 80, 308, 105);
+    ctx.lineTo(248, 108);
+    ctx.lineTo(188, 106);
+    ctx.closePath();
+    ctx.fill();
+
+    const glass = ctx.createLinearGradient(0, 76, 0, 116);
+    glass.addColorStop(0, '#172d40');
+    glass.addColorStop(1, '#080d13');
+    ctx.fillStyle = glass;
+    ctx.beginPath();
+    ctx.moveTo(188, 82);
+    ctx.quadraticCurveTo(215, 68, 246, 76);
+    ctx.quadraticCurveTo(276, 82, 294, 106);
+    ctx.lineTo(248, 108);
+    ctx.lineTo(188, 106);
+    ctx.closePath();
+    ctx.fill();
+
+    ctx.fillStyle = '#101318';
+    ctx.fillRect(42, 151, 34, 13);
+    ctx.fillRect(318, 151, 38, 13);
+    ctx.fillRect(112, 164, 174, 5);
+
+    ctx.fillStyle = '#f2f7ff';
+    ctx.beginPath();
+    ctx.ellipse(64, 132, 16, 5, -0.28, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.fillStyle = '#ff2530';
+    ctx.fillRect(327, 132, 29, 4);
+
+    ctx.strokeStyle = 'rgba(0, 0, 0, 0.48)';
+    ctx.lineWidth = 1.5;
+    ctx.beginPath();
+    ctx.moveTo(214, 108);
+    ctx.lineTo(218, 164);
+    ctx.moveTo(298, 108);
+    ctx.lineTo(302, 164);
+    ctx.stroke();
+
+    for (const wx of [102, 302]) {
+        ctx.fillStyle = '#090a0d';
+        ctx.beginPath();
+        ctx.arc(wx, 158, 31, 0, Math.PI * 2);
+        ctx.fill();
+        ctx.strokeStyle = '#282c33';
+        ctx.lineWidth = 8;
+        ctx.beginPath();
+        ctx.arc(wx, 158, 26, 0, Math.PI * 2);
+        ctx.stroke();
+        ctx.strokeStyle = '#7e8791';
+        ctx.lineWidth = 2;
+        ctx.beginPath();
+        ctx.arc(wx, 158, 20, 0, Math.PI * 2);
+        ctx.stroke();
+        for (let k = 0; k < 10; k++) {
+            const a = k * Math.PI / 5 + 0.08;
+            ctx.beginPath();
+            ctx.moveTo(wx, 158);
+            ctx.lineTo(wx + Math.cos(a) * 19, 158 + Math.sin(a) * 19);
+            ctx.stroke();
+        }
+        ctx.fillStyle = '#b71320';
+        ctx.beginPath();
+        ctx.ellipse(wx + (wx < 200 ? 8 : -8), 158, 5, 10, 0, 0, Math.PI * 2);
+        ctx.fill();
+        ctx.fillStyle = '#b8bec4';
+        ctx.beginPath();
+        ctx.arc(wx, 158, 4.5, 0, Math.PI * 2);
+        ctx.fill();
+    }
+
+    const url = canvas.toDataURL('image/png');
+    greyStormThumbCache.set(hexKey, url);
     return url;
 }

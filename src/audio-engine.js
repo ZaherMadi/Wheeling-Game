@@ -26,13 +26,15 @@ const CAR_ENGINES = {
     'porsh-makane': 'car_engine_sport',
     'porsh-911': 'car_engine_sport',
     'lambo-uruz': 'car_engine_sport',
-    'gt-cabrio-5hc': 'car_engine_sport'
+    'gt-cabrio-5hc': 'car_engine_sport',
+    'grey-storm': 'car_engine_sport'
 };
 const CAR_PITCH = {
     hatch: 1.12, hatch_sr: 1.12, sedan: 0.95, sedan_sr: 0.95, van: 0.9, suv: 1.0, suv_sr: 1.0, coupe: 0.95,
     'citron-c5-air': 0.96, 'reno-3009': 0.94, 'kupra-formento': 1.04, 'golfe-8': 1.12,
     'audo-rs3': 1.18, 'merso-a45': 1.24, 'audo-rsq3': 1.08, 'bm-m340': 1.02,
-    'porsh-makane': 0.92, 'porsh-911': 1.32, 'lambo-uruz': 0.82, 'gt-cabrio-5hc': 1.36
+    'porsh-makane': 0.92, 'porsh-911': 1.32, 'lambo-uruz': 0.82, 'gt-cabrio-5hc': 1.36,
+    'grey-storm': 0.95
 };
 // Secondary harmonic layer & overrun crackles for worked-on realistic cars.
 const CAR_LAYERS = {
@@ -46,7 +48,8 @@ const CAR_LAYERS = {
     'porsh-makane': { id: 'car_engine_petrol', mix: 0.42, pitch: 1.15, crackle: 0.55 },
     'porsh-911': { id: 'car_engine_petrol', mix: 0.3, pitch: 1.55, crackle: 0.7 },
     'lambo-uruz': { id: 'car_engine_diesel', mix: 0.48, pitch: 1.12, crackle: 0.9 },
-    'gt-cabrio-5hc': { id: 'car_engine_petrol', mix: 0.34, pitch: 1.58, crackle: 0.78 }
+    'gt-cabrio-5hc': { id: 'car_engine_petrol', mix: 0.34, pitch: 1.58, crackle: 0.78 },
+    'grey-storm': { id: 'car_engine_diesel', mix: 0.42, pitch: 1.18, crackle: 0.6 }
 };
 
 const clamp01 = (value) => Math.max(0, Math.min(1, value));

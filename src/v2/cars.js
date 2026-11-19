@@ -55,6 +55,12 @@ function extrude(shape, width, bevel = 0.07) {
 }
 
 const MODELS = {
+    'grey-storm': {
+        length: 4.45, width: 1.839, belt: 1.08, roof: 1.511, wheelbase: 2.68,
+        radius: 0.39, nose: 0.96, tail: 1.12,
+        cabin: [[-2.05, 1.08], [-1.42, 1.49], [0.42, 1.51], [1.20, 1.08]],
+        sunroof: 'panoramic', style: 'rsq3', spokes: 10, caliper: 0xb71320
+    },
     sedan: { length: 4.6, width: 1.82, belt: 0.98, roof: 1.44, wheelbase: 2.75, radius: 0.33, nose: 0.82, tail: 0.98,
         cabin: [[-1.45, 0.98], [-0.85, 1.4], [0.45, 1.42], [1.25, 0.98]] },
     sedan_sr: { length: 4.6, width: 1.82, belt: 0.98, roof: 1.44, wheelbase: 2.75, radius: 0.33, nose: 0.82, tail: 0.98,
@@ -135,6 +141,7 @@ const MODELS = {
 // competitive runs (the nicer the car, the more points).
 export const CAR_UNLOCKS = { hatch: 0, sedan: 250, van: 600, suv: 1200, coupe: 2500 };
 export const CAR_NAMES = {
+    'grey-storm': 'GREY STORM',
     hatch: 'Citadine', hatch_sr: 'Citadine Toit Ouvrant',
     sedan: 'Berline', sedan_sr: 'Berline Toit Ouvrant',
     van: 'Utilitaire',

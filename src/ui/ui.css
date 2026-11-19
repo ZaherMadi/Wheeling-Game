@@ -3246,6 +3246,13 @@ body.v2 #ui-tow-btn.is-active {
   }
 }
 
+/* Compensate for #mobile-controls { bottom: 20px !important } in portrait so #analog-jet stays at 74px below #pause-btn */
+@media screen and (orientation: portrait) {
+  body.v2 #analog-jet {
+    top: calc(94px + var(--safe-t, 0px)) !important;
+  }
+}
+
 @media (pointer: coarse) and (orientation: portrait) {
   body.v2 #ui-tow-btn {
     left: calc(14px + var(--safe-l));

@@ -73,6 +73,9 @@ export function createMusicPlayer() {
         currentId = id;
         audio.loop = !!loopTrack;
         audio.volume = nextMode === 'preview' ? 0.55 : 0.45;
+        document.dispatchEvent(new CustomEvent('wheelie:vinyl-track', {
+            detail: { title: track.title, subtitle: `${track.artist || '51 Wheeling'} · ${track.mood || 'Vinyle'}`, playing: true }
+        }));
         if (!audio.src.endsWith(src)) audio.src = src;
         loadingId = id;
         audio.play().then(() => {
@@ -81,9 +84,14 @@ export function createMusicPlayer() {
             loadingId = null;
             notify();
         }).catch(() => {
-            playing = false;
-            loadingId = null;
-            notify();
+            if (currentId === id) {
+                playing = false;
+                loadingId = null;
+                document.dispatchEvent(new CustomEvent('wheelie:vinyl-track', {
+                    detail: { title: track.title, subtitle: `${track.artist || '51 Wheeling'} · ${track.mood || 'Vinyle'}`, playing: false }
+                }));
+                notify();
+            }
         });
         notify();
     }
@@ -91,6 +99,8 @@ export function createMusicPlayer() {
     audio.addEventListener('ended', () => {
         if (mode === 'preview') {
             playing = false;
+            mode = 'idle';
+            document.dispatchEvent(new CustomEvent('wheelie:vinyl-track', { detail: { stopped: true } }));
             notify();
         }
     });
@@ -101,6 +111,7 @@ export function createMusicPlayer() {
         playing = false;
         loadingId = null;
         mode = 'idle';
+        document.dispatchEvent(new CustomEvent('wheelie:vinyl-track', { detail: { stopped: true } }));
         notify();
     }
 
@@ -153,6 +164,14 @@ export function createMusicPlayer() {
         if (playing) {
             audio.pause();
             playing = false;
+            const active = findTrack(currentId);
+            document.dispatchEvent(new CustomEvent('wheelie:vinyl-track', {
+                detail: {
+                    title: active?.title || '51 Wheeling',
+                    subtitle: active ? `${active.artist || '51 Wheeling'} · En pause` : 'En pause',
+                    playing: false
+                }
+            }));
             notify();
             return;
         }
@@ -161,6 +180,14 @@ export function createMusicPlayer() {
             || ownedTracks()[0]?.id;
         if (target) playUrl(target, 'run', true);
     }
+
+    document.addEventListener('wheelie:vinyl-toggle', () => {
+        if (mode === 'preview') stop();
+        else toggleRunPlay();
+    });
+    document.addEventListener('wheelie:porsche-audio', (event) => {
+        if (event.detail?.playing) stop();
+    });
 
     function autoStartEnabled() {
         return readBool(AUTOSTART_KEY, true);

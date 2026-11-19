@@ -16,6 +16,7 @@ import { createVegetation } from './vegetation.js';
 import { createBuildingKit } from './buildings.js';
 import { addCarLights, buildCarGeometries, createCarMesh, createCarModels } from './cars.js';
 import { createGtCabrioCar } from './hero-car-models.js';
+import { createGreyStorm } from './grey-storm.js';
 import { REAL_CAR_MODELS, pickRealCarPaint } from './realcars.js';
 import { createHorizon } from './horizon.js';
 import {
@@ -953,6 +954,9 @@ export function createWorld({ scene, renderer, mobile }) {
 
     // A car that moves: painted with its own colour, same look as parked ones.
     function createCar(model, paint) {
+        if (String(model) === 'grey-storm') {
+            return createGreyStorm(paint, { mobile });
+        }
         if (model === 'gt-cabrio-5hc') {
             return createGtCabrioCar(paint, { mobile });
         }

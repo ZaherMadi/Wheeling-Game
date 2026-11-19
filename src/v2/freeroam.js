@@ -245,7 +245,9 @@ export function createFreeRoam({ scene, world, rider, audio, onTurn, playerVoice
 
     function setMode(next) {
         mode = next;
-        document.dispatchEvent(new CustomEvent('wheelie:controls', { detail: { mode } }));
+        document.dispatchEvent(new CustomEvent('wheelie:controls', {
+            detail: { mode, model: mode === 'car' ? drive.model : null }
+        }));
     }
 
     // Boost in free roam: on the bike or in a car, every 15 s.

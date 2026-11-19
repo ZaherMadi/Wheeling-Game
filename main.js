@@ -30,6 +30,7 @@ import { registerRealCars } from './src/v2/realcars.js';
 import { installShop } from './src/shop/shop.js';
 import { beginCinematic, cinematicSpeed, endCinematic } from './src/cinematic.js';
 import { getUIVersion, initUITheme, setUIVersion, subscribeUITheme } from './src/ui/theme.js';
+import { initPorscheExperience, startPorscheTrack, stopPorscheTrack } from './src/gt51-porsche.js';
 
 // Two versions share the same simulation, scoring and ranked replay:
 // 'v2' (realistic city, new rider) and 'classic' (the original V1 look).
@@ -2406,6 +2407,7 @@ function quitToMenu() {
     audio.setPaused(false);
     audio.stopRun();
     musicPlayer?.stopRun();
+    stopPorscheTrack();
     completedRankedRun = null;
     standRiderUp();
     document.querySelectorAll('.screen').forEach((screen) => screen.classList.remove('active'));
@@ -3236,6 +3238,7 @@ const SECRET_SEQUENCE = ['gas', 'brake', 'wheelie', 'tap', 'tap', 'tap'];
 const LAND_SEQUENCE = ['wheelie', 'wheelie', 'brake', 'tap', 'tap', 'tap'];
 // Free roam, on the bike: the jetpack (and it is the player's from then on).
 const JET_SEQUENCE = ['brake', 'gas', 'wheelie', 'tap', 'tap', 'tap'];
+const PORSCHE_TAPS_SEQUENCE = ['tap', 'tap', 'tap', 'tap', 'tap'];
 const JET_CODE_KEY = 'wheelie_jetpack_code';
 // The jetpack's button: there once its code has been typed (never before;
 // JETPACK_POINTS only reveals the code).
@@ -3249,11 +3252,19 @@ function secretInput(kind) {
     // them (the golden bird on the menu, the trophy room).
     if (competitive && (state.gameTime > 10 || state.tricksOnly)) return;
     // Free roam: on the bike or on foot (street or roof), any time.
-    if (!competitive && !(v2 && (v2.roam.mode === 'bike' || v2.roam.mode === 'walk') && !roamFall.active && !v2.roam.frozen)) return;
+    const porscheCabrio = !competitive && v2?.roam.mode === 'car' && v2.roam.carModel === 'gt-cabrio-5hc';
+    if (!competitive && !(v2 && (v2.roam.mode === 'bike' || v2.roam.mode === 'walk' || porscheCabrio) && !roamFall.active && !v2.roam.frozen)) return;
     const recent = (secretCode.recent ||= []);
     recent.push(kind);
     if (recent.length > 6) recent.shift();
-    const typed = (sequence) => sequence.length === recent.length && sequence.every((step, index) => step === recent[index]);
+    const typed = (sequence) => recent.length >= sequence.length
+        && sequence.every((step, index) => step === recent[recent.length - sequence.length + index]);
+    if (porscheCabrio && typed(PORSCHE_TAPS_SEQUENCE)) {
+        recent.length = 0;
+        startPorscheTrack({ fromUnlock: false });
+        toast('🎵 GT 51 CABRIO', 'RAK33M — Je pensais pas', { float: true });
+        return;
+    }
     if (!competitive && typed(LAND_SEQUENCE)) {
         recent.length = 0;
         v2.figuresLand.summon();
@@ -7526,6 +7537,7 @@ registerOutfitsAndExtras(() => v2, {
 });
 registerRealCars();
 registerMusic();
+initPorscheExperience();
 musicPlayer = createMusicPlayer();
 musicPlayer.mountPause(document.getElementById('pause-music'));
 shopUI = installShop({

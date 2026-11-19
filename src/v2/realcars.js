@@ -29,6 +29,19 @@ export function saveCarPaint(model, colourHex) {
 
 export const REAL_CARS = [
     {
+        id: 'cars:grey-storm',
+        model: 'grey-storm',
+        name: 'GREY STORM',
+        price: 650000,
+        badge: 'SUV SPORT',
+        tagline: 'SUV coupé sportif premium gris titane, toit panoramique, jantes 10 branches & signature LED',
+        roof: 'panoramic',
+        sound: 'v6_suv',
+        topSpeed: 0.83,
+        accel: 5.3,
+        colours: [0x777d84, 0x9aa0a6, 0x4c535a, 0x17191d, 0x26384d, 0x7a1f25]
+    },
+    {
         id: 'cars:gt-cabrio-5hc',
         model: 'gt-cabrio-5hc',
         name: 'GT 51 Cabrio',

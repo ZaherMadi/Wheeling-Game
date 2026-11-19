@@ -583,21 +583,12 @@ function installPrompt() {
     towModal.innerHTML = '<div class="ui-tow-card"><h3>Quel véhicule livrer ?</h3><div class="ui-tow-list"></div><button type="button" class="ui-tow-cancel">Annuler</button></div>';
     document.body.append(towModal);
 
-    let lastTowTapAt = 0;
-    const triggerTowRequest = (event) => {
+    towBtn.addEventListener('click', (event) => {
         if (towBtn.hidden) return;
-        const now = performance.now();
-        // Deduplicate paired pointerdown + click on mobile touch screens.
-        if (now - lastTowTapAt < 320) return;
-        lastTowTapAt = now;
-        if (event) {
-            event.preventDefault();
-            event.stopPropagation();
-        }
+        event.preventDefault();
+        event.stopPropagation();
         document.dispatchEvent(new CustomEvent('wheelie:tow-request'));
-    };
-    towBtn.addEventListener('pointerdown', triggerTowRequest, { passive: false });
-    towBtn.addEventListener('click', triggerTowRequest);
+    });
     towModal.addEventListener('click', (event) => {
         const optBtn = event.target.closest('[data-tow-kind]');
         if (optBtn) {
