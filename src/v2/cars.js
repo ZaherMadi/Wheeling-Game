@@ -150,7 +150,8 @@ export const CAR_NAMES = {
     'bm-m340': 'BM M3 Comp',
     'porsh-makane': 'Porsh Makane GTS',
     'porsh-911': 'Porsh 911 GT',
-    'lambo-uruz': 'Lambo Uruz'
+    'lambo-uruz': 'Lambo Uruz',
+    'gt-cabrio-5hc': 'GT 51 Cabrio'
 };
 export const STANDARD_CAR_MODELS = ['hatch', 'hatch_sr', 'sedan', 'sedan_sr', 'van', 'suv', 'suv_sr', 'coupe'];
 export const BASE_CAR_MODEL = (name) => String(name || '').replace(/_sr$/, '');

@@ -7,14 +7,15 @@ import { isModernUI, subscribeUITheme } from '../ui/theme.js';
 import { modernIcon } from '../ui/modern-icons.js';
 import {
     buy, canBuy, CATEGORIES, equip, equipped, gifted, grant,
-    item, items, markGifted, owns, points, seen
+    item, items, markGifted, noteSeen, owns, points, seen
 } from './store.js';
 import {
     applyCharacter, CHARACTERS, characterPortraitSvg, equipCharacter,
     equippedCharacterId, isCharacterOwned, previewCharacter, syncLoveCharacters
 } from './characters.js';
 import { applyEquippedOutfit, outfitLookFor, syncLegacyShopKeys } from './outfits.js';
-import { realCarInfo } from '../v2/realcars.js';
+import { realCarInfo, saveCarPaint, savedCarPaint } from '../v2/realcars.js';
+import { createHeroCarThumbnail } from '../v2/hero-car-pbr.js';
 
 const fmt = (n) => Math.max(0, Math.floor(Number(n) || 0)).toLocaleString('fr-FR');
 const esc = (s) => String(s ?? '').replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
@@ -42,6 +43,9 @@ function mediaUrlFor(entry, colour) {
     if (entry.category === 'characters') return characterPortraitSvg(entry.id);
     if (entry.category === 'cars') {
         const revealed = !entry.secret || seen(entry.id) || owns(entry.id);
+        if (entry.preview?.model === 'gt-cabrio-5hc' && revealed) {
+            return createHeroCarThumbnail(colour ?? savedCarPaint('gt-cabrio-5hc') ?? entry.preview?.colour);
+        }
         return carBadgeSvg(entry.preview?.model, colour ?? entry.preview?.colour, !revealed);
     }
     return entry.icon || entry.preview?.cover || entry.preview?.src || '';
@@ -168,7 +172,7 @@ export function installShop(deps) {
                 return;
             }
             const info = realCarInfo(entry.preview?.model);
-            const colour = selectedCarColour ?? info?.colours?.[0] ?? entry.preview?.colour ?? 0xf2f2f0;
+            const colour = selectedCarColour ?? savedCarPaint(entry.preview?.model) ?? info?.colours?.[0] ?? entry.preview?.colour ?? 0xf2f2f0;
             v2.previewCar?.(entry.preview.model, colour);
             return;
         }
@@ -180,7 +184,9 @@ export function installShop(deps) {
         if (!entry) return;
         if (selectedId !== id) {
             pendingConfirmId = null;
-            selectedCarColour = entry.category === 'cars' ? (realCarInfo(entry.preview?.model)?.colours?.[0] ?? null) : null;
+            selectedCarColour = entry.category === 'cars'
+                ? (savedCarPaint(entry.preview?.model) ?? realCarInfo(entry.preview?.model)?.colours?.[0] ?? null)
+                : null;
         }
         selectedId = id;
         previewInShowroom(entry);
@@ -380,7 +386,39 @@ export function installShop(deps) {
         if (!raw) return;
         const setMsg = (txt) => { if (codeMsg) codeMsg.textContent = txt; };
 
-        // Local legacy shortcuts remain supported smoothly alongside API codes.
+        // Local promo / unlock codes supported smoothly alongside API codes.
+        if (raw === '5HPORSHE') {
+            const carId = 'cars:gt-cabrio-5hc';
+            noteSeen(carId);
+            grant(carId, 'code');
+            saveCarPaint('gt-cabrio-5hc', 0xffd510);
+            equip('car', carId);
+            codeInput.value = '';
+            const unlocked = item(carId);
+            activeCategory = 'cars';
+            activeFilter = 'all';
+            const filter = document.getElementById('shop-filter');
+            if (filter) filter.value = 'all';
+            selectedId = carId;
+            selectedCarColour = 0xffd510;
+            stageView = 'side';
+            stageZoom = false;
+            deps.v2?.()?.showroomPreset?.('reset-zoom');
+            renderShop();
+            previewInShowroom(unlocked);
+            deps.v2?.()?.showroomPreset?.('side');
+            syncStageControls();
+            setMsg(`${unlocked?.name || 'GT 51 Cabrio'} débloquée !`);
+            deps.stat?.('shopCodeUsed');
+            showGiftModal({
+                title: '🏎️ Voiture exclusive débloquée !',
+                message: `${unlocked?.name || 'GT 51 Cabrio'} est maintenant dans ton garage, garée dès ton arrivée en Mode Libre et livrable partout via la dépanneuse.`,
+                value: unlocked?.price || 950000,
+                imageUrl: mediaUrlFor(unlocked, 0xffd510),
+                equipId: carId
+            });
+            return;
+        }
         if (raw === '5HC') {
             localStorage.setItem('wheelie_love_event', '1');
             grant('extras:love-event', 'code');
@@ -489,7 +527,7 @@ export function installShop(deps) {
 
         let swatchesHtml = '';
         if (isCar && revealed && carInfo?.colours?.length) {
-            const activeColour = selectedCarColour ?? carInfo.colours[0];
+            const activeColour = selectedCarColour ?? savedCarPaint(carInfo.model) ?? carInfo.colours[0];
             swatchesHtml = `<div class="shop-dock__swatches" aria-label="Couleurs disponibles">
               ${carInfo.colours.map((c) => {
                   const hex = `#${c.toString(16).padStart(6, '0')}`;
@@ -552,11 +590,28 @@ export function installShop(deps) {
 
     function syncStageControls() {
         if (!shopScreen) return;
-        const show = activeCategory === 'outfits' || activeCategory === 'characters';
-        shopScreen.classList.toggle('is-studio', activeCategory === 'outfits');
+        const cur = item(selectedId) || items(activeCategory)[0];
+        const carVisible = activeCategory === 'cars' && cur && (!cur.secret || seen(cur.id) || isItemOwned(cur.id));
+        const show = activeCategory === 'outfits' || activeCategory === 'characters' || carVisible;
+        shopScreen.classList.toggle('is-studio', activeCategory === 'outfits' || carVisible);
         const box = document.getElementById('shop-stage-controls');
         if (!box) return;
         box.hidden = !show;
+        const modeKey = carVisible ? 'cars' : 'rider';
+        if (box.dataset.mode !== modeKey) {
+            box.dataset.mode = modeKey;
+            box.innerHTML = carVisible
+                ? `<button type="button" class="shop-stage-btn" data-stage-view="front">Face</button>
+                   <button type="button" class="shop-stage-btn" data-stage-view="side">Profil</button>
+                   <button type="button" class="shop-stage-btn" data-stage-view="front34">3/4 Av</button>
+                   <button type="button" class="shop-stage-btn" data-stage-view="rear34">Arrière</button>
+                   <button type="button" class="shop-stage-btn" data-stage-view="spin">360°</button>
+                   <button type="button" class="shop-stage-btn" data-stage-zoom="1">Zoom</button>`
+                : `<button type="button" class="shop-stage-btn" data-stage-view="front">Face</button>
+                   <button type="button" class="shop-stage-btn" data-stage-view="back">Dos</button>
+                   <button type="button" class="shop-stage-btn" data-stage-view="spin">360°</button>
+                   <button type="button" class="shop-stage-btn" data-stage-zoom="1">Zoom</button>`;
+        }
         box.querySelectorAll('[data-stage-view]').forEach((btn) => {
             btn.classList.toggle('is-on', btn.dataset.stageView === stageView);
         });
@@ -710,13 +765,28 @@ export function installShop(deps) {
             if (filter) filter.value = 'all';
             pendingConfirmId = null;
             if (activeCategory === 'outfits') {
-                if (stageView === 'spin') {
+                if (stageView !== 'front' && stageView !== 'back') {
                     stageView = 'front';
                     deps.v2?.()?.showroomPreset?.('front');
                 }
-            } else if (stageZoom) {
-                stageZoom = false;
-                deps.v2?.()?.showroomPreset?.('reset-zoom');
+            } else if (activeCategory === 'cars') {
+                if (stageZoom) {
+                    stageZoom = false;
+                    deps.v2?.()?.showroomPreset?.('reset-zoom');
+                }
+                if (stageView === 'back' || stageView === 'spin') {
+                    stageView = 'front34';
+                    deps.v2?.()?.showroomPreset?.('front34');
+                }
+            } else {
+                if (stageZoom) {
+                    stageZoom = false;
+                    deps.v2?.()?.showroomPreset?.('reset-zoom');
+                }
+                if (stageView === 'side' || stageView === 'front34' || stageView === 'rear34') {
+                    stageView = 'spin';
+                    deps.v2?.()?.showroomPreset?.('spin');
+                }
             }
             const first = items(activeCategory)[0];
             if (first) selectShopItem(first.id);
@@ -731,8 +801,10 @@ export function installShop(deps) {
         const swatch = target.closest('[data-car-colour]');
         if (swatch) {
             selectedCarColour = Number(swatch.dataset.carColour);
-            previewInShowroom(item(selectedId));
-            renderShopDock();
+            const cur = item(selectedId);
+            if (cur?.preview?.model) saveCarPaint(cur.preview.model, selectedCarColour);
+            previewInShowroom(cur);
+            renderShop();
             return;
         }
         const musicBtn = target.closest('[data-shop-preview-music]');

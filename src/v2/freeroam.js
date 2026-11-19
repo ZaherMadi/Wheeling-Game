@@ -10,7 +10,7 @@ import { createHangGlider } from './glider.js';
 import { createJetpack } from './jetpack.js';
 import { createOfficer, decoratePoliceCar } from './police.js';
 import { BASE_CAR_MODEL, CAR_NAMES, CAR_UNLOCKS } from './cars.js';
-import { isRealCar, ownedCars, ownsRealCar, realCarInfo } from './realcars.js';
+import { isRealCar, ownedCars, ownsRealCar, pickRealCarPaint, realCarInfo } from './realcars.js';
 import { noteSeen } from '../shop/store.js';
 import { createTowService, deliveryCost } from './towtruck.js';
 import { beginCinematic, boostCinematic, cinematicSpeed, endCinematic } from '../cinematic.js';
@@ -190,8 +190,9 @@ export function createFreeRoam({ scene, world, rider, audio, onTurn, playerVoice
     const walker = { x: 0, z: 0, yaw: Math.PI, speed: 0, y: 0, vy: 0, running: false, jumpHeld: false, roof: null };
     const boost = { readyAt: 0, until: 0 };
     const now = () => performance.now() / 1000;
-    const drive = { group: null, model: null, speed: 0, yaw: Math.PI, braking: false, reversing: false };
+    const drive = { group: null, model: null, speed: 0, yaw: Math.PI, braking: false, reversing: false, steer: 0, bump: 0, onKerb: false };
     const dropped = [];
+    let heroSpawned = false;
     let mode = 'bike';
     let bike = null;
     let prompt = '';
@@ -332,47 +333,80 @@ export function createFreeRoam({ scene, world, rider, audio, onTurn, playerVoice
             const boosting = now() < boost.until;
             const top = (info ? info.topSpeed : CAR_TOP_SPEED) * (boosting ? 1.3 : 1);
             const basePull = info ? info.accel : 3;
+            const brakeRate = info && info.accel >= 5 ? 11.8 : 9.5;
+            const frameScale = Math.min(2.5, Math.max(0.5, (dt || 0.016) * 60));
             if (throttle * drive.speed < 0 && Math.abs(drive.speed) > 0.003) {
                 // Braking (pressing against the motion).
-                drive.speed -= Math.sign(drive.speed) * Math.min(Math.abs(drive.speed), 9.5 / 3600 * Math.abs(throttle));
+                drive.speed -= Math.sign(drive.speed) * Math.min(Math.abs(drive.speed), brakeRate / 3600 * Math.abs(throttle) * frameScale);
                 drive.hold = 0;
             } else if (throttle > 0.05) {
-                // Pulls harder the longer the pedal is held.
-                drive.hold = (drive.hold || 0) + 1 / 60;
-                const pull = (basePull + Math.min(4.5, drive.hold * 2.5)) * throttle / 3600;
-                drive.speed += pull * Math.max(0, 1 - Math.pow(Math.max(0, drive.speed) / top, 3));
+                // Pulls harder the longer the pedal is held + crisp low-end launch torque on sports cars.
+                drive.hold = (drive.hold || 0) + (dt || 0.016);
+                const launchBoost = info && info.accel >= 5.5 && drive.speed < 0.25 ? 1.45 : 1;
+                const pull = (basePull * launchBoost + Math.min(5.2, drive.hold * 3.0)) * throttle / 3600;
+                drive.speed += pull * Math.max(0, 1 - Math.pow(Math.max(0, drive.speed) / top, 3)) * frameScale;
             } else if (throttle < -0.05) {
-                drive.speed = Math.max(-0.07, drive.speed - 2.5 / 3600 * -throttle); // reverse, 15 km/h at most
+                drive.speed = Math.max(-0.08, drive.speed - 2.8 / 3600 * -throttle * frameScale); // reverse
             } else {
                 drive.hold = 0;
                 const coast = (1.2 + 900 * drive.speed * drive.speed) / 3600;
-                drive.speed = Math.sign(drive.speed) * Math.max(0, Math.abs(drive.speed) - coast);
+                drive.speed = Math.sign(drive.speed) * Math.max(0, Math.abs(drive.speed) - coast * frameScale);
             }
-            if (boosting && drive.speed < top) drive.speed += 6 / 3600;
+            if (boosting && drive.speed < top) drive.speed += 6.5 / 3600 * frameScale;
             // After a boost: the speed it reached stays while the pedal is down.
             if (drive.speed > top && throttle <= 0.05) drive.speed = Math.max(top, drive.speed - 1.5 / 3600);
-            // Lights: red when braking or backing up, white reversing lights.
-            drive.reversing = drive.speed < -0.01;
+            // Lights: red when braking or backing up, white reversing lights, turn signals on steering.
+            drive.reversing = drive.speed < -0.008;
             drive.braking = throttle * drive.speed < 0 && Math.abs(drive.speed) > 0.01;
+            const turnL = nx < -0.35;
+            const turnR = nx > 0.35;
             drive.group.userData.lights?.set(drive.braking || drive.reversing || (throttle < -0.05 && Math.abs(drive.speed) < 0.02), drive.reversing);
             const grip = Math.min(1, Math.abs(drive.speed) / 0.12);
-            const calm = 1 - 0.45 * Math.min(1, Math.abs(drive.speed) / top);
-            drive.yaw -= nx * 0.032 * grip * calm * Math.sign(drive.speed || 1);
+            const calm = 1 - 0.42 * Math.min(1, Math.abs(drive.speed) / top);
+            const turnRate = info?.model === 'gt-cabrio-5hc' ? 0.036 : 0.032;
+            drive.yaw -= nx * turnRate * grip * calm * Math.sign(drive.speed || 1);
+            drive.steer = (drive.steer || 0) + ((-nx) - (drive.steer || 0)) * Math.min(1, (dt || 0.016) * 12);
+
             const group = drive.group;
             const previous = group.position.clone();
             group.position.x += Math.sin(drive.yaw) * drive.speed;
             group.position.z += Math.cos(drive.yaw) * drive.speed;
             group.rotation.y = drive.yaw;
-            constrain(group.position, 8.4, 1.2);
+            constrain(group.position, 9.1, 1.2);
             void previous;
+
+            // Kerb ride & suspension bump feedback along outer avenue edge
+            const onKerb = sideStreetAt(group.position.z) === null && Math.abs(group.position.x) > 8.75;
+            if (onKerb !== !!drive.onKerb) {
+                drive.onKerb = onKerb;
+                drive.bump = onKerb ? 0.9 : -0.65;
+            }
+            drive.bump = (drive.bump || 0) * Math.exp(-(dt || 0.016) * 8);
+            const targetY = onKerb ? 0.14 : 0;
+            group.position.y += (targetY - group.position.y) * Math.min(1, (dt || 0.016) * 14);
+
             const hit = traffic.pushOut(group.position, 1.4);
             if (hit) {
                 if (hit.police) patrol.bumped(hit);
                 else patrol.playerHit();
                 if (Math.abs(drive.speed) > 0.12) audio.play('collision', { volume: 0.4 });
                 drive.speed *= -0.25;
-                constrain(group.position, 8.4, 1.2);
+                drive.bump = -0.9;
+                constrain(group.position, 9.1, 1.2);
             }
+
+            group.userData.animate?.(dt || 0.016, {
+                speed: drive.speed * 60,
+                throttle: Math.max(0, throttle),
+                braking: drive.braking || (throttle < -0.05 && Math.abs(drive.speed) < 0.02),
+                reversing: drive.reversing,
+                steer: drive.steer,
+                turningLeft: turnL,
+                turningRight: turnR,
+                bump: drive.bump,
+                time: now(),
+                showroom: false
+            });
         }
     }
 
@@ -1059,6 +1093,9 @@ export function createFreeRoam({ scene, world, rider, audio, onTurn, playerVoice
                 drive.model = ride.model;
                 drive.yaw = group.rotation.y;
                 drive.speed = 0;
+                drive.steer = 0;
+                drive.bump = 0;
+                drive.onKerb = false;
                 rider.setRiderVisible(false);
                 setMode('car');
                 audio.play('car_door', { volume: 0.45 });
@@ -1080,10 +1117,21 @@ export function createFreeRoam({ scene, world, rider, audio, onTurn, playerVoice
         }
         confiscationShown = bikeConfiscated();
         const here = getFocus();
+        // Exclusive code car (5HPORSHE): park GT 51 Cabrio right ahead along the curb for instant driving.
+        if (!heroSpawned && ownsRealCar('gt-cabrio-5hc') && drive.model !== 'gt-cabrio-5hc'
+            && !dropped.some((c) => c.model === 'gt-cabrio-5hc')) {
+            heroSpawned = true;
+            const heroGroup = world.createCar('gt-cabrio-5hc', pickRealCarPaint('gt-cabrio-5hc'));
+            heroGroup.position.set(8.2, 0, here.z - 10.5);
+            heroGroup.rotation.y = Math.PI;
+            scene.add(heroGroup);
+            dropped.push({ group: heroGroup, model: 'gt-cabrio-5hc' });
+        }
         // Up in the air or on a roof, the traffic does not stop for him.
         const aloft = mode === 'glide' || mode === 'jet' || (mode === 'walk' && !!walker.roof);
         const blockers = [...(aloft ? [] : [{ x: here.x, z: here.z }]), ...patrol.blockers()];
         if (mode !== 'bike') blockers.push({ x: bike.position.x, z: bike.position.z });
+        for (const car of dropped) blockers.push({ x: car.group.position.x, z: car.group.position.z });
         traffic.update(dt, here, blockers);
         // Riding past a car fast: a whoosh on that side.
         if (lastHere && dt > 0 && mode !== 'walk') {
@@ -1172,8 +1220,12 @@ export function createFreeRoam({ scene, world, rider, audio, onTurn, playerVoice
         boost.readyAt = 0;
         boost.until = 0;
         turning = false;
+        heroSpawned = false;
         if (drive.group) scene.remove(drive.group);
         drive.group = null;
+        drive.steer = 0;
+        drive.bump = 0;
+        drive.onKerb = false;
         for (const car of dropped) scene.remove(car.group);
         dropped.length = 0;
         patrol.reset();

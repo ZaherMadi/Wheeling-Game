@@ -1,8 +1,47 @@
 // Realistic worked-on cars (approximate parody names, hidden prices until
-// met in free roam, varied paints, sunroofs, custom engine profiles).
+// met in free roam, varied paints, sunroofs, custom engine profiles, plus
+// exclusive shop-code GT 51 Cabrio unlocked with 5HPORSHE).
 import { owns, registerItems, seen } from '../shop/store.js';
 
+const PAINT_STORAGE_KEY = 'wheelie_car_paints';
+
+export function savedCarPaint(model) {
+    try {
+        const raw = JSON.parse(localStorage.getItem(PAINT_STORAGE_KEY) || '{}');
+        const val = raw && typeof raw === 'object' ? raw[model] : null;
+        return typeof val === 'number' && Number.isFinite(val) ? val : null;
+    } catch {
+        return null;
+    }
+}
+
+export function saveCarPaint(model, colourHex) {
+    if (!model || !Number.isFinite(Number(colourHex))) return;
+    try {
+        const raw = JSON.parse(localStorage.getItem(PAINT_STORAGE_KEY) || '{}');
+        const next = raw && typeof raw === 'object' ? { ...raw } : {};
+        next[model] = Number(colourHex);
+        localStorage.setItem(PAINT_STORAGE_KEY, JSON.stringify(next));
+    } catch {
+        // Ignore storage errors in private browsing.
+    }
+}
+
 export const REAL_CARS = [
+    {
+        id: 'cars:gt-cabrio-5hc',
+        model: 'gt-cabrio-5hc',
+        name: 'GT 51 Cabrio',
+        price: 950000,
+        badge: 'CODE 5HPORSHE',
+        codeOnly: true,
+        tagline: 'Cabriolet sportif jaune métallisé, capote toile noire, jantes 10 branches & étriers jaunes',
+        roof: 'softtop',
+        sound: 'flat6_cabrio',
+        topSpeed: 0.92,
+        accel: 6.4,
+        colours: [0xffd510, 0xf8e055, 0xd6d4cc, 0xd41c24, 0x16294a, 0x14161a]
+    },
     {
         id: 'cars:citron-c5-air',
         model: 'citron-c5-air',
@@ -138,7 +177,8 @@ export const REAL_CARS = [
 ];
 
 const BY_MODEL = Object.fromEntries(REAL_CARS.map((car) => [car.model, car]));
-export const REAL_CAR_MODELS = REAL_CARS.map((car) => car.model);
+// AI parked & traffic pool excludes exclusive code-only showcase models.
+export const REAL_CAR_MODELS = REAL_CARS.filter((car) => !car.codeOnly).map((car) => car.model);
 export const MAX_REAL_CAR_PRICE = Math.max(...REAL_CARS.map((car) => car.price));
 export const MIN_REAL_CAR_PRICE = Math.min(...REAL_CARS.map((car) => car.price));
 
@@ -148,6 +188,9 @@ export const realCarInfo = (model) => BY_MODEL[model] || null;
 export function pickRealCarPaint(model) {
     const info = BY_MODEL[model];
     if (!info) return 0xf2f2f0;
+    const chosen = savedCarPaint(model);
+    if (chosen !== null && info.colours.includes(chosen)) return chosen;
+    if (info.codeOnly) return info.colours[0];
     return info.colours[Math.floor(Math.random() * info.colours.length)];
 }
 
@@ -162,7 +205,7 @@ export function ownedCars() {
         model: car.model,
         name: car.name,
         price: car.price,
-        paint: car.colours[0]
+        paint: savedCarPaint(car.model) ?? car.colours[0]
     }));
 }
 
@@ -173,9 +216,11 @@ export function registerRealCars() {
         name: car.name,
         price: car.price,
         tagline: car.tagline,
-        secret: true,
-        available: () => seen(car.id),
-        locked: 'Croise-la en mode libre pour révéler son prix',
+        badge: car.badge || undefined,
+        secret: !car.codeOnly,
+        available: car.codeOnly ? () => false : () => seen(car.id),
+        locked: car.codeOnly ? 'Entre le code 5HPORSHE dans la boutique' : 'Croise-la en mode libre pour révéler son prix',
+        giftable: !car.codeOnly,
         slot: 'car',
         preview: {
             type: 'car',

@@ -460,37 +460,54 @@ export function createRealisticVersion({ scene, renderer, camera, mobile, audio,
     }
 
     let showroomCar = null;
+    let showroomCarModel = null;
     function setShowroomCar(model, colour = 0xf2c014) {
+        if (!model) {
+            if (showroomCar) {
+                scene.remove(showroomCar);
+                showroomCar = null;
+                showroomCarModel = null;
+            }
+            rider.bikeGroup.visible = true;
+            return;
+        }
+        if (showroomCar && showroomCarModel === model && showroomCar.userData.setPaint) {
+            showroomCar.userData.setPaint(colour);
+            rider.bikeGroup.visible = false;
+            return;
+        }
         if (showroomCar) {
             scene.remove(showroomCar);
             showroomCar = null;
         }
-        if (!model) {
-            rider.bikeGroup.visible = true;
-            return;
-        }
         showroomCar = world.createCar(model, colour);
+        showroomCarModel = model;
         const b = rider.bikeGroup.position;
         showroomCar.position.set(b.x, 0, b.z);
-        showroomCar.scale.setScalar(1.15);
+        showroomCar.rotation.y = rider.bikeGroup.rotation.y || Math.PI;
+        showroomCar.scale.setScalar(1.12);
         scene.add(showroomCar);
         rider.bikeGroup.visible = false;
     }
 
-    // Three-point studio lighting rig used only while the boutique / showroom is open
+    // Permanently-mounted 2-light studio rig (toggled via intensity so WebGL NUM_DIR_LIGHTS never recompiles shaders!)
     const studioLights = new THREE.Group();
-    studioLights.visible = false;
-    const studioKey = new THREE.DirectionalLight(0xfff6e5, 1.85);
-    studioKey.position.set(2.4, 4.2, 4.2);
-    const studioRim = new THREE.DirectionalLight(0xbcd8ff, 1.35);
-    studioRim.position.set(-2.8, 3.6, -4.0);
-    const studioFill = new THREE.DirectionalLight(0xffffff, 0.72);
-    studioFill.position.set(-3.2, 2.2, 2.4);
+    studioLights.visible = true;
+    const studioKey = new THREE.DirectionalLight(0xfff6e5, 0);
+    studioKey.position.set(2.4, 5.2, 4.0);
+    studioKey.castShadow = false;
+    const studioRim = new THREE.DirectionalLight(0xc2dcff, 0);
+    studioRim.position.set(-3.0, 3.4, -3.8);
+    studioRim.castShadow = false;
     studioKey.target = rider.bikeGroup;
     studioRim.target = rider.bikeGroup;
-    studioFill.target = rider.bikeGroup;
-    studioLights.add(studioKey, studioRim, studioFill);
+    studioLights.add(studioKey, studioRim);
     scene.add(studioLights);
+
+    function setStudioLighting(on) {
+        studioKey.intensity = on ? 2.15 : 0;
+        studioRim.intensity = on ? 1.45 : 0;
+    }
 
     let showroomAngle = 0.9;
     let showroomTargetAngle = null;
@@ -505,21 +522,22 @@ export function createRealisticVersion({ scene, renderer, camera, mobile, audio,
         // Half-angles of the free area as seen from the camera.
         const halfV = Math.atan(halfTan * (area.y1 - area.y0) / area.height);
         const halfH = Math.atan(halfTan * camera.aspect * (area.x1 - area.x0) / area.width);
-        const radius = showroomCar ? 3.5 : SUBJECT_RADIUS;
-        const height = showroomCar ? 1.15 : SUBJECT_HEIGHT;
-        const zoom = showroomCar ? 1.0 : showroomZoomFactor;
-        const distance = Math.max(showroomCar ? 6.4 : 5.4, radius / Math.sin(Math.min(halfV, halfH))) * zoom;
+        const isCar = Boolean(showroomCar);
+        const radius = isCar ? 2.75 : SUBJECT_RADIUS;
+        const height = isCar ? 0.68 : SUBJECT_HEIGHT;
+        const zoom = showroomZoomFactor;
+        const distance = Math.max(isCar ? 5.1 : 5.4, radius / Math.sin(Math.min(halfV, halfH))) * zoom;
         const b = rider.bikeGroup.position;
         studioLights.position.copy(b);
         const zoomBias = 1 - zoom;
-        const camY = height + 0.65 * (distance / zoom) / 5.4 - zoomBias * 0.4;
+        const camY = height + (isCar ? 0.54 : 0.65) * (distance / zoom) / 5.4 - zoomBias * (isCar ? 0.14 : 0.4);
         camera.position.set(
             b.x + Math.sin(angle) * distance,
             camY,
             b.z + Math.cos(angle) * distance);
-        look.set(b.x, height + zoomBias * 1.15, b.z);
+        look.set(b.x, height + (isCar ? zoomBias * 0.08 : zoomBias * 1.15), b.z);
         camera.lookAt(look);
-        // The rider drawn at the centre of the free area, not of the screen.
+        // The subject drawn at the centre of the free area, not of the screen.
         const centreX = (area.x0 + area.x1) / 2;
         const centreY = (area.y0 + area.y1) / 2;
         camera.setViewOffset(area.width, area.height, area.width / 2 - centreX, area.height / 2 - centreY, area.width, area.height);
@@ -548,19 +566,28 @@ export function createRealisticVersion({ scene, renderer, camera, mobile, audio,
         return d;
     }
     function showroomPreset(view) {
-        const bikeYaw = rider.bikeGroup.rotation.y || 0;
+        const baseYaw = showroomCar ? showroomCar.rotation.y : (rider.bikeGroup.rotation.y || 0);
         if (view === 'front') {
-            showroomTargetAngle = bikeYaw + 0.3;
+            showroomTargetAngle = baseYaw + (showroomCar ? 0.0 : 0.3);
+            showroomAutoSpin = false;
+        } else if (view === 'side') {
+            showroomTargetAngle = baseYaw + Math.PI / 2;
+            showroomAutoSpin = false;
+        } else if (view === 'front34') {
+            showroomTargetAngle = baseYaw + 0.62;
+            showroomAutoSpin = false;
+        } else if (view === 'rear34') {
+            showroomTargetAngle = baseYaw + Math.PI - 0.56;
             showroomAutoSpin = false;
         } else if (view === 'back') {
-            showroomTargetAngle = bikeYaw + Math.PI - 0.3;
+            showroomTargetAngle = baseYaw + Math.PI - (showroomCar ? 0.0 : 0.3);
             showroomAutoSpin = false;
         } else if (view === 'spin') {
             showroomTargetAngle = null;
             showroomAutoSpin = true;
             showroomHeld = 0;
         } else if (view === 'zoom') {
-            showroomTargetZoom = showroomTargetZoom < 0.85 ? 1.0 : 0.54;
+            showroomTargetZoom = showroomTargetZoom < 0.85 ? 1.0 : (showroomCar ? 0.46 : 0.54);
         } else if (view === 'reset-zoom') {
             showroomTargetZoom = 1.0;
         }
@@ -574,7 +601,7 @@ export function createRealisticVersion({ scene, renderer, camera, mobile, audio,
             showroomTargetAngle = null;
             showroomZoomFactor = 1.0;
             showroomTargetZoom = 1.0;
-            studioLights.visible = true;
+            setStudioLighting(true);
             dressRider();
             savedPosition.copy(camera.position);
             savedQuaternion.copy(camera.quaternion);
@@ -588,6 +615,10 @@ export function createRealisticVersion({ scene, renderer, camera, mobile, audio,
                 }
                 showroomZoomFactor += (showroomTargetZoom - showroomZoomFactor) * 0.14;
                 frameShowroom(showroomAngle);
+                if (showroomCar) {
+                    showroomCar.userData.animate?.(0.016, { showroom: true, time: performance.now() / 1000 });
+                    showroomCar.userData.lod?.update(camera);
+                }
                 renderer.render(scene, camera);
                 showroomFrame = requestAnimationFrame(tick);
             };
@@ -595,7 +626,7 @@ export function createRealisticVersion({ scene, renderer, camera, mobile, audio,
         } else if (!on && showroomFrame !== null) {
             cancelAnimationFrame(showroomFrame);
             showroomFrame = null;
-            studioLights.visible = false;
+            setStudioLighting(false);
             setShowroomCar(null);
             previewLook = null;
             dressRider();

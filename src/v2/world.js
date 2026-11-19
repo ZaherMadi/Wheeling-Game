@@ -15,6 +15,7 @@ import {
 import { createVegetation } from './vegetation.js';
 import { createBuildingKit } from './buildings.js';
 import { addCarLights, buildCarGeometries, createCarMesh, createCarModels } from './cars.js';
+import { createGtCabrioCar } from './hero-car-models.js';
 import { REAL_CAR_MODELS, pickRealCarPaint } from './realcars.js';
 import { createHorizon } from './horizon.js';
 import {
@@ -813,8 +814,12 @@ export function createWorld({ scene, renderer, mobile }) {
         const list = (realPool[model] ||= []);
         const mesh = list.pop() || createCar(model, paint);
         mesh.visible = true;
-        const bodyMesh = mesh.children[0];
-        if (bodyMesh?.material?.color) bodyMesh.material.color.set(paint);
+        if (mesh.userData.setPaint) {
+            mesh.userData.setPaint(paint);
+        } else {
+            const bodyMesh = mesh.children[0];
+            if (bodyMesh?.material?.color) bodyMesh.material.color.set(paint);
+        }
         return mesh;
     }
     function populateRealCars(chunk) {
@@ -948,6 +953,9 @@ export function createWorld({ scene, renderer, mobile }) {
 
     // A car that moves: painted with its own colour, same look as parked ones.
     function createCar(model, paint) {
+        if (model === 'gt-cabrio-5hc') {
+            return createGtCabrioCar(paint, { mobile });
+        }
         const body = withAtmosphere(new THREE.MeshStandardMaterial({
             color: paint, roughness: 0.3, metalness: 0.35, envMapIntensity: 1.25, vertexColors: true
         }), { key: 'carbody' });
