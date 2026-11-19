@@ -3,9 +3,12 @@
 // existing elements (same ids, same listeners), so main.js keeps driving
 // the game exactly as before and the classic version is left untouched.
 import { icon, installIcons } from './icons.js';
+import { installModernIcons, modernIcon } from './modern-icons.js';
+import { isModernUI, subscribeUITheme } from './theme.js';
 import { BIKE_RECOVERY_POINTS, bikeConfiscated, totalPoints } from '../v2/freeroam.js';
 import { CAR_NAMES, CAR_UNLOCKS } from '../v2/cars.js';
 import './ui.css';
+import './modern-hud.css';
 
 const $ = (id) => document.getElementById(id);
 
@@ -144,6 +147,7 @@ function decorateSettings() {
         'btn-cat-gamemode': ['flag', 'MODE DE JEU'],
         'btn-cat-options': ['sliders', 'SON & VOIX'],
         'btn-cat-graphics': ['sparkle', 'QUALITÉ GRAPHIQUE'],
+        'btn-cat-appearance': ['sparkle', 'APPARENCE DU JEU'],
         'btn-cat-version': ['layers', 'VERSION DU JEU'],
         'btn-cat-rider': ['helmet', 'PERSONNAGE']
     };
@@ -267,7 +271,7 @@ function decorateHud() {
     }
     const pause = $('pause-btn');
     if (pause) {
-        pause.innerHTML = icon('pause');
+        pause.innerHTML = isModernUI() ? modernIcon('pause') : icon('pause');
         pause.setAttribute('aria-label', 'Pause');
     }
 
@@ -312,10 +316,41 @@ function decorateHud() {
 }
 
 // Touch controls --------------------------------------------------------------
+const CLASSIC_ICON_FALLBACK = { boost: 'throttle', jet: 'throttle' };
+
+function renderControlContent(element, name, label) {
+    if (!element) return;
+    const badge = element.querySelector('.ui-pad__badge');
+    const badgeText = badge ? badge.textContent : null;
+    const modern = isModernUI();
+    const iconMarkup = modern
+        ? modernIcon(name)
+        : icon(CLASSIC_ICON_FALLBACK[name] || name);
+    element.innerHTML = `${iconMarkup}<span class="ui-pad__label">${label}</span>`;
+    if (badgeText !== null) {
+        const span = document.createElement('span');
+        span.className = 'ui-pad__badge';
+        span.textContent = badgeText;
+        element.append(span);
+    }
+}
+
 function control(element, name, label) {
     if (!element) return;
     element.classList.add('ui-pad');
-    element.innerHTML = `${icon(name)}<span class="ui-pad__label">${label}</span>`;
+    element.dataset.padIcon = name;
+    element.dataset.padLabel = label;
+    renderControlContent(element, name, label);
+}
+
+function refreshHudTheme() {
+    const pause = $('pause-btn');
+    if (pause) pause.innerHTML = isModernUI() ? modernIcon('pause') : icon('pause');
+    document.querySelectorAll('.ui-pad[data-pad-icon]').forEach((pad) => {
+        const labelEl = pad.querySelector('.ui-pad__label');
+        const currentLabel = labelEl ? labelEl.textContent : (pad.dataset.padLabel || '');
+        renderControlContent(pad, pad.dataset.padIcon, currentLabel);
+    });
 }
 
 function pressFeedback(element) {
@@ -337,7 +372,7 @@ function decorateControls() {
         control($('analog-trick'), 'trick', 'FIGURE');
         analog.insertAdjacentHTML('beforeend', '<button class="action-btn ui-pad" id="analog-boost"></button>' +
             '<button class="action-btn ui-pad" id="analog-jump"></button><button class="action-btn ui-pad" id="analog-run"></button>');
-        control($('analog-boost'), 'throttle', 'BOOST');
+        control($('analog-boost'), 'boost', 'BOOST');
         $('analog-boost').insertAdjacentHTML('beforeend', '<span class="ui-pad__badge"></span>');
         control($('analog-jump'), 'wheelie', 'SAUTER');
         control($('analog-run'), 'user', 'COURIR');
@@ -346,7 +381,7 @@ function decorateControls() {
         control($('analog-action'), 'user', 'DESCENDRE');
         // Free roam: the jetpack.
         analog.insertAdjacentHTML('beforeend', '<button class="action-btn ui-pad" id="analog-jet" hidden></button>');
-        control($('analog-jet'), 'throttle', 'JETPACK');
+        control($('analog-jet'), 'jet', 'JETPACK');
     }
     for (const id of ['analog-gas', 'analog-brake', 'analog-wheelie', 'analog-trick', 'analog-action', 'analog-boost', 'analog-jump', 'analog-run', 'analog-jet']) {
         pressFeedback($(id));
@@ -595,6 +630,7 @@ function installPrompt() {
 
 export function installRacingUI() {
     installIcons();
+    installModernIcons();
     document.body.classList.add('ui-racing');
     // A styling problem must never stop the game: each part fails alone.
     for (const decorate of [decorateMenu, decorateModeSelect, decorateRiderScreen, decorateSettings, decorateLeaderboard,
@@ -605,6 +641,8 @@ export function installRacingUI() {
             console.warn(`Interface: ${decorate.name} failed`, error);
         }
     }
+    subscribeUITheme(refreshHudTheme);
+    refreshHudTheme();
     // iOS only applies :active styles when a touch listener exists.
     document.addEventListener('touchstart', () => {}, { passive: true });
 }

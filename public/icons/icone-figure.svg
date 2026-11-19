@@ -1,0 +1,43 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 120 120">
+  <defs>
+    <linearGradient id="chrome" x1="0" y1="0" x2="0.8" y2="1">
+      <stop offset="0%" stop-color="#ffffff"/>
+      <stop offset="35%" stop-color="#d4dae4"/>
+      <stop offset="68%" stop-color="#7c8594"/>
+      <stop offset="100%" stop-color="#e2e8f0"/>
+    </linearGradient>
+    <linearGradient id="steel" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0%" stop-color="#94a3b8"/>
+      <stop offset="55%" stop-color="#475569"/>
+      <stop offset="100%" stop-color="#1e293b"/>
+    </linearGradient>
+    <linearGradient id="violet" x1="0" y1="1" x2="1" y2="0">
+      <stop offset="0%" stop-color="#6b21a8"/>
+      <stop offset="55%" stop-color="#a855f7"/>
+      <stop offset="100%" stop-color="#f0abfc"/>
+    </linearGradient>
+  </defs>
+  <!-- Violet freestyle speed arc -->
+  <path d="M16 96c15-3 28-14 39-27-8 16-20 27-39 27z" fill="url(#violet)" opacity="0.92"/>
+  <path d="M24 100c14-1 26-8 34-18-10 8-22 14-34 18z" fill="url(#violet)" opacity="0.55"/>
+  <!-- Motocross wheels -->
+  <g stroke="#0d1117" stroke-width="2">
+    <circle cx="46" cy="84" r="14.5" fill="url(#steel)"/>
+    <circle cx="46" cy="84" r="9.5" fill="#11161f"/>
+    <circle cx="46" cy="84" r="4.5" fill="url(#chrome)"/>
+    <circle cx="96" cy="70" r="14.5" fill="url(#steel)"/>
+    <circle cx="96" cy="70" r="9.5" fill="#11161f"/>
+    <circle cx="96" cy="70" r="4.5" fill="url(#chrome)"/>
+  </g>
+  <!-- Motocross frame, swingarm, engine, forks, front fender & bars -->
+  <path d="M46 84l17-6 12-16 14 2 7 6M75 62l-2-15 16-5 15 3-10 2" fill="none" stroke="url(#chrome)" stroke-width="4.2" stroke-linecap="round" stroke-linejoin="round"/>
+  <path d="M48 73l14-8 14-15 14 2-6 10-16 11z" fill="url(#steel)" stroke="#0d1117" stroke-width="1.6"/>
+  <path d="M52 67c8-4 18-8 28-14l-5-7c-10 3-20 8-29 14z" fill="url(#chrome)" stroke="#0d1117" stroke-width="1.5"/>
+  <path d="M84 44l14-6c5 0 10 3 13 6-6-1-12 0-17 4z" fill="url(#chrome)" stroke="#0d1117" stroke-width="1.4"/>
+  <!-- Flying Superman rider holding bars -->
+  <path d="M77 45l-12-9c-6-4-14-4-21-2l-19-8-6 4 15 10c-2 2-1 5 2 6l-14 11 4 6 19-12c8-2 15-4 22-8l11 5z" fill="url(#chrome)" stroke="#0d1117" stroke-width="1.7" stroke-linejoin="round"/>
+  <!-- Rider MX helmet with visor & peak -->
+  <path d="M62 24c4-5 12-6 16-2 3 3 3 8 0 11l-7 2-8-3c-2-2-2-5-1-8z" fill="url(#chrome)" stroke="#0d1117" stroke-width="1.7"/>
+  <path d="M70 23l9-2-3 4z" fill="url(#chrome)" stroke="#0d1117" stroke-width="1.2"/>
+  <path d="M71 26l6-1-1 5-6 1z" fill="#11161f"/>
+</svg>

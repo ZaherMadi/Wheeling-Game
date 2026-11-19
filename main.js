@@ -29,6 +29,7 @@ import { createMusicPlayer, registerMusic } from './src/music/player.js';
 import { registerRealCars } from './src/v2/realcars.js';
 import { installShop } from './src/shop/shop.js';
 import { beginCinematic, cinematicSpeed, endCinematic } from './src/cinematic.js';
+import { getUIVersion, initUITheme, setUIVersion, subscribeUITheme } from './src/ui/theme.js';
 
 // Two versions share the same simulation, scoring and ranked replay:
 // 'v2' (realistic city, new rider) and 'classic' (the original V1 look).
@@ -5925,7 +5926,24 @@ document.getElementById('btn-cat-controls')?.addEventListener('click', () => sho
 document.getElementById('btn-cat-gamemode')?.addEventListener('click', () => showSubmenu('submenu-gamemode'));
 document.getElementById('btn-cat-options')?.addEventListener('click', () => showSubmenu('submenu-options'));
 document.getElementById('btn-cat-graphics')?.addEventListener('click', () => showSubmenu('submenu-graphics'));
+document.getElementById('btn-cat-appearance')?.addEventListener('click', () => showSubmenu('submenu-appearance'));
 document.getElementById('btn-cat-version')?.addEventListener('click', () => showSubmenu('submenu-version'));
+
+function syncAppearanceUI(version = getUIVersion()) {
+    const modern = version === 'modern';
+    document.getElementById('ui-theme-modern')?.classList.toggle('active', modern);
+    document.getElementById('ui-theme-classic')?.classList.toggle('active', !modern);
+    const desc = document.getElementById('ui-theme-desc');
+    if (desc) {
+        desc.textContent = modern
+            ? 'Interface Moderne 51 : Boutique 51 repensée et commandes Carbon Fiber 3D.'
+            : 'Interface Classique : apparence originale conservée à l’identique.';
+    }
+}
+document.getElementById('ui-theme-modern')?.addEventListener('click', () => setUIVersion('modern'));
+document.getElementById('ui-theme-classic')?.addEventListener('click', () => setUIVersion('classic'));
+subscribeUITheme(syncAppearanceUI);
+syncAppearanceUI();
 // Rider screen: the rider is shown turning while the look is changed.
 document.getElementById('rider-btn')?.addEventListener('click', () => {
     document.getElementById('start-screen')?.classList.remove('active');
@@ -7492,6 +7510,7 @@ live = createLive({
 });
 
 // The shop's core (src/shop/store.js): the points it takes, the stats.
+initUITheme();
 configureShop({
     points: () => totalPoints(),
     spend: (n) => spendPoints(n),
@@ -8086,6 +8105,7 @@ document.getElementById('back-from-leaderboard')?.addEventListener('click', () =
 displayNickname();
 
 try {
+    initUITheme();
     init();
     // A Love&Faith rider or shop character/outfit bought and chosen: worn from the start.
     loveEvent?.applyWear();

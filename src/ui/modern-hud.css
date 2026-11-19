@@ -1,0 +1,310 @@
+/* Modern 3D Carbon Fiber HUD controls — strictly scoped under body.v2.ui-modern.
+   Preserves all classic layouts, hitboxes, pad-layout coordinates and touch events. */
+
+body.v2.ui-modern {
+  --carbon-weave: url("data:image/svg+xml;utf8,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='12'%3E%3Crect width='12' height='12' fill='%2311141c'/%3E%3Cpath d='M0 0h6v6H0zm6 6h6v6H6z' fill='%231a1f2b'/%3E%3Cpath d='M0 0h6v2H0zm6 6h6v2H6z' fill='%23232938' opacity='0.75'/%3E%3Cpath d='M6 0h6v3H6zm-6 6h6v3H0z' fill='%230b0d13' opacity='0.8'/%3E%3C/svg%3E");
+}
+
+/* Base physical carbon-fiber push button */
+body.v2.ui-modern .ui-pad {
+  --accent: #f6c416;
+  --accent-dim: rgba(246, 196, 22, 0.32);
+  --bezel: rgba(168, 178, 194, 0.42);
+  background-color: #12151d;
+  background-image:
+    radial-gradient(120% 90% at 32% 18%, rgba(255, 255, 255, 0.19) 0%, rgba(255, 255, 255, 0.04) 36%, rgba(0, 0, 0, 0.56) 82%),
+    var(--carbon-weave);
+  background-size: 100% 100%, 10px 10px;
+  border: 1.5px solid var(--accent);
+  box-shadow:
+    0 0 0 2px #1c212c,
+    0 0 0 3px var(--bezel),
+    0 6px 14px rgba(0, 0, 0, 0.65),
+    0 2px 4px rgba(0, 0, 0, 0.55),
+    inset 0 2px 3px rgba(255, 255, 255, 0.18),
+    inset 0 -5px 10px rgba(0, 0, 0, 0.72);
+  -webkit-backdrop-filter: none;
+  backdrop-filter: none;
+  transition: scale 0.07s ease, translate 0.07s ease, box-shadow 0.12s ease, border-color 0.12s ease, opacity 0.15s ease;
+}
+
+body.v2.ui-modern .ui-pad .ui-icon {
+  display: block;
+  width: 34px;
+  height: 34px;
+  margin: 10px auto 2px;
+  filter: drop-shadow(0 2px 3px rgba(0, 0, 0, 0.75));
+  transition: transform 0.07s ease, filter 0.12s ease;
+}
+
+body.v2.ui-modern .ui-pad__label {
+  font-size: 8.5px;
+  font-weight: 800;
+  letter-spacing: 0.11em;
+  color: rgba(236, 240, 247, 0.88);
+  text-shadow: 0 1px 2px rgba(0, 0, 0, 0.9);
+}
+
+/* Pressed state uses independent scale/translate so pad-layout custom transforms stay intact */
+body.v2.ui-modern .ui-pad.is-pressed {
+  transform: none;
+  scale: 0.94;
+  translate: 0 2px;
+  background-image:
+    radial-gradient(circle at 50% 45%, var(--accent-dim) 0%, rgba(10, 12, 18, 0.76) 76%),
+    var(--carbon-weave);
+  box-shadow:
+    0 0 0 2px #1a1f2a,
+    0 0 0 3px var(--accent),
+    0 2px 6px rgba(0, 0, 0, 0.7),
+    inset 0 4px 10px rgba(0, 0, 0, 0.85),
+    inset 0 0 12px var(--accent-dim);
+}
+
+body.v2.ui-modern .ui-pad.is-pressed .ui-icon {
+  transform: scale(0.95);
+  filter: drop-shadow(0 1px 2px rgba(0, 0, 0, 0.85)) brightness(1.08);
+}
+
+/* Per-control color accents (restricted to thin rim, inner accent and small badge details) */
+body.v2.ui-modern #analog-gas,
+body.v2.ui-modern #btn-up {
+  --accent: #f5bd1f;
+  --accent-dim: rgba(245, 189, 31, 0.34);
+}
+
+body.v2.ui-modern #analog-gas .ui-icon {
+  width: 40px;
+  height: 40px;
+  margin-top: 15px;
+}
+
+body.v2.ui-modern #analog-brake,
+body.v2.ui-modern #btn-down {
+  --accent: #e53935;
+  --accent-dim: rgba(229, 57, 53, 0.34);
+}
+
+body.v2.ui-modern #analog-wheelie,
+body.v2.ui-modern #btn-wheelie {
+  --accent: #ff8c1a;
+  --accent-dim: rgba(255, 140, 26, 0.36);
+  transform: none;
+}
+
+body.v2.ui-modern #analog-wheelie.is-pressed {
+  transform: none;
+  scale: 0.94;
+  translate: 0 2px;
+}
+
+body.v2.ui-modern #analog-wheelie .ui-icon {
+  width: 42px;
+  height: 42px;
+  margin: 7px auto 1px;
+}
+
+body.v2.ui-modern #btn-wheelie .ui-icon {
+  width: 36px;
+  height: 36px;
+  margin: 7px auto 1px;
+}
+
+body.v2.ui-modern #analog-trick {
+  --accent: #a855f7;
+  --accent-dim: rgba(168, 85, 247, 0.38);
+}
+
+body.v2.ui-modern #analog-trick .ui-icon {
+  width: 38px;
+  height: 38px;
+  margin: 7px auto 1px;
+}
+
+body.v2.ui-modern #analog-trick:not(.is-ready) {
+  opacity: 0.56;
+  filter: saturate(0.55);
+}
+
+body.v2.ui-modern #analog-trick.is-ready {
+  border-color: #c084fc;
+  animation: ui-trick-in 0.35s cubic-bezier(0.2, 1.5, 0.4, 1) both;
+  box-shadow:
+    0 0 0 2px #1c212c,
+    0 0 0 3px rgba(192, 132, 252, 0.72),
+    0 0 12px rgba(168, 85, 247, 0.35),
+    0 6px 14px rgba(0, 0, 0, 0.65),
+    inset 0 2px 3px rgba(255, 255, 255, 0.22);
+}
+
+body.v2.ui-modern #analog-boost {
+  --accent: #ff6a1a;
+  --accent-dim: rgba(255, 106, 26, 0.38);
+}
+
+body.v2.ui-modern #analog-boost .ui-icon {
+  width: 30px;
+  height: 30px;
+  margin: 10px auto 2px;
+}
+
+body.v2.ui-modern #analog-boost.is-empty {
+  opacity: 0.48;
+  filter: saturate(0.45);
+}
+
+body.v2.ui-modern #analog-boost.is-ready {
+  animation: none;
+  border-color: #ff8c1a;
+  box-shadow:
+    0 0 0 2px #1c212c,
+    0 0 0 3px rgba(255, 140, 26, 0.78),
+    0 0 10px rgba(255, 106, 26, 0.28),
+    0 6px 14px rgba(0, 0, 0, 0.65),
+    inset 0 2px 3px rgba(255, 255, 255, 0.22);
+}
+
+body.v2.ui-modern #analog-boost.is-active {
+  border-color: #fde047;
+  box-shadow:
+    0 0 0 2px #1c212c,
+    0 0 0 3px #ff8c1a,
+    0 0 14px rgba(255, 140, 26, 0.48),
+    inset 0 2px 6px rgba(255, 140, 26, 0.35);
+}
+
+body.v2.ui-modern .ui-pad__badge {
+  top: -5px;
+  right: -5px;
+  min-width: 21px;
+  height: 21px;
+  padding: 0 5px;
+  border-radius: 999px;
+  border: 1.5px solid #ff8c1a;
+  background: linear-gradient(180deg, #252a36, #0d1017);
+  color: #f6c416;
+  font: 900 11px/18px var(--display);
+  font-variant-numeric: tabular-nums;
+  box-shadow: 0 2px 6px rgba(0, 0, 0, 0.75), inset 0 1px 0 rgba(255, 255, 255, 0.2);
+}
+
+body.v2.ui-modern #analog-action {
+  --accent: #38bdf8;
+  --accent-dim: rgba(56, 189, 248, 0.32);
+}
+
+body.v2.ui-modern #analog-jump {
+  --accent: #38bdf8;
+  --accent-dim: rgba(56, 189, 248, 0.32);
+}
+
+body.v2.ui-modern #analog-run {
+  --accent: #4ade80;
+  --accent-dim: rgba(74, 222, 128, 0.32);
+}
+
+body.v2.ui-modern #analog-jet {
+  --accent: #ff8c1a;
+  --accent-dim: rgba(255, 140, 26, 0.36);
+}
+
+body.v2.ui-modern #btn-left,
+body.v2.ui-modern #btn-right {
+  --accent: #94a3b8;
+  --accent-dim: rgba(148, 163, 184, 0.32);
+}
+
+/* Carbon Fiber Analog Joystick (preserves exact 150x150 footprint & touch center) */
+body.v2.ui-modern #analog-stick-base {
+  background-color: #0e1118;
+  background-image:
+    radial-gradient(circle at 50% 50%, rgba(0, 0, 0, 0.45) 0%, rgba(16, 20, 29, 0.86) 66%, rgba(36, 42, 56, 0.92) 100%),
+    var(--carbon-weave);
+  background-size: 100% 100%, 10px 10px;
+  border: 1.5px solid rgba(246, 196, 22, 0.55);
+  box-shadow:
+    0 0 0 3px #181c26,
+    0 0 0 4.5px rgba(152, 164, 184, 0.38),
+    0 10px 22px rgba(0, 0, 0, 0.65),
+    inset 0 4px 12px rgba(0, 0, 0, 0.8);
+  -webkit-backdrop-filter: none;
+  backdrop-filter: none;
+}
+
+body.v2.ui-modern #analog-stick-base.is-pressed {
+  border-color: #f6c416;
+  box-shadow:
+    0 0 0 3px #181c26,
+    0 0 0 4.5px rgba(246, 196, 22, 0.72),
+    0 10px 22px rgba(0, 0, 0, 0.68),
+    inset 0 4px 14px rgba(0, 0, 0, 0.85);
+}
+
+body.v2.ui-modern .ui-stick__guides {
+  inset: 11px;
+  background:
+    conic-gradient(from -7deg, rgba(246, 196, 22, 0.72) 0 14deg, transparent 14deg 90deg,
+      rgba(203, 213, 225, 0.42) 90deg 104deg, transparent 104deg 180deg,
+      rgba(229, 57, 53, 0.68) 180deg 194deg, transparent 194deg 270deg,
+      rgba(203, 213, 225, 0.42) 270deg 284deg, transparent 284deg);
+}
+
+body.v2.ui-modern #analog-stick-knob {
+  background-color: #161a24;
+  background-image:
+    radial-gradient(circle at 34% 28%, rgba(255, 255, 255, 0.24) 0%, rgba(255, 255, 255, 0.04) 40%, rgba(0, 0, 0, 0.68) 84%),
+    var(--carbon-weave);
+  background-size: 100% 100%, 8px 8px;
+  border: 1.5px solid #f6c416;
+  box-shadow:
+    0 0 0 2px #1c212c,
+    0 0 0 3px rgba(168, 178, 194, 0.45),
+    0 6px 14px rgba(0, 0, 0, 0.75),
+    inset 0 2px 3px rgba(255, 255, 255, 0.22);
+}
+
+/* Carbon Fiber Pause button */
+body.v2.ui-modern #pause-btn {
+  background-color: #131720;
+  background-image:
+    radial-gradient(120% 90% at 32% 20%, rgba(255, 255, 255, 0.2) 0%, rgba(0, 0, 0, 0.56) 80%),
+    var(--carbon-weave);
+  background-size: 100% 100%, 9px 9px;
+  border: 1.5px solid #f6c416;
+  box-shadow:
+    0 0 0 2px #1a1f2a,
+    0 0 0 3px rgba(168, 178, 194, 0.36),
+    0 5px 12px rgba(0, 0, 0, 0.65),
+    inset 0 1px 2px rgba(255, 255, 255, 0.2);
+}
+
+body.v2.ui-modern #pause-btn:active {
+  transform: scale(0.93) translateY(1px);
+  box-shadow:
+    0 0 0 2px #1a1f2a,
+    0 0 0 3px #f6c416,
+    0 2px 6px rgba(0, 0, 0, 0.7),
+    inset 0 3px 8px rgba(0, 0, 0, 0.85);
+}
+
+/* Desktop HUD indicators consistent with Carbon Fiber metal trim */
+body.v2.ui-modern #ui-boost,
+body.v2.ui-modern #ui-trick-key,
+body.v2.ui-modern #ui-prompt {
+  background-color: #10141d;
+  background-image: linear-gradient(180deg, rgba(255, 255, 255, 0.06), rgba(0, 0, 0, 0.38)), var(--carbon-weave);
+  background-size: 100% 100%, 10px 10px;
+  border-color: rgba(148, 163, 184, 0.38);
+  box-shadow: 0 6px 14px rgba(0, 0, 0, 0.55), inset 0 1px 0 rgba(255, 255, 255, 0.14);
+}
+
+body.v2.ui-modern #ui-boost.is-ready {
+  border-color: #ff8c1a;
+  color: #fde047;
+}
+
+body.v2.ui-modern #ui-trick-key.is-ready {
+  animation: none;
+  border-color: #a855f7;
+  box-shadow: 0 0 0 1px rgba(168, 85, 247, 0.45), 0 6px 14px rgba(0, 0, 0, 0.6);
+}

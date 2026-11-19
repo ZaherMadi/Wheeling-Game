@@ -416,12 +416,15 @@ export function characterPortraitSvg(id) {
         : p.headwear === 'cap'
         ? `<path d="M30 33c0-11 8-17 18-17s18 6 18 17H30z" fill="${p.cap || '#181a20'}"/><path d="M28 32h44l-6 4H30z" fill="${p.trim || accent}"/>`
         : '';
+    const chestPrint = id === 'characters:default'
+        ? '<text x="48" y="87" text-anchor="middle" fill="#111318" font-family="system-ui,sans-serif" font-size="14" font-weight="900">51</text>'
+        : '';
     const svg = `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 96 96">
-      <defs><radialGradient id="g" cx="50%" cy="35%" r="65%"><stop offset="0%" stop-color="${accent}" stop-opacity="0.34"/><stop offset="100%" stop-color="#0d0f16"/></radialGradient></defs>
-      <rect width="96" height="96" rx="18" fill="url(#g)"/>
+      <defs><radialGradient id="g" cx="50%" cy="32%" r="68%"><stop offset="0%" stop-color="${accent}" stop-opacity="0.32"/><stop offset="65%" stop-color="#141824"/><stop offset="100%" stop-color="#090b10"/></radialGradient></defs>
+      <rect width="96" height="96" rx="16" fill="url(#g)"/>
       <path d="M16 96c2-22 14-31 32-31s30 9 32 31z" fill="${hoodie}"/>
       <path d="M39 65h18l-2 10H41z" fill="rgba(0,0,0,0.22)"/>
-      ${head}${beard}${eyes}${glasses}${top}
+      ${chestPrint}${head}${beard}${eyes}${glasses}${top}
     </svg>`;
     return `data:image/svg+xml;utf8,${encodeURIComponent(svg)}`;
 }

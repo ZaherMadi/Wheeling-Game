@@ -511,7 +511,7 @@ export function createRealisticVersion({ scene, renderer, camera, mobile, audio,
         onStart: () => { showroomHeld = performance.now(); }
     });
     dragToTurn(document.getElementById('shop-screen'), onShowroomDrag, {
-        accept: (event) => !event.target.closest('.shop-panel, .shop-confirm-dock, button, input'),
+        accept: (event) => !event.target.closest('.shop-panel, .shop-confirm-dock, .shop-m-topbar, .shop-m-panel, .shop-m-dock, button, input, select'),
         onStart: () => { showroomHeld = performance.now(); }
     });
     function showroom(on, panel = '#rider-screen .rider-panel') {

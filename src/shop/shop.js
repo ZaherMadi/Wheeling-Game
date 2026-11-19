@@ -2,6 +2,9 @@
 // #rider-screen visual character gallery (#rider-gallery), confirmation
 // docks near the 3D showroom preview, API gifting/redeeming + unboxing FX.
 import './shop.css';
+import './shop-modern.css';
+import { isModernUI, subscribeUITheme } from '../ui/theme.js';
+import { modernIcon } from '../ui/modern-icons.js';
 import {
     buy, canBuy, CATEGORIES, equip, equipped, gifted, grant,
     item, items, markGifted, owns, points, seen
@@ -44,6 +47,14 @@ function mediaUrlFor(entry, colour) {
     return entry.icon || entry.preview?.cover || entry.preview?.src || '';
 }
 
+const CATEGORY_ICONS = {
+    characters: 'cat-characters',
+    outfits: 'cat-outfits',
+    cars: 'cat-cars',
+    music: 'cat-music',
+    extras: 'cat-extras'
+};
+
 export function installShop(deps) {
     const startBtn = document.getElementById('shop-btn');
     const shopScreen = document.getElementById('shop-screen');
@@ -53,6 +64,7 @@ export function installShop(deps) {
     const backFromRider = document.getElementById('back-from-rider');
 
     let activeCategory = 'characters';
+    let activeFilter = 'all';
     let selectedId = 'characters:default';
     let selectedCarColour = null;
     let pendingConfirmId = null;
@@ -179,38 +191,102 @@ export function installShop(deps) {
         const pts = points();
         const hasBuyable = items().some((entry) => !entry.free && !isItemOwned(entry.id) && canBuy(entry.id));
         startBtn.classList.toggle('has-buyable', hasBuyable);
+        if (isModernUI()) {
+            startBtn.innerHTML = `<span class="shop-start-btn__dot" aria-hidden="true"></span>` +
+                `${modernIcon('crown', 'shop-m-btn__crown')}<span>BOUTIQUE 51</span>` +
+                `<span class="shop-start-btn__pts">${modernIcon('coin', 'shop-m-coin')}${fmt(pts)} pts</span>`;
+            return;
+        }
         startBtn.innerHTML = `<span class="shop-start-btn__dot" aria-hidden="true"></span><span>🛍️ BOUTIQUE</span><span class="shop-start-btn__pts">${fmt(pts)} pts</span>`;
     }
 
-    // --- Shop DOM scaffolding -------------------------------------------------------
-    if (shopScreen) {
-        shopScreen.innerHTML = `
-          <div class="shop-stage-hint">↔ Glisse pour tourner · Clique un article</div>
-          <aside class="shop-confirm-dock" id="shop-confirm-dock"></aside>
-          <section class="shop-panel">
-            <header class="shop-panel__top">
-              <div class="shop-panel__brand">
-                <h2>BOUTIQUE 51</h2>
-              </div>
-              <div style="display:flex;align-items:center;gap:8px;">
-                <div class="shop-panel__wallet" id="shop-wallet">🪙 0 pts</div>
-                <button type="button" class="shop-btn shop-btn--ghost" id="shop-close-btn">✕ FERMER</button>
-              </div>
-            </header>
-            <nav class="shop-tabs" id="shop-tabs" role="tablist"></nav>
-            <div class="shop-grid" id="shop-grid"></div>
-            <form class="shop-code-box" id="shop-code-form" autocomplete="off">
-              <label for="shop-code-input">🎁 Code boutique ou cadeau d’un ami</label>
-              <input id="shop-code-input" type="text" maxlength="24" placeholder="EX : 51-XXXX-XXXX" autocapitalize="characters" spellcheck="false">
-              <button type="submit" class="shop-btn shop-btn--gold" style="flex:0 0 auto;min-width:105px;">Valider</button>
-              <div class="shop-code-msg" id="shop-code-msg" aria-live="polite"></div>
-            </form>
-          </section>`;
+    // --- Shop DOM scaffolding (Classic + Modern) ------------------------------------
+    function mountShopShell() {
+        if (!shopScreen) return;
+        const keepCode = document.getElementById('shop-code-input')?.value || '';
+        const keepMsg = document.getElementById('shop-code-msg')?.textContent || '';
+        if (isModernUI()) {
+            shopScreen.innerHTML = `
+              <header class="shop-m-topbar">
+                <div class="shop-m-brand">
+                  <div class="shop-m-brand__row">
+                    ${modernIcon('crown', 'shop-m-brand__icon')}
+                    <h2>BOUTIQUE <span>51</span></h2>
+                  </div>
+                  <p>Ton univers. Ton style. Ton garage.</p>
+                </div>
+                <div class="shop-m-topbar__right">
+                  <div class="shop-m-wallet" id="shop-wallet">${modernIcon('coin')}<span>0 pts</span></div>
+                  <button type="button" class="shop-m-close" id="shop-close-btn" aria-label="Fermer la boutique">${modernIcon('close')}</button>
+                </div>
+              </header>
+              <aside class="shop-confirm-dock shop-m-dock" id="shop-confirm-dock"></aside>
+              <section class="shop-panel shop-m-panel" id="shop-panel">
+                <nav class="shop-m-tabs" id="shop-tabs" role="tablist"></nav>
+                <div class="shop-m-subhead">
+                  <span class="shop-m-subhead__title" id="shop-subhead-title">Personnages</span>
+                  <select id="shop-filter" class="shop-m-filter" aria-label="Filtrer les articles">
+                    <option value="all">Tous</option>
+                    <option value="owned">Possédés</option>
+                    <option value="available">Disponibles</option>
+                    <option value="locked">Verrouillés</option>
+                  </select>
+                </div>
+                <div class="shop-m-grid" id="shop-grid"></div>
+                <form class="shop-m-code" id="shop-code-form" autocomplete="off">
+                  <label class="shop-m-code__label" for="shop-code-input">${modernIcon('gift')}<span>Code boutique ou cadeau d’un ami</span></label>
+                  <input id="shop-code-input" type="text" maxlength="24" placeholder="EX : 51-XXXX-XXXX" autocapitalize="characters" spellcheck="false">
+                  <button type="submit" class="shop-m-code__submit">Valider ›</button>
+                  <div class="shop-code-msg" id="shop-code-msg" aria-live="polite"></div>
+                </form>
+              </section>`;
+            const filter = document.getElementById('shop-filter');
+            if (filter) filter.value = activeFilter;
+        } else {
+            shopScreen.innerHTML = `
+              <div class="shop-stage-hint">↔ Glisse pour tourner · Clique un article</div>
+              <aside class="shop-confirm-dock" id="shop-confirm-dock"></aside>
+              <section class="shop-panel" id="shop-panel">
+                <header class="shop-panel__top">
+                  <div class="shop-panel__brand">
+                    <h2>BOUTIQUE 51</h2>
+                  </div>
+                  <div style="display:flex;align-items:center;gap:8px;">
+                    <div class="shop-panel__wallet" id="shop-wallet">🪙 0 pts</div>
+                    <button type="button" class="shop-btn shop-btn--ghost" id="shop-close-btn">✕ FERMER</button>
+                  </div>
+                </header>
+                <nav class="shop-tabs" id="shop-tabs" role="tablist"></nav>
+                <div class="shop-grid" id="shop-grid"></div>
+                <form class="shop-code-box" id="shop-code-form" autocomplete="off">
+                  <label for="shop-code-input">🎁 Code boutique ou cadeau d’un ami</label>
+                  <input id="shop-code-input" type="text" maxlength="24" placeholder="EX : 51-XXXX-XXXX" autocapitalize="characters" spellcheck="false">
+                  <button type="submit" class="shop-btn shop-btn--gold" style="flex:0 0 auto;min-width:105px;">Valider</button>
+                  <div class="shop-code-msg" id="shop-code-msg" aria-live="polite"></div>
+                </form>
+              </section>`;
+        }
+        const inputEl = document.getElementById('shop-code-input');
+        const msgEl = document.getElementById('shop-code-msg');
+        if (inputEl && keepCode) inputEl.value = keepCode;
+        if (msgEl && keepMsg) msgEl.textContent = keepMsg;
     }
 
-    const codeInput = document.getElementById('shop-code-input');
-    const codeMsg = document.getElementById('shop-code-msg');
-    codeInput?.addEventListener('keydown', (event) => event.stopPropagation());
+    mountShopShell();
+    shopScreen?.addEventListener('keydown', (event) => {
+        if (event.target instanceof Element && event.target.id === 'shop-code-input') event.stopPropagation();
+    });
+    shopScreen?.addEventListener('change', (event) => {
+        if (event.target instanceof HTMLSelectElement && event.target.id === 'shop-filter') {
+            activeFilter = event.target.value || 'all';
+            renderShop();
+        }
+    });
+    shopScreen?.addEventListener('submit', (event) => {
+        if (event.target instanceof HTMLFormElement && event.target.id === 'shop-code-form') {
+            handleRedeemSubmit(event);
+        }
+    });
 
     async function handleGiftItem(entry) {
         if (!entry || !isItemOwned(entry.id) || entry.giftable === false || gifted(entry.id) || giftSending) return;
@@ -285,6 +361,8 @@ export function installShop(deps) {
 
     async function handleRedeemSubmit(event) {
         event.preventDefault();
+        const codeInput = document.getElementById('shop-code-input');
+        const codeMsg = document.getElementById('shop-code-msg');
         const raw = (codeInput?.value || '').trim().toUpperCase();
         if (!raw) return;
         const setMsg = (txt) => { if (codeMsg) codeMsg.textContent = txt; };
@@ -362,7 +440,15 @@ export function installShop(deps) {
         }
     }
 
-    document.getElementById('shop-code-form')?.addEventListener('submit', handleRedeemSubmit);
+    function matchesFilter(entry) {
+        if (activeFilter === 'all') return true;
+        const owned = isItemOwned(entry.id);
+        const revealed = !entry.secret || seen(entry.id) || owned;
+        if (activeFilter === 'owned') return owned;
+        if (activeFilter === 'available') return !owned && revealed && (!entry.available || entry.available());
+        if (activeFilter === 'locked') return !owned && (!revealed || (entry.available && !entry.available()) || points() < entry.price);
+        return true;
+    }
 
     function renderShopDock() {
         const dock = document.getElementById('shop-confirm-dock');
@@ -454,14 +540,29 @@ export function installShop(deps) {
     function renderShop() {
         updateStartButton();
         if (!shopScreen?.classList.contains('active')) return;
+        const modern = isModernUI();
+        const pts = points();
         const wallet = document.getElementById('shop-wallet');
-        if (wallet) wallet.textContent = `🪙 ${fmt(points())} pts`;
+        if (wallet) {
+            if (modern) wallet.innerHTML = `${modernIcon('coin')}<span>${fmt(pts)} pts</span>`;
+            else wallet.textContent = `🪙 ${fmt(pts)} pts`;
+        }
 
         const tabs = document.getElementById('shop-tabs');
         if (tabs) {
             tabs.innerHTML = CATEGORIES.map((cat) => {
                 const count = items(cat.id).filter((e) => isItemOwned(e.id)).length;
                 const total = items(cat.id).length;
+                if (modern) {
+                    const iconName = CATEGORY_ICONS[cat.id] || 'cat-extras';
+                    return `<button type="button" class="shop-m-tab ${cat.id === activeCategory ? 'is-active' : ''}" data-shop-tab="${cat.id}" role="tab" aria-selected="${cat.id === activeCategory}">
+                      ${modernIcon(iconName, 'shop-m-tab__icon')}
+                      <span class="shop-m-tab__text">
+                        <span class="shop-m-tab__name">${esc(cat.name)}</span>
+                        <span class="shop-m-tab__count">${count} / ${total}</span>
+                      </span>
+                    </button>`;
+                }
                 return `<button type="button" class="shop-tab ${cat.id === activeCategory ? 'is-active' : ''}" data-shop-tab="${cat.id}">
                   <span>${cat.icon}</span><span>${esc(cat.name)}</span><small>${count}/${total}</small>
                 </button>`;
@@ -474,33 +575,79 @@ export function installShop(deps) {
             if (!list.some((e) => e.id === selectedId) && list.length) {
                 selectedId = list[0].id;
             }
-            grid.innerHTML = list.map((entry, idx) => {
-                const owned = isItemOwned(entry.id);
-                const eq = isItemEquipped(entry);
-                const revealed = !entry.secret || seen(entry.id) || owned;
-                const selected = entry.id === selectedId;
-                const media = mediaUrlFor(entry);
-                const status = !revealed
-                    ? 'Inconnu'
-                    : eq
-                        ? 'Porté'
-                        : owned
-                            ? 'À toi'
-                            : entry.free
-                                ? 'Inclus'
-                                : 'Verrouillé';
-                const priceTxt = !revealed ? '??? pts' : entry.free ? 'Gratuit' : `${fmt(entry.price)} pts`;
-                return `<button type="button" class="shop-card ${selected ? 'is-selected' : ''} ${owned ? 'is-owned' : 'is-unowned'} ${eq ? 'is-equipped' : ''} ${!revealed ? 'is-secret' : ''}" data-shop-select="${entry.id}" style="--i:${idx}">
-                  <div class="shop-card__media">
-                    ${!revealed ? '<span class="shop-card__secret-q">???</span>' : `<img class="${!owned && entry.category === 'characters' ? 'is-grayscale' : ''}" src="${media}" alt="">`}
-                  </div>
-                  <div class="shop-card__name">${esc(revealed ? entry.name : 'Modèle secret')}</div>
-                  <div class="shop-card__foot">
-                    <span class="shop-card__price">${esc(priceTxt)}</span>
-                    <span class="shop-card__status">${esc(status)}</span>
-                  </div>
-                </button>`;
-            }).join('');
+            if (modern) {
+                const catMeta = CATEGORIES.find((c) => c.id === activeCategory);
+                const ownedCount = list.filter((e) => isItemOwned(e.id)).length;
+                const subTitle = document.getElementById('shop-subhead-title');
+                if (subTitle) {
+                    const fullName = catMeta?.id === 'characters' ? 'Personnages' : (catMeta?.name || '');
+                    subTitle.innerHTML = `${esc(fullName)} <small>(${ownedCount} / ${list.length})</small>`;
+                }
+                const filtered = list.filter(matchesFilter);
+                grid.innerHTML = filtered.length ? filtered.map((entry, idx) => {
+                    const owned = isItemOwned(entry.id);
+                    const eq = isItemEquipped(entry);
+                    const revealed = !entry.secret || seen(entry.id) || owned;
+                    const selected = entry.id === selectedId;
+                    const media = mediaUrlFor(entry);
+                    const pill = !revealed
+                        ? `${modernIcon('lock')}<span>Secret</span>`
+                        : eq
+                            ? `${modernIcon('check')}<span>Équipé</span>`
+                            : owned
+                                ? `${modernIcon('check')}<span>Possédé</span>`
+                                : entry.free
+                                    ? `${modernIcon('check')}<span>Gratuit</span>`
+                                    : `${modernIcon('lock')}<span>Verrouillé</span>`;
+                    const desc = !revealed
+                        ? 'Croise ce modèle en mode libre pour révéler son prix.'
+                        : (entry.tagline || '');
+                    const foot = !revealed
+                        ? `${modernIcon('lock')}<span>??? pts</span>`
+                        : entry.free
+                            ? '<span>Gratuit</span>'
+                            : `${modernIcon('coin')}<span>${fmt(entry.price)} pts</span>`;
+                    return `<button type="button" class="shop-m-card ${selected ? 'is-selected' : ''} ${owned ? 'is-owned' : 'is-unowned'} ${eq ? 'is-equipped' : ''} ${!revealed ? 'is-secret' : ''}" data-shop-select="${entry.id}" style="--i:${idx}">
+                      <div class="shop-m-card__media">
+                        ${!revealed ? '<span class="shop-card__secret-q">???</span>' : `<img class="${!owned && entry.category === 'characters' ? 'is-grayscale' : ''}" src="${media}" alt="">`}
+                        <span class="shop-m-card__pill">${pill}</span>
+                      </div>
+                      <div class="shop-m-card__body">
+                        <span class="shop-m-card__name">${esc(revealed ? entry.name : 'Modèle secret')}</span>
+                        <p class="shop-m-card__desc">${esc(desc)}</p>
+                      </div>
+                      <div class="shop-m-card__foot ${entry.free ? 'is-free' : ''}">${foot}</div>
+                    </button>`;
+                }).join('') : '<div class="shop-m-empty">Aucun article ne correspond à ce filtre.</div>';
+            } else {
+                grid.innerHTML = list.map((entry, idx) => {
+                    const owned = isItemOwned(entry.id);
+                    const eq = isItemEquipped(entry);
+                    const revealed = !entry.secret || seen(entry.id) || owned;
+                    const selected = entry.id === selectedId;
+                    const media = mediaUrlFor(entry);
+                    const status = !revealed
+                        ? 'Inconnu'
+                        : eq
+                            ? 'Porté'
+                            : owned
+                                ? 'À toi'
+                                : entry.free
+                                    ? 'Inclus'
+                                    : 'Verrouillé';
+                    const priceTxt = !revealed ? '??? pts' : entry.free ? 'Gratuit' : `${fmt(entry.price)} pts`;
+                    return `<button type="button" class="shop-card ${selected ? 'is-selected' : ''} ${owned ? 'is-owned' : 'is-unowned'} ${eq ? 'is-equipped' : ''} ${!revealed ? 'is-secret' : ''}" data-shop-select="${entry.id}" style="--i:${idx}">
+                      <div class="shop-card__media">
+                        ${!revealed ? '<span class="shop-card__secret-q">???</span>' : `<img class="${!owned && entry.category === 'characters' ? 'is-grayscale' : ''}" src="${media}" alt="">`}
+                      </div>
+                      <div class="shop-card__name">${esc(revealed ? entry.name : 'Modèle secret')}</div>
+                      <div class="shop-card__foot">
+                        <span class="shop-card__price">${esc(priceTxt)}</span>
+                        <span class="shop-card__status">${esc(status)}</span>
+                      </div>
+                    </button>`;
+                }).join('');
+            }
         }
 
         renderShopDock();
@@ -516,6 +663,9 @@ export function installShop(deps) {
         const tab = target.closest('[data-shop-tab]');
         if (tab) {
             activeCategory = tab.dataset.shopTab;
+            activeFilter = 'all';
+            const filter = document.getElementById('shop-filter');
+            if (filter) filter.value = 'all';
             pendingConfirmId = null;
             const first = items(activeCategory)[0];
             if (first) selectShopItem(first.id);
@@ -585,6 +735,9 @@ export function installShop(deps) {
         if (!shopScreen) return;
         returnScreen = backTarget || startScreen;
         activeCategory = initialCategory;
+        activeFilter = 'all';
+        const filter = document.getElementById('shop-filter');
+        if (filter) filter.value = 'all';
         const list = items(activeCategory);
         const eqId = activeCategory === 'characters' ? equippedCharacterId() : list[0]?.id;
         selectedId = list.some((e) => e.id === eqId) ? eqId : (list[0]?.id || 'characters:default');
@@ -776,6 +929,10 @@ export function installShop(deps) {
         refreshAll();
     });
     deps.musicPlayer?.subscribe?.(() => renderShopDock());
+    subscribeUITheme(() => {
+        mountShopShell();
+        refreshAll();
+    });
 
     document.addEventListener('keydown', (event) => {
         if (event.key !== 'Escape') return;
