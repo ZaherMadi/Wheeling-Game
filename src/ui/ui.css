@@ -3025,51 +3025,121 @@ body.v2:has(.screen.active) #ui-police-warn {
   }
 }
 
-/* Free roam: tow truck delivery button & vehicle chooser modal */
+/* Free roam: tow truck delivery capsule & vehicle chooser modal */
 body.v2 #ui-tow-btn {
-  position: absolute;
+  position: fixed;
   left: calc(16px + var(--safe-l));
   bottom: calc(144px + var(--safe-b));
-  z-index: 25;
+  z-index: 60;
+  display: inline-flex !important;
+  align-items: center;
+  gap: 9px;
+  width: auto !important;
+  min-width: 0 !important;
+  height: auto !important;
+  margin: 0 !important;
+  padding: 6px 14px 6px 8px !important;
+  border-radius: 999px !important;
+  border: 1.5px solid rgba(246, 196, 22, 0.72) !important;
+  background:
+    linear-gradient(180deg, rgba(255, 255, 255, 0.14) 0%, rgba(255, 255, 255, 0.02) 44%, rgba(0, 0, 0, 0.4) 100%),
+    repeating-linear-gradient(135deg, rgba(255, 255, 255, 0.03) 0 2px, rgba(0, 0, 0, 0.36) 2px 4px),
+    linear-gradient(180deg, #1a1e28 0%, #0b0d13 100%) !important;
+  color: #f8fafc;
+  font-family: var(--display);
+  font-style: italic;
+  font-size: 12.5px !important;
+  letter-spacing: 0.04em;
+  line-height: 1.1;
+  text-transform: uppercase;
+  cursor: pointer;
+  pointer-events: auto !important;
+  transform: none !important;
+  box-shadow:
+    0 10px 24px rgba(0, 0, 0, 0.68),
+    0 0 14px rgba(246, 196, 22, 0.22),
+    inset 0 1px 0 rgba(255, 245, 194, 0.45),
+    inset 0 -1px 0 rgba(212, 148, 22, 0.32) !important;
+  touch-action: manipulation;
+  -webkit-tap-highlight-color: transparent;
+  transition: transform 0.14s ease, border-color 0.16s ease, box-shadow 0.16s ease;
+}
+
+body:not(.v2) #ui-tow-btn,
+body.v2:not(.ui-roam) #ui-tow-btn,
+body.v2 #ui-tow-btn[hidden],
+body.v2:has(.screen.active) #ui-tow-btn {
+  display: none !important;
+}
+
+body.v2 #ui-tow-btn:hover {
+  transform: translateY(-1px) !important;
+  border-color: #ffe27d !important;
+  box-shadow: 0 12px 26px rgba(0, 0, 0, 0.72), 0 0 20px rgba(246, 196, 22, 0.36), inset 0 1px 0 rgba(255, 255, 255, 0.55) !important;
+}
+
+body.v2 #ui-tow-btn:active {
+  transform: scale(0.96) !important;
+}
+
+body.v2 .ui-tow-btn__icon {
   display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 30px;
+  height: 30px;
+  border-radius: 50%;
+  flex-shrink: 0;
+  border: 1px solid rgba(246, 196, 22, 0.55);
+  background: radial-gradient(circle at 35% 30%, rgba(246, 196, 22, 0.2), rgba(8, 10, 15, 0.92));
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.2);
+  pointer-events: none;
+}
+
+body.v2 .ui-tow-btn__svg {
+  width: 20px;
+  height: 18px;
+  display: block;
+}
+
+body.v2 .ui-tow-btn__text {
+  display: flex;
   flex-direction: column;
   align-items: flex-start;
   gap: 2px;
-  padding: 9px 15px;
-  border-radius: 10px;
-  border: 1px solid rgba(246, 196, 22, 0.55);
-  background: linear-gradient(180deg, rgba(32, 36, 44, 0.92), rgba(14, 16, 22, 0.94));
-  color: var(--text);
-  font-family: var(--display);
-  font-size: 13px;
-  letter-spacing: 0.04em;
-  cursor: pointer;
-  transform: skewX(var(--slant));
-  box-shadow: 0 8px 22px rgba(0, 0, 0, 0.5);
-  touch-action: manipulation;
-}
-body.v2 #ui-tow-btn[hidden],
-body.v2:has(.screen.active) #ui-tow-btn {
-  display: none;
-}
-body.v2 #ui-tow-btn span,
-body.v2 #ui-tow-btn small {
-  transform: skewX(calc(var(--slant) * -1));
+  min-width: 0;
   pointer-events: none;
 }
-body.v2 #ui-tow-btn small {
-  font-family: Roboto, sans-serif;
-  font-size: 11px;
-  color: var(--y);
-  font-weight: 700;
+
+body.v2 .ui-tow-btn__title {
+  color: #ffffff;
+  font-weight: 900;
+  font-size: 12px;
+  line-height: 1;
+  white-space: nowrap;
+  text-shadow: 0 1px 2px rgba(0, 0, 0, 0.85);
 }
+
+body.v2 .ui-tow-btn__sub {
+  font-family: Roboto, system-ui, sans-serif;
+  font-style: normal;
+  font-size: 10.5px;
+  color: #facc15;
+  font-weight: 700;
+  letter-spacing: 0.02em;
+  line-height: 1.05;
+  white-space: nowrap;
+}
+
 body.v2 #ui-tow-btn.is-active {
-  border-color: #ff9c2a;
-  background: linear-gradient(180deg, rgba(160, 75, 10, 0.92), rgba(75, 32, 4, 0.95));
+  border-color: #ff9c2a !important;
+  background:
+    linear-gradient(180deg, rgba(255, 255, 255, 0.16) 0%, rgba(160, 75, 10, 0.88) 55%, rgba(75, 32, 4, 0.95) 100%) !important;
   animation: ui-tow-pulse 1s ease-in-out infinite;
 }
+
 @keyframes ui-tow-pulse {
-  50% { box-shadow: 0 0 24px rgba(255, 166, 26, 0.65); }
+  50% { box-shadow: 0 0 24px rgba(255, 166, 26, 0.72), inset 0 1px 0 rgba(255, 240, 200, 0.55); }
 }
 
 #ui-tow-modal {
@@ -3089,12 +3159,14 @@ body.v2 #ui-tow-btn.is-active {
   width: min(400px, 94vw);
   max-height: 80vh;
   overflow-y: auto;
-  background: #141821;
-  border: 1px solid rgba(246, 196, 22, 0.45);
-  border-radius: 16px;
+  background:
+    repeating-linear-gradient(135deg, rgba(255, 255, 255, 0.025) 0 2px, rgba(0, 0, 0, 0.25) 2px 4px),
+    #131720;
+  border: 1.5px solid rgba(246, 196, 22, 0.55);
+  border-radius: 18px;
   padding: 18px;
   color: #f4f5f7;
-  box-shadow: 0 22px 55px rgba(0, 0, 0, 0.65);
+  box-shadow: 0 22px 55px rgba(0, 0, 0, 0.75), inset 0 1px 0 rgba(255, 255, 255, 0.16);
 }
 .ui-tow-card h3 {
   margin: 0 0 12px;
@@ -3113,15 +3185,17 @@ body.v2 #ui-tow-btn.is-active {
   justify-content: space-between;
   gap: 10px;
   width: 100%;
-  padding: 11px 14px;
-  border-radius: 11px;
-  border: 1px solid rgba(255, 255, 255, 0.12);
+  padding: 11px 14px !important;
+  margin: 0 !important;
+  border-radius: 12px;
+  border: 1px solid rgba(255, 255, 255, 0.14);
   background: #1c222e;
   color: #fff;
   font-family: Roboto, sans-serif;
-  font-size: 14px;
+  font-size: 14px !important;
   font-weight: 700;
   cursor: pointer;
+  touch-action: manipulation;
 }
 .ui-tow-opt:hover {
   border-color: #f6c416;
@@ -3133,20 +3207,107 @@ body.v2 #ui-tow-btn.is-active {
   font-size: 13px;
 }
 .ui-tow-cancel {
-  margin-top: 12px;
+  margin-top: 12px !important;
   width: 100%;
-  padding: 10px;
+  padding: 10px !important;
   border-radius: 10px;
   border: 1px solid rgba(255, 255, 255, 0.16);
   background: transparent;
   color: #a3a8b3;
   font-weight: 600;
   cursor: pointer;
+  touch-action: manipulation;
 }
 @media (pointer: coarse) {
   body.v2 #ui-tow-btn {
-    left: calc(14px + var(--safe-l));
+    left: calc(66px + var(--safe-l));
+    top: calc(10px + var(--safe-t));
     bottom: auto;
-    top: calc(74px + var(--safe-t));
+    padding: 5px 12px 5px 6px !important;
+    gap: 7px;
+  }
+
+  body.v2 .ui-tow-btn__icon {
+    width: 26px;
+    height: 26px;
+  }
+
+  body.v2 .ui-tow-btn__svg {
+    width: 17px;
+    height: 15px;
+  }
+
+  body.v2 .ui-tow-btn__title {
+    font-size: 11px;
+  }
+
+  body.v2 .ui-tow-btn__sub {
+    font-size: 9.5px;
+  }
+}
+
+@media (pointer: coarse) and (orientation: portrait) {
+  body.v2 #ui-tow-btn {
+    left: calc(14px + var(--safe-l));
+    top: calc(70px + var(--safe-t));
+  }
+
+  /* When Jetpack pad is visible in top-left (top:74px, h:66px), dock below it. */
+  body.v2:has(#analog-jet:not([hidden])) #ui-tow-btn {
+    top: calc(148px + var(--safe-t));
+  }
+}
+
+/* Competitive mode: Wheelie +20% (74 -> 89px), Gas -30% (92 -> 64px) */
+body.v2.ui-competitive #analog-wheelie {
+  width: 89px;
+  height: 89px;
+  right: calc(26px + var(--safe-r)) !important;
+  bottom: calc(16px + var(--safe-b)) !important;
+}
+
+body.v2.ui-competitive #analog-wheelie .ui-icon {
+  width: 34px;
+  height: 34px;
+  margin-top: 16px;
+}
+
+body.v2.ui-competitive #analog-gas {
+  width: 64px;
+  height: 64px;
+  right: calc(36px + var(--safe-r)) !important;
+  bottom: calc(118px + var(--safe-b)) !important;
+}
+
+body.v2.ui-competitive #analog-gas .ui-icon {
+  width: 27px;
+  height: 27px;
+  margin-top: 10px;
+}
+
+body.v2.ui-competitive #arrow-controls #btn-wheelie {
+  width: 79px;
+  height: 79px;
+  right: calc(24px + var(--safe-r));
+  bottom: calc(24px + var(--safe-b));
+}
+
+body.v2.ui-competitive #arrow-controls #btn-up {
+  width: 46px;
+  height: 46px;
+  right: calc(116px + var(--safe-r));
+  bottom: calc(116px + var(--safe-b));
+}
+
+@media (max-width: 640px) {
+  body.v2 #player-nickname {
+    top: calc(10px + var(--safe-t)) !important;
+    right: calc(10px + var(--safe-r)) !important;
+    max-width: calc(100vw - 224px - var(--safe-l) - var(--safe-r)) !important;
+    padding: 5px 8px !important;
+    font-size: 11px !important;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
   }
 }

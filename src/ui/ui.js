@@ -569,24 +569,35 @@ function installPrompt() {
         }
     });
 
-    // Tow truck ("Livraison moto") button + owned vehicle choice sheet.
+    // Tow truck ("Se faire livrer") button + owned vehicle choice sheet.
     const towBtn = document.createElement('button');
     towBtn.type = 'button';
     towBtn.id = 'ui-tow-btn';
     towBtn.hidden = true;
-    document.getElementById('ui-layer')?.append(towBtn);
+    towBtn.setAttribute('aria-label', 'Se faire livrer un véhicule');
+    document.body.append(towBtn);
 
     const towModal = document.createElement('div');
     towModal.id = 'ui-tow-modal';
     towModal.hidden = true;
-    towModal.innerHTML = '<div class="ui-tow-card"><h3>🚚 Quel véhicule livrer ?</h3><div class="ui-tow-list"></div><button type="button" class="ui-tow-cancel">Annuler</button></div>';
+    towModal.innerHTML = '<div class="ui-tow-card"><h3>Quel véhicule livrer ?</h3><div class="ui-tow-list"></div><button type="button" class="ui-tow-cancel">Annuler</button></div>';
     document.body.append(towModal);
 
-    towBtn.addEventListener('pointerdown', (event) => {
-        event.preventDefault();
-        event.stopPropagation();
+    let lastTowTapAt = 0;
+    const triggerTowRequest = (event) => {
+        if (towBtn.hidden) return;
+        const now = performance.now();
+        // Deduplicate paired pointerdown + click on mobile touch screens.
+        if (now - lastTowTapAt < 320) return;
+        lastTowTapAt = now;
+        if (event) {
+            event.preventDefault();
+            event.stopPropagation();
+        }
         document.dispatchEvent(new CustomEvent('wheelie:tow-request'));
-    });
+    };
+    towBtn.addEventListener('pointerdown', triggerTowRequest, { passive: false });
+    towBtn.addEventListener('click', triggerTowRequest);
     towModal.addEventListener('click', (event) => {
         const optBtn = event.target.closest('[data-tow-kind]');
         if (optBtn) {
@@ -609,11 +620,18 @@ function installPrompt() {
         }
         towBtn.classList.toggle('is-active', !!d.active);
         const firstCost = d.options?.[0]?.cost;
-        towBtn.innerHTML = d.active
-            ? '<span>🚚 DÉPANNEUSE EN ROUTE</span><small>Appuie pour accélérer &gt;&gt;</small>'
+        const title = d.active ? 'DÉPANNEUSE' : 'SE FAIRE LIVRER';
+        const sub = d.active
+            ? 'En route · Accélérer >>'
             : d.options?.length > 1
-                ? '<span>🚚 Livraison moto</span><small>Moto ou voiture achetée</small>'
-                : `<span>🚚 Livraison moto</span><small>${firstCost ? `${firstCost} pts` : ''}</small>`;
+                ? 'Moto ou voiture'
+                : firstCost ? `${Number(firstCost).toLocaleString('fr-FR')} pts` : 'Gratuit';
+        towBtn.innerHTML =
+            `<span class="ui-tow-btn__icon" aria-hidden="true">${modernIcon('tow', 'ui-tow-btn__svg')}</span>` +
+            `<span class="ui-tow-btn__text">` +
+                `<span class="ui-tow-btn__title">${title}</span>` +
+                `<small class="ui-tow-btn__sub">${sub}</small>` +
+            `</span>`;
     });
     document.addEventListener('wheelie:tow-choose', (event) => {
         const options = event.detail?.options || [];

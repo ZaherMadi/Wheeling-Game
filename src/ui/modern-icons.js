@@ -39,6 +39,24 @@ const GRADIENTS = `
       <stop offset="55%" stop-color="#94a3b8"/>
       <stop offset="100%" stop-color="#475569"/>
     </linearGradient>
+    <linearGradient id="ui-m-gold-rich" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0%" stop-color="#fff4b8"/>
+      <stop offset="28%" stop-color="#fbcf4a"/>
+      <stop offset="68%" stop-color="#d49312"/>
+      <stop offset="100%" stop-color="#7c4d06"/>
+    </linearGradient>
+    <linearGradient id="ui-m-obsidian" x1="0" y1="0" x2="0.8" y2="1">
+      <stop offset="0%" stop-color="#272c38"/>
+      <stop offset="55%" stop-color="#11141c"/>
+      <stop offset="100%" stop-color="#05070b"/>
+    </linearGradient>
+    <linearGradient id="ui-m-silver-coin" x1="0.15" y1="0.1" x2="0.85" y2="0.95">
+      <stop offset="0%" stop-color="#ffffff"/>
+      <stop offset="28%" stop-color="#e2e8f0"/>
+      <stop offset="62%" stop-color="#94a3b8"/>
+      <stop offset="86%" stop-color="#64748b"/>
+      <stop offset="100%" stop-color="#cbd5e1"/>
+    </linearGradient>
   </defs>
 `;
 
@@ -146,13 +164,47 @@ const MODERN_ICONS = {
           <path d="M7.2 17.5 8.6 22l1.4-4.5M14 17.5 15.4 22l1.4-4.5" fill="url(#ui-m-orange)"/>`
     },
     // Boutique 51 UI icons
+    basket: {
+        box: '0 0 40 32',
+        body: '<ellipse cx="20" cy="27.2" rx="12.5" ry="2.2" fill="#000000" fill-opacity="0.52"/>' +
+            '<path d="M8.5 11.2h23l-3.1 13.8a1.4 1.4 0 0 1-1.36 1.08H12.96a1.4 1.4 0 0 1-1.36-1.08z" fill="#090b10"/>' +
+            '<path d="M12.2 12.6C13.6 5.2 26.4 5.2 27.8 12.6" fill="none" stroke="url(#ui-m-gold-rich)" stroke-width="2.1" stroke-linecap="round"/>' +
+            '<path d="M13.5 11.8C15.1 6.4 24.9 6.4 26.5 11.8" fill="none" stroke="#fff7cf" stroke-opacity="0.55" stroke-width="0.7" stroke-linecap="round"/>' +
+            '<path d="M6.4 12.2L22.8 13.8l-1.9 11.9-11.9-1.7z" fill="url(#ui-m-obsidian)" stroke="url(#ui-m-gold-rich)" stroke-width="1.25" stroke-linejoin="round"/>' +
+            '<path d="M22.8 13.8L33.4 11.4l-2.3 11.2-10.2 3.1z" fill="#080a0f" stroke="url(#ui-m-gold-rich)" stroke-width="1.2" stroke-linejoin="round"/>' +
+            '<path d="M6.4 12.2L17.4 10l16 1.4-10.6 2.4z" fill="#131722" fill-opacity="0.88" stroke="url(#ui-m-gold-rich)" stroke-width="1.3" stroke-linejoin="round"/>' +
+            '<path d="M7.3 15.8l14.9 1.3M8 19.3l13.6 1.2M8.7 22.6l12.4 1M10.4 12.7l1.9 11.6M14.3 13.1l1.4 11.7M18.4 13.5l0.9 11.8" fill="none" stroke="url(#ui-m-gold-rich)" stroke-width="0.85" stroke-opacity="0.92"/>' +
+            '<path d="M22.4 16.9l10.2-2.2M21.9 20.1l9.8-2.3M21.4 23.1l9.4-2.5M26.2 13.1l-1.5 11.1M29.8 12.3l-1.9 10.9" fill="none" stroke="url(#ui-m-gold-rich)" stroke-width="0.82" stroke-opacity="0.8"/>' +
+            '<path d="M12.9 12.4C14.8 4.4 25.4 4.4 27.3 12.4" fill="none" stroke="#181205" stroke-opacity="0.35" stroke-width="3.2" stroke-linecap="round"/>' +
+            '<path d="M12.9 12.4C14.8 4.4 25.4 4.4 27.3 12.4" fill="none" stroke="url(#ui-m-gold-rich)" stroke-width="1.8" stroke-linecap="round"/>' +
+            '<path d="M14.4 10.2c2.1-3.3 9.1-3.3 11.2 0" fill="none" stroke="#fff9d9" stroke-opacity="0.72" stroke-width="0.65" stroke-linecap="round"/>'
+    },
     crown: {
         box: '0 0 24 24',
         body: '<path d="M3 18h18l-1.5-9.5-4.8 4-2.7-6-2.7 6-4.8-4z" fill="url(#ui-m-gold)" stroke="#1a1204" stroke-width="1" stroke-linejoin="round"/><rect x="4" y="19.2" width="16" height="2" rx="1" fill="url(#ui-m-gold)"/>'
     },
     coin: {
+        box: '0 0 26 26',
+        body: '<circle cx="13" cy="13.5" r="10.4" fill="#05070b" fill-opacity="0.55"/>' +
+            '<circle cx="13" cy="13" r="10.4" fill="url(#ui-m-silver-coin)" stroke="#334155" stroke-width="0.95"/>' +
+            '<circle cx="13" cy="13" r="8.2" fill="none" stroke="#475569" stroke-width="0.85"/>' +
+            '<circle cx="13" cy="13" r="7.5" fill="none" stroke="#ffffff" stroke-opacity="0.6" stroke-width="0.65"/>' +
+            '<path d="M6.2 7.8A8.6 8.6 0 0 1 18.8 6.8" fill="none" stroke="#ffffff" stroke-opacity="0.78" stroke-width="1.15" stroke-linecap="round"/>' +
+            '<text x="12.7" y="16.5" text-anchor="middle" font-family="system-ui,sans-serif" font-style="italic" font-size="9.4" font-weight="950" letter-spacing="-0.4" fill="#f8fafc" fill-opacity="0.65">51</text>' +
+            '<text x="12.3" y="16" text-anchor="middle" font-family="system-ui,sans-serif" font-style="italic" font-size="9.4" font-weight="950" letter-spacing="-0.4" fill="#1e293b">51</text>'
+    },
+    tow: {
+        box: '0 0 28 24',
+        body: '<path d="M2.5 16.5h15.5l2.5-6.5h3.8a1.5 1.5 0 0 1 1.4 1v5.5h-2.2" fill="none" stroke="url(#ui-m-gold-rich)" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"/>' +
+            '<path d="M2 16.5h23.5v2H2z" fill="url(#ui-m-gold-rich)" stroke="#1a1204" stroke-width="0.55"/>' +
+            '<path d="M5 14l5.8-6.2h5.2" fill="none" stroke="url(#ui-m-chrome)" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"/>' +
+            '<path d="M16 7.8c0 2-1.4 3.4-1.4 4.2a1.4 1.4 0 1 0 2.8 0" fill="none" stroke="url(#ui-m-gold-rich)" stroke-width="1.55" stroke-linecap="round"/>' +
+            '<circle cx="7" cy="19.2" r="2.6" fill="#0f172a" stroke="url(#ui-m-chrome)" stroke-width="1.45"/>' +
+            '<circle cx="21" cy="19.2" r="2.6" fill="#0f172a" stroke="url(#ui-m-chrome)" stroke-width="1.45"/>'
+    },
+    fastfwd: {
         box: '0 0 24 24',
-        body: '<circle cx="12" cy="12" r="9.5" fill="url(#ui-m-silver)" stroke="#1e293b" stroke-width="1.1"/><circle cx="12" cy="12" r="6.8" fill="none" stroke="#ffffff" stroke-opacity="0.4" stroke-width="1"/><text x="12" y="15.2" text-anchor="middle" font-family="system-ui,sans-serif" font-size="8.5" font-weight="900" fill="#0f172a">51</text>'
+        body: '<path d="M4.5 6.2L11.6 12l-7.1 5.8zM12.4 6.2L19.5 12l-7.1 5.8z" fill="url(#ui-m-gold-rich)" stroke="#ffffff" stroke-opacity="0.45" stroke-width="0.65" stroke-linejoin="round"/>'
     },
     'cat-characters': {
         box: '0 0 24 24',

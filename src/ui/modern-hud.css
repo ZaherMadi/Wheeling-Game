@@ -308,3 +308,30 @@ body.v2.ui-modern #ui-trick-key.is-ready {
   border-color: #a855f7;
   box-shadow: 0 0 0 1px rgba(168, 85, 247, 0.45), 0 6px 14px rgba(0, 0, 0, 0.6);
 }
+
+/* Competitive mode HUD pad sizing in Modern theme */
+body.v2.ui-modern.ui-competitive #analog-wheelie {
+  width: 89px;
+  height: 89px;
+  right: calc(26px + var(--safe-r)) !important;
+  bottom: calc(16px + var(--safe-b)) !important;
+}
+
+body.v2.ui-modern.ui-competitive #analog-wheelie .ui-icon {
+  width: 34px;
+  height: 34px;
+  margin-top: 16px;
+}
+
+body.v2.ui-modern.ui-competitive #analog-gas {
+  width: 64px;
+  height: 64px;
+  right: calc(36px + var(--safe-r)) !important;
+  bottom: calc(118px + var(--safe-b)) !important;
+}
+
+body.v2.ui-modern.ui-competitive #analog-gas .ui-icon {
+  width: 27px;
+  height: 27px;
+  margin-top: 10px;
+}

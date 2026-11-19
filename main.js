@@ -2240,6 +2240,7 @@ async function startGame() {
         setRankingStatus('');
         completedRankedRun = null;
         state.isPlaying = true;
+        document.body.classList.toggle('ui-competitive', GAME_SETTINGS.gameMode === 'linear' && !state.loveEvent);
         runStats.counted = false;
         runStats.top = 0;
         if (!state.loveEvent) bumpStat(GAME_SETTINGS.gameMode === 'free' ? 'freeSessions' : 'runs');
@@ -2392,6 +2393,7 @@ function quitToMenu() {
     showShields();
     state.userPaused = false;
     state.isPlaying = false;
+    document.body.classList.remove('ui-competitive');
     crashSequence++;
     endCinematic('crash');
     endCinematic('police-linear');

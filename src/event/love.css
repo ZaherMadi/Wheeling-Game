@@ -69,95 +69,271 @@ body.love-panel :is(#score-container, #speedometer, #pause-btn, #angle-multiplie
 }
 
 .love-bar {
+  --love-pct: 40;
   position: absolute;
   top: max(12px, env(safe-area-inset-top));
   left: 50%;
   transform: translateX(-50%);
   display: flex;
   align-items: center;
-  gap: 8px;
-  padding: 7px 12px 7px 9px;
+  gap: 10px;
+  padding: 6px 15px 6px 8px;
   border-radius: 999px;
-  background: linear-gradient(180deg, rgba(26, 6, 8, 0.86), rgba(5, 5, 5, 0.82));
-  border: 1px solid rgba(255, 31, 61, 0.45);
-  box-shadow: 0 0 24px rgba(201, 0, 37, 0.35), 0 10px 26px rgba(0, 0, 0, 0.5);
+  border: 1.4px solid rgba(255, 62, 92, 0.72);
+  background:
+    linear-gradient(180deg, rgba(255, 255, 255, 0.13) 0%, rgba(255, 255, 255, 0.02) 38%, rgba(0, 0, 0, 0.35) 100%),
+    repeating-linear-gradient(135deg, rgba(255, 255, 255, 0.03) 0 2px, rgba(0, 0, 0, 0.34) 2px 4px),
+    repeating-linear-gradient(45deg, rgba(255, 255, 255, 0.02) 0 2px, transparent 2px 4px),
+    linear-gradient(180deg, #1d1014 0%, #0d0709 55%, #070406 100%);
+  box-shadow:
+    0 12px 28px rgba(0, 0, 0, 0.68),
+    0 0 20px rgba(215, 16, 48, 0.32),
+    inset 0 1px 1px rgba(255, 224, 232, 0.42),
+    inset 0 -1px 1px rgba(255, 42, 74, 0.34);
   transition: border-color 0.6s, box-shadow 0.6s;
+  isolation: isolate;
+}
+
+.love-bar__rim {
+  position: absolute;
+  inset: -1px;
+  border-radius: 999px;
+  pointer-events: none;
+  background:
+    radial-gradient(50% 7px at 36% 0%, rgba(255, 220, 228, 0.9), rgba(255, 45, 78, 0.28) 55%, transparent 100%),
+    radial-gradient(44% 7px at 66% 100%, rgba(255, 180, 195, 0.7), rgba(255, 45, 78, 0.22) 55%, transparent 100%);
+  mix-blend-mode: screen;
 }
 
 .love-bar__heart {
-  font-size: 20px;
-  color: var(--lf-glow);
-  text-shadow: 0 0 12px rgba(255, 31, 61, 0.8);
-  animation: love-beat 1.1s ease-in-out infinite;
-}
-
-.love-bar__cells {
-  display: grid;
-  grid-template-columns: repeat(20, 1fr);
-  gap: 2px;
-  width: min(52vw, 280px);
-}
-
-.love-bar__cells i {
   position: relative;
-  height: 12px;
-  border-radius: 3px;
-  background: rgba(244, 237, 233, 0.12);
-  transition: background 0.35s, box-shadow 0.35s;
-}
-
-.love-bar__cells i.is-full {
-  background: linear-gradient(180deg, #ff5a74, var(--lf-red));
-  box-shadow: 0 0 6px rgba(255, 31, 61, 0.65);
-}
-
-/* The 12th: where the sun comes out. */
-.love-bar__cells i.is-sun::after {
-  content: '';
-  position: absolute;
-  left: 50%;
-  top: -6px;
-  bottom: -6px;
-  width: 2px;
+  z-index: 2;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 34px;
+  height: 31px;
   margin-left: 1px;
-  border-radius: 2px;
-  background: var(--lf-gold);
-  box-shadow: 0 0 6px rgba(201, 164, 92, 0.9);
+  flex-shrink: 0;
+  filter: drop-shadow(0 0 8px rgba(255, 36, 72, 0.65)) drop-shadow(0 3px 6px rgba(0, 0, 0, 0.7));
+  animation: love-beat 1.25s ease-in-out infinite;
+  transform-origin: center;
+}
+
+.love-heart-svg {
+  width: 100%;
+  height: 100%;
+  display: block;
+}
+
+.love-bar__gauge {
+  position: relative;
+  display: flex;
+  align-items: center;
+  overflow: visible;
+}
+
+.love-bar__tank {
+  position: relative;
+  width: min(50vw, 290px);
+  height: 22px;
+  border-radius: 999px;
+  overflow: hidden;
+  border: 1px solid rgba(255, 196, 206, 0.48);
+  background: linear-gradient(180deg, rgba(16, 8, 12, 0.95) 0%, rgba(6, 3, 5, 0.98) 60%, rgba(18, 8, 11, 0.94) 100%);
+  box-shadow:
+    inset 0 2px 6px rgba(0, 0, 0, 0.9),
+    inset 0 1px 0 rgba(255, 255, 255, 0.3),
+    inset 0 -1px 0 rgba(255, 190, 205, 0.24),
+    0 2px 8px rgba(0, 0, 0, 0.55);
+}
+
+.love-tank__glass-bg {
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  background:
+    radial-gradient(85% 45% at 50% 95%, rgba(255, 36, 68, 0.14), transparent 72%),
+    linear-gradient(180deg, rgba(255, 255, 255, 0.08) 0%, transparent 40%, rgba(255, 255, 255, 0.04) 100%);
+}
+
+.love-tank__liquid {
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  left: 0;
+  width: calc(var(--love-pct, 40) * 1%);
+  overflow: hidden;
+  border-radius: 999px 3px 3px 999px;
+  transition: width 0.58s cubic-bezier(0.22, 1, 0.36, 1);
+  box-shadow: 4px 0 16px rgba(255, 22, 56, 0.72);
+}
+
+.love-tank__body {
+  position: absolute;
+  inset: 0;
+  background:
+    radial-gradient(92% 62% at 50% 88%, rgba(255, 52, 82, 0.85), transparent 76%),
+    linear-gradient(180deg, rgba(95, 2, 16, 0.78) 0%, rgba(196, 6, 36, 0.92) 44%, rgba(255, 24, 58, 0.98) 84%, rgba(145, 2, 24, 0.96) 100%);
+  box-shadow:
+    inset 0 2px 5px rgba(255, 196, 208, 0.28),
+    inset 0 -3px 8px rgba(255, 72, 102, 0.72);
+}
+
+.love-tank__wave {
+  position: absolute;
+  left: 0;
+  top: 0;
+  width: 640px;
+  height: 22px;
+  display: flex;
+  pointer-events: none;
+  will-change: transform;
+}
+
+.love-tank__wave .love-wave-svg {
+  width: 320px;
+  height: 100%;
+  flex: none;
+}
+
+.love-tank__wave--back {
+  opacity: 0.58;
+  top: 4px;
+  animation: love-liquid-flow 3.8s linear infinite reverse;
+}
+
+.love-tank__wave--front {
+  opacity: 0.95;
+  top: 1px;
+  animation: love-liquid-flow 2.7s linear infinite;
+}
+
+.love-tank__bubbles {
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+}
+
+.love-tank__bubbles i {
+  position: absolute;
+  bottom: 2px;
+  border-radius: 50%;
+  background: radial-gradient(circle at 32% 30%, rgba(255, 255, 255, 0.95), rgba(255, 150, 170, 0.45) 55%, rgba(255, 36, 68, 0.15) 100%);
+  border: 0.5px solid rgba(255, 255, 255, 0.55);
+  animation: love-bubble-rise var(--b-dur, 2.6s) ease-in infinite;
+  animation-delay: var(--b-delay, 0s);
+  will-change: transform, opacity;
+}
+
+.love-tank__bubbles i:nth-child(1) { left: 10%; width: 4px; height: 4px; --b-dur: 2.3s; --b-delay: -0.4s; }
+.love-tank__bubbles i:nth-child(2) { left: 22%; width: 3px; height: 3px; --b-dur: 3.1s; --b-delay: -1.3s; }
+.love-tank__bubbles i:nth-child(3) { left: 36%; width: 5px; height: 5px; --b-dur: 2.7s; --b-delay: -0.9s; }
+.love-tank__bubbles i:nth-child(4) { left: 48%; width: 3px; height: 3px; --b-dur: 2.1s; --b-delay: -1.7s; }
+.love-tank__bubbles i:nth-child(5) { left: 61%; width: 4px; height: 4px; --b-dur: 2.9s; --b-delay: -0.2s; }
+.love-tank__bubbles i:nth-child(6) { left: 74%; width: 3.5px; height: 3.5px; --b-dur: 2.4s; --b-delay: -1.1s; }
+.love-tank__bubbles i:nth-child(7) { left: 84%; width: 4.5px; height: 4.5px; --b-dur: 3.2s; --b-delay: -2.1s; }
+.love-tank__bubbles i:nth-child(8) { left: 93%; width: 3px; height: 3px; --b-dur: 2.5s; --b-delay: -0.7s; }
+
+.love-tank__sheen {
+  position: absolute;
+  inset: 0;
+  border-radius: 999px;
+  pointer-events: none;
+  background:
+    linear-gradient(180deg, rgba(255, 255, 255, 0.42) 0%, rgba(255, 255, 255, 0.14) 20%, transparent 48%, rgba(255, 255, 255, 0.08) 92%, rgba(255, 255, 255, 0.28) 100%);
+  box-shadow:
+    inset 0 1px 1px rgba(255, 255, 255, 0.48),
+    inset 0 -1px 1px rgba(255, 210, 220, 0.25);
+}
+
+.love-tank__cursor {
+  position: absolute;
+  top: -5px;
+  bottom: -5px;
+  left: clamp(2px, calc(var(--love-pct, 40) * 1%), calc(100% - 2px));
+  width: 2.5px;
+  transform: translateX(-50%);
+  border-radius: 999px;
+  pointer-events: none;
+  z-index: 4;
+  background: linear-gradient(180deg, rgba(255, 250, 210, 0.96) 0%, #fbbf24 50%, rgba(255, 240, 175, 0.96) 100%);
+  box-shadow: 0 0 8px rgba(251, 191, 36, 0.92), 0 0 2px #ffffff;
+  transition: left 0.58s cubic-bezier(0.22, 1, 0.36, 1);
 }
 
 .love-bar__count {
-  min-width: 3.2em;
-  font: italic 900 15px/1 var(--lf-title);
-  text-align: right;
+  position: relative;
+  z-index: 2;
+  display: inline-flex;
+  align-items: baseline;
+  min-width: 2.9em;
+  justify-content: flex-end;
+  font: italic 900 17px/1 var(--lf-title);
+  letter-spacing: 0.01em;
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+
+.love-bar__cur {
+  background: linear-gradient(180deg, #fff6c2 8%, #f8c638 54%, #d68b10 96%);
+  -webkit-background-clip: text;
+  background-clip: text;
+  color: transparent;
+  filter: drop-shadow(0 1px 2px rgba(0, 0, 0, 0.9));
+}
+
+.love-bar__sep,
+.love-bar__max {
+  color: #f8fafc;
+  font-weight: 800;
+  text-shadow: 0 1px 2px rgba(0, 0, 0, 0.85);
 }
 
 .love-hud.is-sad .love-bar {
-  border-color: rgba(120, 150, 210, 0.45);
-  box-shadow: 0 0 22px rgba(70, 100, 170, 0.35), 0 10px 26px rgba(0, 0, 0, 0.5);
+  border-color: rgba(130, 160, 220, 0.55);
+  box-shadow:
+    0 12px 26px rgba(0, 0, 0, 0.68),
+    0 0 20px rgba(72, 108, 185, 0.35),
+    inset 0 1px 1px rgba(205, 224, 255, 0.35);
 }
 
-.love-hud.is-sad .love-bar__cells i.is-full {
-  background: linear-gradient(180deg, #a5455a, var(--lf-bordeaux));
-  box-shadow: none;
+.love-hud.is-sad .love-tank__body {
+  background:
+    radial-gradient(90% 55% at 50% 85%, rgba(165, 65, 92, 0.55), transparent 75%),
+    linear-gradient(180deg, rgba(72, 18, 34, 0.9) 0%, rgba(128, 28, 56, 0.92) 55%, rgba(92, 18, 38, 0.95) 100%);
 }
 
 .love-hud.is-sad .love-bar__heart {
-  color: #c9758a;
-  animation-duration: 1.8s;
+  filter: saturate(0.65) drop-shadow(0 0 6px rgba(130, 150, 210, 0.5));
+  animation-duration: 1.9s;
 }
 
 .love-bar.is-up {
-  animation: love-up 0.45s ease-out;
+  animation: love-up 0.48s ease-out;
 }
 
 .love-bar.is-down {
   animation: love-down 0.5s ease-out;
 }
 
+@keyframes love-liquid-flow {
+  0% { transform: translate3d(0, 0, 0); }
+  50% { transform: translate3d(-160px, -1.2px, 0); }
+  100% { transform: translate3d(-320px, 0, 0); }
+}
+
+@keyframes love-bubble-rise {
+  0% { transform: translate3d(0, 2px, 0) scale(0.75); opacity: 0; }
+  22% { opacity: 0.85; }
+  80% { opacity: 0.68; }
+  100% { transform: translate3d(-3px, -16px, 0) scale(1.08); opacity: 0; }
+}
+
 @keyframes love-beat {
   0%, 60%, 100% { transform: scale(1); }
-  20% { transform: scale(1.22); }
-  40% { transform: scale(1.06); }
+  18% { transform: scale(1.13); }
+  36% { transform: scale(1.04); }
 }
 
 @keyframes love-up {
@@ -172,29 +348,51 @@ body.love-panel :is(#score-container, #speedometer, #pause-btn, #angle-multiplie
 
 .love-now {
   position: absolute;
-  top: calc(max(12px, env(safe-area-inset-top)) + 40px);
+  top: calc(max(12px, env(safe-area-inset-top)) + 48px);
   left: 50%;
   transform: translateX(-50%);
-  display: flex;
-  gap: 6px;
-  max-width: 70vw;
-  padding: 3px 10px;
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  max-width: 72vw;
+  padding: 5px 14px;
   border-radius: 999px;
-  background: rgba(5, 5, 5, 0.45);
-  font: 400 11px/1.4 var(--lf-body);
+  border: 1px solid rgba(255, 62, 102, 0.68);
+  background:
+    linear-gradient(180deg, rgba(255, 255, 255, 0.12) 0%, rgba(255, 255, 255, 0.02) 48%, rgba(0, 0, 0, 0.38) 100%),
+    repeating-linear-gradient(135deg, rgba(255, 255, 255, 0.028) 0 2px, rgba(0, 0, 0, 0.35) 2px 4px),
+    linear-gradient(180deg, #1b0e14 0%, #090609 100%);
+  box-shadow:
+    0 8px 18px rgba(0, 0, 0, 0.65),
+    0 0 12px rgba(255, 42, 86, 0.28),
+    inset 0 1px 0 rgba(255, 214, 224, 0.38);
+  font: italic 500 12px/1.25 var(--lf-body);
   white-space: nowrap;
   pointer-events: auto;
 }
 
-.love-now span {
-  color: var(--lf-glow);
+.love-now__note {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 15px;
+  height: 15px;
+  flex-shrink: 0;
+  filter: drop-shadow(0 0 5px rgba(255, 64, 118, 0.65));
+}
+
+.love-note-svg {
+  width: 100%;
+  height: 100%;
+  display: block;
 }
 
 .love-now a {
-  color: var(--lf-white);
+  color: #f8fafc;
   overflow: hidden;
   text-overflow: ellipsis;
   text-decoration: none;
+  text-shadow: 0 1px 2px rgba(0, 0, 0, 0.85);
 }
 
 /* --- Fountain pen ink -------------------------------------------------------------- */
@@ -731,6 +929,8 @@ body.love-panel :is(#score-container, #speedometer, #pause-btn, #angle-multiplie
   .love-bar__heart,
   .love-bar.is-up,
   .love-bar.is-down,
+  .love-tank__wave,
+  .love-tank__bubbles i,
   .love-flash {
     animation: none !important;
   }
@@ -787,31 +987,47 @@ body.love-panel :is(#score-container, #speedometer, #pause-btn, #angle-multiplie
   box-shadow: 0 0 14px rgba(255, 31, 61, 0.35) !important;
 }
 
-/* A phone: the bar under the pause button and the speedometer. */
+/* A phone: the bar cleanly below the pause button and the speedometer (bottom ~96px). */
 @media (max-width: 699px) {
   .love-bar {
-    top: calc(max(12px, env(safe-area-inset-top)) + 66px);
+    top: calc(max(12px, env(safe-area-inset-top)) + 92px);
+    gap: 8px;
+    padding: 5px 12px 5px 7px;
   }
 
-  .love-bar__cells {
-    width: min(58vw, 250px);
+  .love-bar__heart {
+    width: 28px;
+    height: 26px;
+  }
+
+  .love-bar__tank {
+    width: min(50vw, 228px);
+    height: 19px;
+  }
+
+  .love-bar__count {
+    font-size: 14.5px;
+    min-width: 2.6em;
   }
 
   .love-now {
-    top: calc(max(12px, env(safe-area-inset-top)) + 106px);
+    top: calc(max(12px, env(safe-area-inset-top)) + 135px);
+    max-width: 82vw;
+    padding: 4px 12px;
+    font-size: 11px;
   }
 
   /* The race's points under the song. */
   .love-points {
-    top: calc(max(12px, env(safe-area-inset-top)) + 132px);
+    top: calc(max(12px, env(safe-area-inset-top)) + 165px);
   }
 
   .ink--slot0 {
-    top: calc(max(12px, env(safe-area-inset-top)) + 162px);
+    top: calc(max(12px, env(safe-area-inset-top)) + 195px);
   }
 
   .ink--slot1 {
-    top: calc(max(12px, env(safe-area-inset-top)) + 228px);
+    top: calc(max(12px, env(safe-area-inset-top)) + 234px);
   }
 }
 
@@ -1666,7 +1882,7 @@ body.love-panel :is(#score-container, #speedometer, #pause-btn, #angle-multiplie
 /* --- The race's points (the wheeling's), under the song ------------------------------ */
 .love-points {
   position: absolute;
-  top: calc(max(12px, env(safe-area-inset-top)) + 64px);
+  top: calc(max(12px, env(safe-area-inset-top)) + 78px);
   left: 50%;
   transform: translateX(-50%);
   padding: 3px 12px;
@@ -1868,6 +2084,6 @@ body.love-panel :is(#score-container, #speedometer, #pause-btn, #angle-multiplie
 /* A phone: the race's points under the song (after the base rule above). */
 @media (max-width: 699px) {
   .love-points {
-    top: calc(max(12px, env(safe-area-inset-top)) + 132px);
+    top: calc(max(12px, env(safe-area-inset-top)) + 165px);
   }
 }

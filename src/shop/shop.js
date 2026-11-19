@@ -225,13 +225,21 @@ export function installShop(deps) {
         const pts = points();
         const hasBuyable = items().some((entry) => !entry.free && !isItemOwned(entry.id) && canBuy(entry.id));
         startBtn.classList.toggle('has-buyable', hasBuyable);
-        if (isModernUI()) {
-            startBtn.innerHTML = `<span class="shop-start-btn__dot" aria-hidden="true"></span>` +
-                `${modernIcon('crown', 'shop-m-btn__crown')}<span>BOUTIQUE 51</span>` +
-                `<span class="shop-start-btn__pts">${modernIcon('coin', 'shop-m-coin')}${fmt(pts)} pts</span>`;
-            return;
-        }
-        startBtn.innerHTML = `<span class="shop-start-btn__dot" aria-hidden="true"></span><span>🛍️ BOUTIQUE</span><span class="shop-start-btn__pts">${fmt(pts)} pts</span>`;
+        startBtn.setAttribute('aria-label', `Boutique 51 — ${fmt(pts)} PTS`);
+        startBtn.innerHTML =
+            `<span class="shop-start-btn__rim" aria-hidden="true"></span>` +
+            `<span class="shop-start-btn__glint" aria-hidden="true"></span>` +
+            `<span class="shop-start-btn__basket" aria-hidden="true">${modernIcon('basket', 'shop-m-basket')}</span>` +
+            `<span class="shop-start-btn__brand">` +
+                `<span class="shop-start-btn__word">BOUTIQUE</span>` +
+                `<span class="shop-start-btn__num">51</span>` +
+            `</span>` +
+            `<span class="shop-start-btn__sep" aria-hidden="true"></span>` +
+            `<span class="shop-start-btn__pts">` +
+                `<span class="shop-start-btn__coin" aria-hidden="true">${modernIcon('coin', 'shop-m-coin')}</span>` +
+                `<span class="shop-start-btn__val">${fmt(pts)}</span>` +
+                `<span class="shop-start-btn__unit">PTS</span>` +
+            `</span>`;
     }
 
     function stageControlsHtml() {

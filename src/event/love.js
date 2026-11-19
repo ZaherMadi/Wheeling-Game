@@ -258,19 +258,83 @@ function createChimes() {
 // deps: { scene, camera, v2 (getter), bike (getter: the bike group),
 // speed (getter: units a frame), startRun(), end(kind), toMenu(),
 // stat(name, n), hud(on) }
+const HEART_GLASS_SVG = `
+<svg class="love-heart-svg" viewBox="0 0 48 44" aria-hidden="true">
+  <defs>
+    <radialGradient id="lf-heart-ruby" cx="50%" cy="68%" r="64%">
+      <stop offset="0%" stop-color="#ff4963"/>
+      <stop offset="38%" stop-color="#d80026"/>
+      <stop offset="76%" stop-color="#7c0214"/>
+      <stop offset="100%" stop-color="#2c0208" stop-opacity="0.92"/>
+    </radialGradient>
+    <linearGradient id="lf-heart-rim" x1="0.1" y1="0" x2="0.9" y2="1">
+      <stop offset="0%" stop-color="#ffffff" stop-opacity="0.92"/>
+      <stop offset="40%" stop-color="#ffb3c1" stop-opacity="0.72"/>
+      <stop offset="100%" stop-color="#ff2344" stop-opacity="0.88"/>
+    </linearGradient>
+    <linearGradient id="lf-heart-sheen" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0%" stop-color="#ffffff" stop-opacity="0.58"/>
+      <stop offset="55%" stop-color="#ffffff" stop-opacity="0.06"/>
+      <stop offset="100%" stop-color="#ff6b81" stop-opacity="0.28"/>
+    </linearGradient>
+  </defs>
+  <path d="M24 40.5C22.4 39.2 5.2 26.8 3.6 15.2C2.3 6.9 9.1 2.2 15.9 3.6C19.8 4.4 22.7 7.1 24 9.7C25.3 7.1 28.2 4.4 32.1 3.6C38.9 2.2 45.7 6.9 44.4 15.2C42.8 26.8 25.6 39.2 24 40.5Z" fill="url(#lf-heart-ruby)" stroke="url(#lf-heart-rim)" stroke-width="1.5"/>
+  <path d="M8.2 15.5C9.2 10.1 13.7 7.2 18.2 8.2C21.2 8.9 23.1 11.4 24 13.2C24.9 11.4 26.8 8.9 29.8 8.2C34.3 7.2 38.8 10.1 39.8 15.5C38.6 24.4 25.4 34.4 24 35.6C22.6 34.4 9.4 24.4 8.2 15.5Z" fill="url(#lf-heart-sheen)" opacity="0.72"/>
+  <path d="M6.8 14.5C6.8 8.8 11.4 5.7 15.7 6.3" fill="none" stroke="#ffffff" stroke-width="2" stroke-linecap="round" stroke-opacity="0.88"/>
+  <path d="M31.6 6.2C35.8 5.6 40.1 8.4 40.8 13.2" fill="none" stroke="#ffffff" stroke-width="1.4" stroke-linecap="round" stroke-opacity="0.68"/>
+  <ellipse cx="24" cy="30.5" rx="9" ry="4.2" fill="#ff4d6d" fill-opacity="0.34"/>
+  <path d="M17.5 31.8C20.2 34.5 23.1 36.7 24 37.5C25.1 36.6 28.4 34 31.2 31.2" fill="none" stroke="#ffd4dc" stroke-width="1.15" stroke-linecap="round" stroke-opacity="0.78"/>
+</svg>`;
+
+const MUSIC_NOTE_SVG = `
+<svg class="love-note-svg" viewBox="0 0 24 24" aria-hidden="true">
+  <defs>
+    <linearGradient id="lf-note-grad" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0%" stop-color="#ff85ad"/>
+      <stop offset="55%" stop-color="#ff3b74"/>
+      <stop offset="100%" stop-color="#d6154e"/>
+    </linearGradient>
+  </defs>
+  <path d="M9 17.5V5.8l10-2.2v11.7" fill="none" stroke="url(#lf-note-grad)" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"/>
+  <path d="M9 8.7l10-2.1" fill="none" stroke="url(#lf-note-grad)" stroke-width="2.1" stroke-linecap="round"/>
+  <ellipse cx="6.7" cy="17.8" rx="3.1" ry="2.4" transform="rotate(-18 6.7 17.8)" fill="url(#lf-note-grad)"/>
+  <ellipse cx="16.7" cy="15.5" rx="3.1" ry="2.4" transform="rotate(-18 16.7 15.5)" fill="url(#lf-note-grad)"/>
+</svg>`;
+
+const LIQUID_WAVE_SVG = `
+<svg class="love-wave-svg" viewBox="0 0 240 24" preserveAspectRatio="none" aria-hidden="true">
+  <path d="M0 10 C20 3, 40 3, 60 10 C80 17, 100 17, 120 10 C140 3, 160 3, 180 10 C200 17, 220 17, 240 10 L240 24 L0 24 Z" fill="rgba(255, 64, 96, 0.42)"/>
+  <path d="M0 10 C20 3, 40 3, 60 10 C80 17, 100 17, 120 10 C140 3, 160 3, 180 10 C200 17, 220 17, 240 10" fill="none" stroke="rgba(255, 228, 234, 0.88)" stroke-width="1.35"/>
+</svg>`;
+
 export function createLoveEvent(deps) {
     const root = document.createElement('div');
     root.id = 'love-root';
     root.innerHTML = `
         <div class="love-hud" id="love-hud" hidden>
             <div class="love-brand"><img src="${FILES}logo-heart.png" alt=""><span>LOVE&amp;FAITH <i>×</i> 51WHELING</span></div>
-            <div class="love-bar" id="love-bar" role="meter" aria-label="Barre d’amour" aria-valuemin="0" aria-valuemax="${LOVE.max}">
-                <span class="love-bar__heart" aria-hidden="true">❤</span>
-                <div class="love-bar__cells" id="love-cells"></div>
-                <b class="love-bar__count" id="love-count"></b>
+            <div class="love-bar" id="love-bar" role="meter" aria-label="Barre d’amour" aria-valuemin="0" aria-valuemax="${LOVE.max}" style="--love-pct:${(LOVE.start / LOVE.max) * 100}">
+                <span class="love-bar__rim" aria-hidden="true"></span>
+                <span class="love-bar__heart" aria-hidden="true">${HEART_GLASS_SVG}</span>
+                <div class="love-bar__gauge">
+                    <div class="love-bar__tank" id="love-tank">
+                        <div class="love-tank__glass-bg" aria-hidden="true"></div>
+                        <div class="love-tank__liquid" id="love-liquid">
+                            <div class="love-tank__body"></div>
+                            <div class="love-tank__wave love-tank__wave--back">${LIQUID_WAVE_SVG}${LIQUID_WAVE_SVG}</div>
+                            <div class="love-tank__wave love-tank__wave--front">${LIQUID_WAVE_SVG}${LIQUID_WAVE_SVG}</div>
+                            <div class="love-tank__bubbles">
+                                <i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i>
+                            </div>
+                        </div>
+                        <span class="love-tank__sheen" aria-hidden="true"></span>
+                    </div>
+                    <span class="love-tank__cursor" id="love-cursor" aria-hidden="true"></span>
+                </div>
+                <b class="love-bar__count" id="love-count"><span class="love-bar__cur">${LOVE.start}</span><span class="love-bar__sep">/</span><span class="love-bar__max">${LOVE.max}</span></b>
             </div>
             <b class="love-points" id="love-points">0 pts</b>
-            <div class="love-now" id="love-now" hidden><span>♪</span><a target="_blank" rel="noopener" id="love-now-title"></a></div>
+            <div class="love-now" id="love-now" hidden><span class="love-now__note" aria-hidden="true">${MUSIC_NOTE_SVG}</span><a target="_blank" rel="noopener" id="love-now-title"></a></div>
         </div>
         <div class="love-ink" id="love-ink" aria-live="polite"></div>
         <div class="love-flash" id="love-flash"></div>
@@ -298,13 +362,7 @@ export function createLoveEvent(deps) {
     });
     let items = null;
     let rain = null;
-    const cells = [];
-    for (let i = 0; i < LOVE.max; i++) {
-        const cell = document.createElement('i');
-        if (i === LOVE.sun - 1) cell.className = 'is-sun';
-        $('love-cells').append(cell);
-        cells.push(cell);
-    }
+    // Liquid gauge needs no pre-built segment cells; showBar updates --love-pct continuously.
 
     const run = {
         on: false, love: LOVE.start, shownLove: LOVE.start, items: [], nextZ: null, time: 0, ended: false,
@@ -337,11 +395,18 @@ export function createLoveEvent(deps) {
 
     // --- The bar --------------------------------------------------------------------
     function showBar() {
-        const love = run.love;
-        cells.forEach((cell, i) => cell.classList.toggle('is-full', i < love));
-        $('love-count').textContent = `${love}/${LOVE.max}`;
-        $('love-bar').setAttribute('aria-valuenow', String(love));
-        $('love-hud').classList.toggle('is-sad', love < LOVE.sun);
+        const love = Math.max(0, Math.min(LOVE.max, run.love));
+        const pct = (love / LOVE.max) * 100;
+        const bar = $('love-bar');
+        if (bar) {
+            bar.style.setProperty('--love-pct', pct.toFixed(2));
+            bar.setAttribute('aria-valuenow', String(love));
+        }
+        const count = $('love-count');
+        if (count) {
+            count.innerHTML = `<span class="love-bar__cur">${love}</span><span class="love-bar__sep">/</span><span class="love-bar__max">${LOVE.max}</span>`;
+        }
+        $('love-hud')?.classList.toggle('is-sad', love < LOVE.sun);
     }
 
     function bump(kind) {

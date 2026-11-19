@@ -2,46 +2,29 @@
    Desktop: GTA Online / arcade racing two-zone storefront with live 3D preview.
    Mobile Portrait & Landscape: dedicated responsive sheet layout with safe areas. */
 
-/* Guard Modern boutique buttons against legacy V1 @media (max-height: 600px) button !important rules in index.html */
-body.ui-modern :is(#shop-btn, #shop-screen button) {
+/* Guard Modern boutique screen buttons against legacy V1 @media (max-height: 600px) button !important rules in index.html */
+body.ui-modern #shop-screen button {
   margin-top: 0 !important;
   box-shadow: none;
 }
 
-/* Start screen Boutique 51 pill button */
+/* Modern inherits the sculpted carbon-gold BOUTIQUE 51 capsule from shop.css */
 body.ui-modern #shop-btn.shop-start-btn {
-  padding: 9px 14px !important;
-  font-size: 13px !important;
-  gap: 8px;
-  border-radius: 12px;
-  border: 1px solid rgba(246, 196, 22, 0.55);
-  background: linear-gradient(160deg, rgba(20, 25, 38, 0.94), rgba(10, 12, 19, 0.96));
-  box-shadow: 0 8px 20px rgba(0, 0, 0, 0.55), inset 0 1px 0 rgba(255, 255, 255, 0.14);
+  padding: 6px 8px 6px 14px !important;
+  border-radius: 999px !important;
 }
 
-body.ui-modern #shop-btn.shop-start-btn::after {
-  display: none;
+@media (max-width: 640px) {
+  body.ui-modern #shop-btn.shop-start-btn {
+    padding: 3px 5px 3px 7px !important;
+    font-size: 10.5px !important;
+  }
 }
 
-body.ui-modern #shop-btn .shop-m-btn__crown {
-  width: 17px;
-  height: 17px;
-  flex-shrink: 0;
-}
-
-body.ui-modern #shop-btn .shop-start-btn__pts {
-  display: inline-flex;
-  align-items: center;
-  gap: 5px;
-  padding: 4px 8px;
-  border-radius: 8px;
-  background: rgba(246, 196, 22, 0.14);
-  border: 1px solid rgba(246, 196, 22, 0.3);
-}
-
-body.ui-modern #shop-btn .shop-m-coin {
-  width: 13px;
-  height: 13px;
+@media (orientation: landscape) and (max-height: 520px) {
+  body.ui-modern #shop-btn.shop-start-btn {
+    padding: 4px 6px 4px 10px !important;
+  }
 }
 
 /* Full Boutique 51 screen */
