@@ -1,6 +1,7 @@
 // Outfits (Tenues) and gameplay Extras registered in the unified shop,
 // synchronized bidirectionally with Love&Faith and legacy unlock keys.
 import { equipped, grant, owns, registerItems } from './store.js';
+import { createGarmentThumbnail } from '../v2/clothing-pbr.js';
 
 const FREE_TRICKS_KEY = 'wheelie_free_tricks';
 const LOVE_EVENT_KEY = 'wheelie_love_event';
@@ -60,17 +61,116 @@ function extraCardSvg(emoji, accent) {
     return `data:image/svg+xml;utf8,${encodeURIComponent(svg)}`;
 }
 
+const thumb = (garmentId, fallbackColors) => {
+    try {
+        return createGarmentThumbnail(garmentId);
+    } catch {
+        return outfitSwatchSvg(fallbackColors);
+    }
+};
+
 export const OUTFITS = [
+    {
+        id: 'outfits:puffer-grey-5hc',
+        name: 'Doudoune Monogramme 5HC',
+        price: 220000,
+        badge: 'Doudoune 5HC',
+        accent: '#cbd5e1',
+        tagline: 'Doudoune oversize gris chiné en relief jacquard 5HC intégral.',
+        icon: thumb('puffer-grey-5hc', ['#8d9299', '#3b3f47', '#cbd5e1']),
+        look: {
+            isOutfit: true,
+            garment: 'puffer-grey-5hc',
+            headwear: 'helmet',
+            livery: { hoodie: '#8d9299', helmet: '#1a1d24', pants: '#1e2128', shoes: '#e2e8f0', glove: '#1f232b', visor: '#94a3b8' }
+        }
+    },
+    {
+        id: 'outfits:puffer-check-5hc',
+        name: 'Doudoune Check Beige 5HC',
+        price: 240000,
+        badge: 'Doudoune 5HC',
+        accent: '#cbb58f',
+        tagline: 'Coupe courte matelassée beige à carreaux, zip doré & poignets noirs.',
+        icon: thumb('puffer-check-5hc', ['#c9b390', '#181a1f', '#c44532']),
+        look: {
+            isOutfit: true,
+            garment: 'puffer-check-5hc',
+            headwear: 'helmet',
+            livery: { hoodie: '#c9b390', helmet: '#14151a', pants: '#13151a', shoes: '#14151a', glove: '#14151a', visor: '#d4a644' }
+        }
+    },
+    {
+        id: 'outfits:tracksuit-bvb-5hc',
+        name: 'Survêtement Dortmund 5HC',
+        price: 180000,
+        badge: 'Club 5HC',
+        accent: '#f5de16',
+        tagline: 'Ensemble noir & jaune graphique avec écusson brodé 5HC et logo moto.',
+        icon: thumb('tracksuit-bvb-5hc', ['#111317', '#f5de16', '#f5de16']),
+        look: {
+            isOutfit: true,
+            garment: 'tracksuit-bvb-5hc',
+            headwear: 'helmet',
+            livery: { hoodie: '#111317', helmet: '#101216', pants: '#101216', shoes: '#f5de16', glove: '#111317', visor: '#f5de16' }
+        }
+    },
+    {
+        id: 'outfits:tracksuit-volt-5hc',
+        name: 'Survêtement Volt 5HC',
+        price: 185000,
+        badge: 'Club 5HC',
+        accent: '#d9f11b',
+        tagline: 'Veste technique jaune fluo à 3 bandes noires et pantalon fuseau noir.',
+        icon: thumb('tracksuit-volt-5hc', ['#d9f11b', '#121418', '#d9f11b']),
+        look: {
+            isOutfit: true,
+            garment: 'tracksuit-volt-5hc',
+            headwear: 'helmet',
+            livery: { hoodie: '#d9f11b', helmet: '#121418', pants: '#131519', shoes: '#d9f11b', glove: '#121418', visor: '#d9f11b' }
+        }
+    },
+    {
+        id: 'outfits:tracksuit-royal-5hc',
+        name: 'Survêtement Royal Bleu 5HC',
+        price: 175000,
+        badge: 'Club 5HC',
+        accent: '#3b82f6',
+        tagline: 'Ensemble bleu royal & blanc athlétique, écusson 5HC et emblème moto.',
+        icon: thumb('tracksuit-royal-5hc', ['#0e429c', '#0b1e44', '#f8fafc']),
+        look: {
+            isOutfit: true,
+            garment: 'tracksuit-royal-5hc',
+            headwear: 'helmet',
+            livery: { hoodie: '#0e429c', helmet: '#0b1e44', pants: '#0b1e44', shoes: '#f8fafc', glove: '#0b1e44', visor: '#38bdf8' }
+        }
+    },
+    {
+        id: 'outfits:jersey-bianconero-5hc',
+        name: 'Maillot Bianconero 5HC',
+        price: 165000,
+        badge: 'Maillot 5HC',
+        accent: '#f8fafc',
+        tagline: 'Maillot respirant rayé noir & blanc, 3 étoiles or et écusson 5HC Racing.',
+        icon: thumb('jersey-bianconero-5hc', ['#101216', '#f4f5f7', '#eab308']),
+        look: {
+            isOutfit: true,
+            garment: 'jersey-bianconero-5hc',
+            headwear: 'helmet',
+            livery: { hoodie: '#f3f4f6', helmet: '#101216', pants: '#101216', shoes: '#f4f5f7', glove: '#101216', visor: '#e2e8f0' }
+        }
+    },
     {
         id: 'outfits:noir-or',
         name: 'Or & Carbone',
         price: 90000,
         badge: 'Prestige',
         accent: '#c9a45c',
-        tagline: 'Ensemble carbone mat, gants et visière champagne.',
-        icon: outfitSwatchSvg(['#14151a', '#262933', '#c9a45c']),
+        tagline: 'Ensemble carbone mat en molleton épais, gants et visière champagne.',
+        icon: thumb('fleece-noir-or', ['#14151a', '#262933', '#c9a45c']),
         look: {
             isOutfit: true,
+            garment: 'fleece-noir-or',
             headwear: 'helmet',
             livery: { hoodie: '#14151a', helmet: '#121318', pants: '#121318', shoes: '#c9a45c', glove: '#c9a45c', visor: '#c9a45c' }
         }
@@ -81,10 +181,11 @@ export const OUTFITS = [
         price: 110000,
         badge: 'Frais',
         accent: '#38bdf8',
-        tagline: 'Sweat argenté, casque bleu arctique et visière glacée.',
-        icon: outfitSwatchSvg(['#e2e8f0', '#0284c7', '#38bdf8']),
+        tagline: 'Molleton argenté, casque bleu arctique et visière glacée.',
+        icon: thumb('fleece-glacier', ['#e2e8f0', '#0284c7', '#38bdf8']),
         look: {
             isOutfit: true,
+            garment: 'fleece-glacier',
             headwear: 'helmet',
             livery: { hoodie: '#e2e8f0', helmet: '#0284c7', pants: '#1e293b', shoes: '#f8fafc', glove: '#38bdf8', visor: '#38bdf8' }
         }
@@ -96,9 +197,10 @@ export const OUTFITS = [
         badge: 'Circuit',
         accent: '#22c55e',
         tagline: 'Noir profond relevé d’un vert acide sur piste.',
-        icon: outfitSwatchSvg(['#0a110d', '#166534', '#22c55e']),
+        icon: thumb('fleece-venom', ['#0a110d', '#166534', '#22c55e']),
         look: {
             isOutfit: true,
+            garment: 'fleece-venom',
             headwear: 'helmet',
             livery: { hoodie: '#0b100d', helmet: '#15803d', pants: '#0c120e', shoes: '#22c55e', glove: '#22c55e', visor: '#4ade80' }
         }
@@ -109,10 +211,11 @@ export const OUTFITS = [
         price: 160000,
         badge: 'Corsa',
         accent: '#ef4444',
-        tagline: 'Tenue rouge sang avec bottes blanches de GP.',
-        icon: outfitSwatchSvg(['#991b1b', '#14151a', '#ef4444']),
+        tagline: 'Tenue rouge sang en molleton avec bottes blanches de GP.',
+        icon: thumb('fleece-crimson', ['#991b1b', '#14151a', '#ef4444']),
         look: {
             isOutfit: true,
+            garment: 'fleece-crimson',
             headwear: 'helmet',
             livery: { hoodie: '#b91c1c', helmet: '#111216', pants: '#111318', shoes: '#f8fafc', glove: '#ef4444', visor: '#ef4444' }
         }

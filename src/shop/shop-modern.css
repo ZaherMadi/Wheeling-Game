@@ -845,3 +845,95 @@ body.ui-modern .shop-m-code .shop-code-msg:empty {
     margin-right: 0;
   }
 }
+
+/* Studio Camera Controls & Dark Studio Backdrop (Tenues / Personnages) */
+body.ui-modern #shop-screen.screen.active.is-studio {
+  background: radial-gradient(circle at 24% 48%, rgba(28, 34, 48, 0.16) 0%, rgba(7, 10, 18, 0.72) 56%, rgba(5, 7, 13, 0.92) 100%);
+}
+
+.shop-stage-controls {
+  position: fixed;
+  top: calc(76px + var(--safe-t, 0px));
+  left: calc(18px + var(--safe-l, 0px));
+  z-index: 10;
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  padding: 5px;
+  border-radius: 12px;
+  background: rgba(10, 14, 24, 0.86);
+  border: 1px solid rgba(148, 163, 184, 0.3);
+  backdrop-filter: blur(8px);
+  -webkit-backdrop-filter: blur(8px);
+  box-shadow: 0 10px 26px rgba(0, 0, 0, 0.52);
+}
+
+.shop-stage-controls[hidden] {
+  display: none !important;
+}
+
+.shop-stage-btn,
+body.ui-modern #shop-screen .shop-stage-btn {
+  padding: 6px 11px !important;
+  font-size: 11px !important;
+  font-family: var(--display, system-ui, sans-serif);
+  font-weight: 800;
+  letter-spacing: 0.05em;
+  line-height: 1;
+  border-radius: 8px;
+  border: 1px solid rgba(148, 163, 184, 0.22);
+  background: rgba(24, 30, 44, 0.82);
+  color: #cbd5e1;
+  cursor: pointer;
+  margin-top: 0 !important;
+  transition: border-color 0.14s ease, background 0.14s ease, color 0.14s ease;
+}
+
+.shop-stage-btn:hover,
+body.ui-modern #shop-screen .shop-stage-btn:hover {
+  border-color: rgba(246, 196, 22, 0.55);
+  color: #ffffff;
+}
+
+.shop-stage-btn.is-on,
+body.ui-modern #shop-screen .shop-stage-btn.is-on {
+  background: #f6c416;
+  border-color: #fde047;
+  color: #10131b;
+}
+
+@media (orientation: portrait) and (max-width: 900px) {
+  body.ui-modern #shop-screen.screen.active.is-studio {
+    background: linear-gradient(180deg, rgba(6, 9, 16, 0.78) 0%, rgba(16, 22, 34, 0.14) 22%, rgba(8, 11, 18, 0.24) 40%, rgba(6, 9, 16, 0.94) 49%);
+  }
+
+  .shop-stage-controls {
+    top: calc(58px + var(--safe-t, 0px));
+    left: calc(10px + var(--safe-l, 0px));
+    flex-direction: column;
+    align-items: stretch;
+    gap: 4px;
+    padding: 4px;
+  }
+
+  .shop-stage-btn,
+  body.ui-modern #shop-screen .shop-stage-btn {
+    padding: 5px 8px !important;
+    font-size: 10px !important;
+  }
+}
+
+@media (orientation: landscape) and (max-height: 540px) {
+  .shop-stage-controls {
+    top: calc(48px + var(--safe-t, 0px));
+    left: calc(12px + var(--safe-l, 0px));
+    gap: 4px;
+    padding: 4px;
+  }
+
+  .shop-stage-btn,
+  body.ui-modern #shop-screen .shop-stage-btn {
+    padding: 5px 8px !important;
+    font-size: 10px !important;
+  }
+}

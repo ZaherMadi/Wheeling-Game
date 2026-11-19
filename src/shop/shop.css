@@ -931,3 +931,7 @@ body.v2 .ui-rider .rider-panel {
   max-height: calc(100dvh - 28px - var(--safe-t, 0px) - var(--safe-b, 0px));
   overflow-y: auto;
 }
+
+body:not(.ui-modern) #shop-screen .shop-stage-controls {
+  top: calc(50px + var(--safe-t, 0px));
+}

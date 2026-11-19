@@ -72,6 +72,8 @@ export function installShop(deps) {
     let pendingRiderConfirmId = null;
     let giftSending = false;
     let returnScreen = startScreen;
+    let stageView = 'spin';
+    let stageZoom = false;
 
     // Build Gift / Code unboxing modal once.
     const giftOverlay = document.createElement('div');
@@ -200,6 +202,15 @@ export function installShop(deps) {
         startBtn.innerHTML = `<span class="shop-start-btn__dot" aria-hidden="true"></span><span>🛍️ BOUTIQUE</span><span class="shop-start-btn__pts">${fmt(pts)} pts</span>`;
     }
 
+    function stageControlsHtml() {
+        return `<div class="shop-stage-controls" id="shop-stage-controls" hidden>
+          <button type="button" class="shop-stage-btn" data-stage-view="front">Face</button>
+          <button type="button" class="shop-stage-btn" data-stage-view="back">Dos</button>
+          <button type="button" class="shop-stage-btn is-on" data-stage-view="spin">360°</button>
+          <button type="button" class="shop-stage-btn" data-stage-zoom="1">Zoom</button>
+        </div>`;
+    }
+
     // --- Shop DOM scaffolding (Classic + Modern) ------------------------------------
     function mountShopShell() {
         if (!shopScreen) return;
@@ -220,6 +231,7 @@ export function installShop(deps) {
                   <button type="button" class="shop-m-close" id="shop-close-btn" aria-label="Fermer la boutique">${modernIcon('close')}</button>
                 </div>
               </header>
+              ${stageControlsHtml()}
               <aside class="shop-confirm-dock shop-m-dock" id="shop-confirm-dock"></aside>
               <section class="shop-panel shop-m-panel" id="shop-panel">
                 <nav class="shop-m-tabs" id="shop-tabs" role="tablist"></nav>
@@ -245,6 +257,7 @@ export function installShop(deps) {
         } else {
             shopScreen.innerHTML = `
               <div class="shop-stage-hint">↔ Glisse pour tourner · Clique un article</div>
+              ${stageControlsHtml()}
               <aside class="shop-confirm-dock" id="shop-confirm-dock"></aside>
               <section class="shop-panel" id="shop-panel">
                 <header class="shop-panel__top">
@@ -537,9 +550,24 @@ export function installShop(deps) {
           <div class="shop-dock__actions">${actionHtml}</div>`;
     }
 
+    function syncStageControls() {
+        if (!shopScreen) return;
+        const show = activeCategory === 'outfits' || activeCategory === 'characters';
+        shopScreen.classList.toggle('is-studio', activeCategory === 'outfits');
+        const box = document.getElementById('shop-stage-controls');
+        if (!box) return;
+        box.hidden = !show;
+        box.querySelectorAll('[data-stage-view]').forEach((btn) => {
+            btn.classList.toggle('is-on', btn.dataset.stageView === stageView);
+        });
+        const zoomBtn = box.querySelector('[data-stage-zoom]');
+        if (zoomBtn) zoomBtn.classList.toggle('is-on', stageZoom);
+    }
+
     function renderShop() {
         updateStartButton();
         if (!shopScreen?.classList.contains('active')) return;
+        syncStageControls();
         const modern = isModernUI();
         const pts = points();
         const wallet = document.getElementById('shop-wallet');
@@ -660,6 +688,20 @@ export function installShop(deps) {
             closeShop();
             return;
         }
+        const stageViewBtn = target.closest('[data-stage-view]');
+        if (stageViewBtn) {
+            stageView = stageViewBtn.dataset.stageView;
+            deps.v2?.()?.showroomPreset?.(stageView);
+            syncStageControls();
+            return;
+        }
+        const stageZoomBtn = target.closest('[data-stage-zoom]');
+        if (stageZoomBtn) {
+            stageZoom = !stageZoom;
+            deps.v2?.()?.showroomPreset?.('zoom');
+            syncStageControls();
+            return;
+        }
         const tab = target.closest('[data-shop-tab]');
         if (tab) {
             activeCategory = tab.dataset.shopTab;
@@ -667,6 +709,15 @@ export function installShop(deps) {
             const filter = document.getElementById('shop-filter');
             if (filter) filter.value = 'all';
             pendingConfirmId = null;
+            if (activeCategory === 'outfits') {
+                if (stageView === 'spin') {
+                    stageView = 'front';
+                    deps.v2?.()?.showroomPreset?.('front');
+                }
+            } else if (stageZoom) {
+                stageZoom = false;
+                deps.v2?.()?.showroomPreset?.('reset-zoom');
+            }
             const first = items(activeCategory)[0];
             if (first) selectShopItem(first.id);
             else renderShop();
@@ -736,6 +787,8 @@ export function installShop(deps) {
         returnScreen = backTarget || startScreen;
         activeCategory = initialCategory;
         activeFilter = 'all';
+        stageView = activeCategory === 'outfits' ? 'front' : 'spin';
+        stageZoom = false;
         const filter = document.getElementById('shop-filter');
         if (filter) filter.value = 'all';
         const list = items(activeCategory);
@@ -746,6 +799,7 @@ export function installShop(deps) {
         riderScreen?.classList.remove('active');
         shopScreen.classList.add('active');
         deps.v2?.()?.showroom(true, '#shop-screen .shop-panel');
+        if (activeCategory === 'outfits') deps.v2?.()?.showroomPreset?.('front');
         previewInShowroom(item(selectedId));
         renderShop();
     }
@@ -753,8 +807,10 @@ export function installShop(deps) {
     function closeShop() {
         deps.musicPlayer?.stopPreview?.();
         pendingConfirmId = null;
+        stageView = 'spin';
+        stageZoom = false;
         if (!shopScreen?.classList.contains('active')) return;
-        shopScreen.classList.remove('active');
+        shopScreen.classList.remove('active', 'is-studio');
         const v2 = deps.v2?.();
         v2?.showroom(false);
         applyCharacter(v2);

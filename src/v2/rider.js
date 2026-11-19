@@ -5,6 +5,7 @@
 import * as THREE from 'three';
 import { mergeGeometries } from 'three/examples/jsm/utils/BufferGeometryUtils.js';
 import { createGlowTexture, createJerseyTexture } from './textures.js';
+import { getGarmentPackage } from './clothing-models.js';
 
 const REAR_AXLE_Z = -0.72;
 const FRONT_AXLE_Z = 0.73;
@@ -734,6 +735,8 @@ export function createRider({ scene }) {
     for (const limb of [...arms, ...legs]) {
         limb.upper.userData.own = limb.upper.geometry;
         limb.lower.userData.own = limb.lower.geometry;
+        limb.upper.userData.ownMat = limb.upper.material;
+        limb.lower.userData.ownMat = limb.lower.material;
     }
     // Gloves wrapped round the grips: palm, fingers, thumb and the cuff.
     const hands = [-1, 1].map((side) => {
@@ -2161,12 +2164,13 @@ export function createRider({ scene }) {
         }
         if (!pieces && look.skin) outfit.skin.color.set(look.skin);
         else if (!pieces) outfit.skin.color.set(0x7a4524);
-        if (!pieces && !look.character) {
+        if (!pieces && !look.character && !look.isOutfit) {
             sneaker.color.set('#f4f4f2');
             glove.color.set(0x7a4524);
         }
         const girl = !pieces && look.gender === 'girl';
         shapeFor(girl, look.build || (girl ? 'girl' : 'standard'));
+        applyGarment(look.garment || null, { girl, skin: look.skin || '#7a4524' });
         outfit.chests.boy.visible = !!wanted && !girl;
         outfit.chests.girl.visible = !!wanted && girl;
 
@@ -2269,6 +2273,53 @@ export function createRider({ scene }) {
         head.scale.setScalar(girl ? 0.94 : 1);
     }
 
+    // Bespoke sculpted 3D garments (src/v2/clothing-models.js) overlaid on the articulated rig.
+    const garmentRoot = new THREE.Group();
+    garmentRoot.visible = false;
+    pelvis.add(garmentRoot);
+    const UNIT_GARMENT_SCALE = new THREE.Vector3(1, 1, 1);
+
+    function applyGarment(garmentId, { girl = false, skin = '#7a4524' } = {}) {
+        while (garmentRoot.children.length) garmentRoot.remove(garmentRoot.children[0]);
+        if (!garmentId) {
+            garmentRoot.visible = false;
+            arms.forEach((limb) => {
+                limb.upper.material = limb.upper.userData.ownMat;
+                limb.lower.material = limb.lower.userData.ownMat;
+            });
+            legs.forEach((limb) => {
+                limb.upper.material = limb.upper.userData.ownMat;
+                limb.lower.material = limb.lower.userData.ownMat;
+            });
+            return;
+        }
+        const pkg = getGarmentPackage(garmentId);
+        if (!pkg) {
+            applyGarment(null);
+            return;
+        }
+        if (pkg.mats?.skinMat) pkg.mats.skinMat.color.set(skin || '#7a4524');
+        const variant = girl ? pkg.girl : pkg.boy;
+        bodies.boy.visible = false;
+        bodies.girl.visible = false;
+        garmentRoot.visible = true;
+        garmentRoot.scale.copy(girl ? UNIT_GARMENT_SCALE : bodies.boy.scale);
+        garmentRoot.add(variant.torsoGroup);
+
+        arms.forEach((limb, i) => {
+            limb.upper.geometry = variant.limbs.upperArmGeo;
+            limb.lower.geometry = variant.limbs.lowerArmGeo;
+            limb.upper.material = variant.limbs.upperArmMat[i];
+            limb.lower.material = variant.limbs.lowerArmMat[i];
+        });
+        legs.forEach((limb) => {
+            limb.upper.geometry = variant.limbs.upperLegGeo;
+            limb.lower.geometry = variant.limbs.lowerLegGeo;
+            limb.upper.material = variant.limbs.upperLegMat;
+            limb.lower.material = variant.limbs.lowerLegMat;
+        });
+    }
+
     // look: { print: 'lva' | 'plva' | 'world-love' | 'fabulous-love-and-faith' }, or null.
     function setEventLook(look) {
         if (look && !outfit) outfit = buildOutfit();
@@ -2280,6 +2331,7 @@ export function createRider({ scene }) {
             outfit.print = null;
             glove.color.set(0x0e0e10);
             outfit.chests.boy.visible = outfit.chests.girl.visible = false;
+            applyGarment(null);
             shapeFor(false);
         }
     }
