@@ -44,7 +44,8 @@ const atmosphere = {
     uSunDir: { value: SUN_DIRECTION.clone() },
     uHazeTint: { value: new THREE.Vector3(1.22, 1.03, 0.8) },
     uBacklight: { value: new THREE.Vector3(0.9, 0.75, 0.5) },
-    uTime: { value: 0 }
+    uTime: { value: 0 },
+    uWind: { value: 0 }
 };
 const ATMOSPHERE_FOG = `#ifdef USE_FOG
     float fogFactor = smoothstep( fogNear, fogFar, vFogDepth );
@@ -225,13 +226,16 @@ export function createWorld({ scene, renderer, mobile }) {
     // Foliage: leaf cards lit as soft volumes, swaying, backlit by the sun.
     const SWAY = `
     float swayHeight = smoothstep( 2.5, 9.0, position.y );
-    transformed.x += ( sin( uTime * 1.5 + position.z * 0.55 + position.y * 0.9 ) * 0.09
-        + sin( uTime * 3.1 + position.x * 1.7 ) * 0.03 ) * swayHeight;
-    transformed.z += sin( uTime * 1.2 + position.x * 0.6 + position.y * 0.7 ) * 0.06 * swayHeight;`;
+    float windAbs = abs( uWind );
+    float windAmp = 1.0 + windAbs * 4.8;
+    transformed.x += ( sin( uTime * ( 1.5 + windAbs * 3.0 ) + position.z * 0.55 + position.y * 0.9 ) * 0.09 * windAmp
+        + sin( uTime * 3.1 + position.x * 1.7 ) * 0.03 * windAmp
+        + uWind * 0.55 ) * swayHeight;
+    transformed.z += sin( uTime * 1.2 + position.x * 0.6 + position.y * 0.7 ) * 0.06 * windAmp * swayHeight;`;
     withAtmosphere(materials.foliage, {
         key: 'foliage',
         extra(shader) {
-            shader.vertexShader = 'uniform float uTime;\n' + shader.vertexShader.replace(
+            shader.vertexShader = 'uniform float uTime;\nuniform float uWind;\n' + shader.vertexShader.replace(
                 '#include <begin_vertex>', '#include <begin_vertex>' + SWAY
             );
             shader.fragmentShader = 'uniform vec3 uBacklight;\n' + shader.fragmentShader
@@ -1178,6 +1182,7 @@ export function createWorld({ scene, renderer, mobile }) {
 
     return {
         acquireChunk, releaseChunk, createObstacle, update, setDusk, setAmbience, setQuality, reseed, sharedMaterials, sun,
+        setWind(value) { atmosphere.uWind.value = Number(value) || 0; },
         setSkylineVisible(visible) { skyline.visible = visible; horizonBackdrop.setVisible(visible); },
         resetHorizon: () => horizonBackdrop.reset(),
         crossings, busShelters, parkedNear, realCarsNear, takeParked, createCar, carModels: Object.keys(cars), roofAt,

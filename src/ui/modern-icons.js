@@ -222,6 +222,10 @@ const MODERN_ICONS = {
         box: '0 0 24 24',
         body: '<circle cx="12" cy="12" r="9" fill="url(#ui-m-steel)" stroke="url(#ui-m-chrome)" stroke-width="1.2"/><circle cx="12" cy="12" r="5.5" fill="none" stroke="rgba(255,255,255,0.22)" stroke-width="0.9"/><circle cx="12" cy="12" r="2.6" fill="url(#ui-m-gold)"/><circle cx="12" cy="12" r="0.9" fill="#0d1117"/>'
     },
+    'cat-weather': {
+        box: '0 0 24 24',
+        body: '<circle cx="16.2" cy="7.4" r="3.4" fill="url(#ui-m-gold)"/><path d="M7.2 16.5h9.6a3.4 3.4 0 0 0 .5-6.7A5 5 0 0 0 7.9 8.6a3.8 3.8 0 0 0-.7 7.9z" fill="url(#ui-m-chrome)" stroke="#0d1117" stroke-width="0.9" stroke-linejoin="round"/><path d="M12.2 16.5l-1.5 3h1.8l-1 2.8 3-3.8h-1.8l.9-2z" fill="url(#ui-m-gold)"/>'
+    },
     'cat-extras': {
         box: '0 0 24 24',
         body: '<path d="M12 2.5 14.3 9l6.7 2.3-6.7 2.3L12 20.5l-2.3-6.9L3 11.3 9.7 9z" fill="url(#ui-m-gold)"/><path d="M18.6 15.5l.8 2 2 .8-2 .8-.8 2-.8-2-2-.8 2-.8z" fill="url(#ui-m-chrome)"/>'

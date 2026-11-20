@@ -15,11 +15,15 @@ export function createTraffic({ scene, world, onHonk }) {
     const pick = (list) => list[Math.floor(Math.random() * list.length)];
     const range = (min, max) => min + Math.random() * (max - min);
 
+    let clock = 0;
+
     function place(car, focusZ, initial) {
         car.lane = pick(LANES);
         car.cruise = range(13, 26);
         car.speed = car.cruise;
         car.honked = false;
+        car.windSeed = Math.random() * 100;
+        car.windFreq = 1.4 + Math.random() * 1.7;
         // Most cars appear ahead; a few come from behind and overtake.
         const ahead = initial ? Math.random() < 0.75 : Math.random() < 0.85;
         const distance = initial ? range(25, 190) : range(150, 200);
@@ -49,13 +53,16 @@ export function createTraffic({ scene, world, onHonk }) {
 
     // blockers: [{ x, z }] the player's bike, walker or car.
     const gone = [];
-    function update(dt, focus, blockers) {
+    function update(dt, focus, blockers, wind = null) {
         ensure(focus.z);
+        clock += dt || 0;
+        const storm = wind ? (wind.storm || 0) : 0;
         for (const car of cars) {
             // The police car in a chase drives itself (police.js).
             if (car.chasing) continue;
             const { lane } = car;
             const z = car.group.position.z;
+            const xNow = car.group.position.x;
             // Gap to whatever is ahead in the lane.
             let gap = Infinity;
             let player = false;
@@ -65,14 +72,18 @@ export function createTraffic({ scene, world, onHonk }) {
                 if (d > 0 && d < gap) gap = d;
             }
             for (const blocker of blockers) {
-                if (Math.abs(blocker.x - lane.x) > 1.9) continue;
+                if (Math.abs(blocker.x - xNow) > 1.9) continue;
                 const d = (blocker.z - z) * lane.dir;
                 if (d > 0 && d < gap) {
                     gap = d;
                     player = true;
                 }
             }
-            let target = gap < 7 ? 0 : gap < 22 ? car.cruise * (gap - 7) / 15 : car.cruise;
+            const seed = car.windSeed ?? 1;
+            const freq = car.windFreq ?? 1.8;
+            const wave = storm > 0.05 ? (Math.sin(clock * freq + seed) + 0.55 * Math.cos(clock * 3.4 + seed * 1.7)) : 0;
+            const cruiseNow = storm > 0.05 ? car.cruise * Math.max(0.68, Math.min(1.18, 1 + 0.22 * wave * storm)) : car.cruise;
+            let target = gap < 7 ? 0 : gap < 22 ? cruiseNow * (gap - 7) / 15 : cruiseNow;
             // A car told to stop (the police pulling over) stays put.
             if (car.hold) target = 0;
             const slowing = target < car.speed - 0.5;
@@ -80,11 +91,25 @@ export function createTraffic({ scene, world, onHonk }) {
             // Brake lights while slowing down or standing in traffic.
             car.group.userData.lights?.set(slowing || (car.speed < 0.5 && (car.hold || gap < 9)), false);
             car.group.position.z += lane.dir * car.speed * dt;
-            // Left its lane (the police after a stop): eases back into it.
-            if (car.group.position.x !== lane.x) {
-                const back = lane.x - car.group.position.x;
-                car.group.position.x = Math.abs(back) < 0.02 ? lane.x : car.group.position.x + back * Math.min(1, dt * 1.2);
-                car.group.rotation.y = (lane.dir < 0 ? Math.PI : 0) + Math.max(-0.25, Math.min(0.25, back * 0.08)) * lane.dir;
+            if (storm > 0.05 && !car.hold) {
+                // Random chaotic lateral push from both sides during storm gusts.
+                const push = (wind.gustX * 0.44 + wave * 3.4 * storm) * dt;
+                const spring = (lane.x - car.group.position.x) * 0.65 * dt;
+                car.group.position.x = Math.max(-8.4, Math.min(8.4, car.group.position.x + push + spring));
+                const yawSway = Math.max(-0.22, Math.min(0.22, (wind.gustX * 0.016 + wave * 0.14) * storm)) * lane.dir;
+                car.group.rotation.y = (lane.dir < 0 ? Math.PI : 0) + yawSway;
+                car.group.rotation.z = Math.max(-0.06, Math.min(0.06, -(wind.gustX * 0.0045 + wave * 0.036) * storm));
+            } else {
+                // Left its lane (police stop or post-storm): ease back into lane and level body roll.
+                if (car.group.position.x !== lane.x) {
+                    const back = lane.x - car.group.position.x;
+                    car.group.position.x = Math.abs(back) < 0.02 ? lane.x : car.group.position.x + back * Math.min(1, dt * 1.2);
+                    car.group.rotation.y = (lane.dir < 0 ? Math.PI : 0) + Math.max(-0.25, Math.min(0.25, back * 0.08)) * lane.dir;
+                }
+                if (Math.abs(car.group.rotation.z) > 0.001) {
+                    car.group.rotation.z *= Math.exp(-(dt || 0.016) * 8);
+                    if (Math.abs(car.group.rotation.z) <= 0.001) car.group.rotation.z = 0;
+                }
             }
             if (player && gap < 12 && !car.honked) {
                 car.honked = true;

@@ -43,6 +43,7 @@ export function createRain(scene) {
             drop.z += ride * dt * 0.15;
             drop.x += wind * dt;
             if (drop.x > BOX.x) drop.x -= BOX.x * 2;
+            else if (drop.x < -BOX.x) drop.x += BOX.x * 2;
             if (drop.y < 0 || drop.z > BOX.zBack) {
                 drop.y = BOX.y * (0.6 + Math.random() * 0.4);
                 drop.x = (Math.random() - 0.5) * BOX.x * 2;

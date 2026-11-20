@@ -83,6 +83,7 @@ const CATEGORY_ICONS = {
     outfits: 'cat-outfits',
     cars: 'cat-cars',
     music: 'cat-music',
+    weather: 'cat-weather',
     extras: 'cat-extras'
 };
 
@@ -173,6 +174,8 @@ export function installShop(deps) {
             applyEquippedOutfit(v2);
         } else if (entry.slot === 'outfit') {
             equip('outfit', equipped('outfit') === id ? null : id);
+        } else if (entry.slot === 'weather') {
+            equip('weather', equipped('weather') === id ? null : id);
         } else if (entry.slot === 'music') {
             equip('music', id);
             deps.musicPlayer?.togglePreview?.(id);
@@ -187,6 +190,11 @@ export function installShop(deps) {
     function previewInShowroom(entry) {
         const v2 = deps.v2?.();
         if (!v2 || !entry) return;
+        if (entry.category === 'weather') {
+            v2.previewWeather?.(entry.preview?.weatherId || entry.id);
+            return;
+        }
+        v2.previewWeather?.(null);
         if (entry.category === 'characters') {
             previewCharacter(v2, entry.id);
             return;
@@ -592,7 +600,10 @@ export function installShop(deps) {
             actionHtml = `<button type="button" class="shop-btn" disabled>🔍 Croise-la en mode libre</button>`;
         } else if (owned) {
             if (entry.slot) {
-                actionHtml += `<button type="button" class="shop-btn shop-btn--equip" data-shop-equip="${entry.id}">${eq ? (entry.slot === 'outfit' ? '✓ Porté · Retirer' : '✓ Porté') : '✨ Porter / Équiper'}</button>`;
+                const equipLabel = entry.slot === 'weather'
+                    ? (eq ? '✓ Activé · Revenir en Auto' : '✨ Activer en mode libre')
+                    : (eq ? (entry.slot === 'outfit' ? '✓ Porté · Retirer' : '✓ Porté') : '✨ Porter / Équiper');
+                actionHtml += `<button type="button" class="shop-btn shop-btn--equip" data-shop-equip="${entry.id}">${equipLabel}</button>`;
             } else {
                 actionHtml += `<button type="button" class="shop-btn" disabled>✓ Débloqué</button>`;
             }
@@ -943,6 +954,7 @@ export function installShop(deps) {
         closeGt51UnlockReveal();
         stopPorscheTrack();
         deps.musicPlayer?.stopPreview?.();
+        deps.v2?.()?.previewWeather?.(null);
         pendingConfirmId = null;
         stageView = 'spin';
         stageZoom = false;

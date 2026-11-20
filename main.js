@@ -27,6 +27,7 @@ import { applyCharacter, registerCharacters } from './src/shop/characters.js';
 import { applyEquippedOutfit, registerOutfitsAndExtras } from './src/shop/outfits.js';
 import { createMusicPlayer, registerMusic } from './src/music/player.js';
 import { registerRealCars } from './src/v2/realcars.js';
+import { WEATHER_PRESETS, registerWeatherItems } from './src/v2/weather.js';
 import { installShop } from './src/shop/shop.js';
 import { beginCinematic, cinematicSpeed, endCinematic } from './src/cinematic.js';
 import { getUIVersion, initUITheme, setUIVersion, subscribeUITheme } from './src/ui/theme.js';
@@ -1812,6 +1813,15 @@ function rideFreeBike(dt, roam) {
     bikeGroup.rotation.y -= rate * dt * (v < -0.05 ? -1 : 1);
     // Sliding: the tail swings round on top of the steering.
     if (drifting) bikeGroup.rotation.y -= steer * FREE_DRIFT.turn * dt;
+    const wind = v2?.weather?.wind;
+    if (wind && wind.storm > 0.05 && !roam.frozen) {
+        // Chaotic bidirectional gusts tug the handlebars and push the bike sideways.
+        const rollFactor = Math.min(1, Math.abs(v) / 8);
+        bikeGroup.rotation.y += wind.bikeYawTorque * (0.18 + 0.82 * rollFactor) * dt;
+        if (v > 1.5 && Math.abs(wind.gustX) > 3.2) {
+            v = Math.max(1.5, v - Math.abs(wind.gustX) * 0.14 * dt);
+        }
+    }
     const heading = bikeGroup.rotation.y;
     // The way the bike travels follows where it points: slowly while it
     // slides, at once when the tyres grip.
@@ -1824,6 +1834,9 @@ function rideFreeBike(dt, roam) {
     freeRide.drift += ((drifting ? Math.min(1, 0.35 + Math.abs(slip) * 1.6) : 0) - freeRide.drift) * Math.min(1, dt * 8);
     bikeGroup.position.x += Math.sin(freeRide.travel) * v * dt;
     bikeGroup.position.z += Math.cos(freeRide.travel) * v * dt;
+    if (wind && wind.storm > 0.05 && !roam.frozen) {
+        bikeGroup.position.x += wind.gustX * (0.14 + 0.34 * Math.min(1, Math.abs(v) / 10)) * dt;
+    }
     driftEffects(dt, heading);
     // Side streets open the way; traffic stops the bike dead.
     const hit = roam.clampBike(bikeGroup.position);
@@ -1958,6 +1971,9 @@ function visualSnapshot() {
         angleRatio: Math.max(0, Math.min(1, state.bike.angle / CONFIG.maxAngle)),
         skidding: state.skidding,
         linear: !free,
+        loveEvent: !!state.loveEvent,
+        weatherRain: free && v2 && !state.loveEvent ? (v2.weather?.state?.rain || 0) : 0,
+        weatherWind: free && v2 && !state.loveEvent ? (v2.weather?.state?.storm || 0) : 0,
         playing: state.isPlaying,
         gameTime: state.gameTime,
         jumpHeight: free ? 0 : state.jump.visualY,
@@ -2408,6 +2424,7 @@ function quitToMenu() {
     audio.stopRun();
     musicPlayer?.stopRun();
     stopPorscheTrack();
+    v2?.weather?.stop();
     completedRankedRun = null;
     standRiderUp();
     document.querySelectorAll('.screen').forEach((screen) => screen.classList.remove('active'));
@@ -4071,7 +4088,7 @@ function animate(timestamp = performance.now()) {
                     stickX = moveX / unit * -Math.cos(yaw) + forward * Math.sin(yaw);
                     stickZ = moveX / unit * Math.sin(yaw) + forward * Math.cos(yaw);
                 }
-                roam.move(dt, stickX, stickZ, { run: state.keys.run, jump: state.keys.space, boost: state.keys.boost });
+                roam.move(dt, stickX, stickZ, { run: state.keys.run, jump: state.keys.space, boost: state.keys.boost }, v2?.weather?.wind);
                 state.freeMode.speed = roam.speed;
                 state.distance += roam.speed;
                 freeRide.speed = 0;
@@ -7537,7 +7554,24 @@ registerOutfitsAndExtras(() => v2, {
 });
 registerRealCars();
 registerMusic();
+registerWeatherItems();
 initPorscheExperience();
+if (typeof window !== 'undefined') {
+    window.__wheelieWeather = {
+        presets: () => WEATHER_PRESETS.map(({ id, name, weight, storm, rain }) => ({ id, name, weight, storm, rain })),
+        set: (id) => v2?.weather?.set?.(id),
+        state: () => v2?.weather?.state || null,
+        wind: () => v2?.weather?.wind || null,
+        bike: () => (bikeGroup ? { x: bikeGroup.position.x, z: bikeGroup.position.z, rotY: bikeGroup.rotation.y } : null),
+        focus: () => (v2?.roam?.focus ? { x: v2.roam.focus.x, z: v2.roam.focus.z } : null),
+        mode: () => v2?.roam?.mode || null,
+        traffic: () => v2?.roam?.traffic?.cars?.map((c) => ({
+            x: c.group.position.x,
+            laneX: c.lane.x,
+            rotZ: c.group.rotation.z
+        })) || []
+    };
+}
 musicPlayer = createMusicPlayer();
 musicPlayer.mountPause(document.getElementById('pause-music'));
 shopUI = installShop({

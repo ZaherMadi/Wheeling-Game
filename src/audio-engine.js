@@ -458,8 +458,10 @@ export function createAudioEngine({ effects, getManifest }) {
 
         // Free roam speeds are real ones: the wind gets loud sooner.
         const speedRatio = onFoot ? 0 : clamp01(kmh / (frame.linear ? 250 : 165));
-        setLoop('wind', Math.pow(speedRatio, 1.5) * 0.55, 0.8 + speedRatio * 0.5);
-        setLoop('tire_wet', onFoot ? 0 : clamp01(kmh / 110) * 0.22, 0.75 + speedRatio * 0.5);
+        const stormWind = clamp01(frame.weatherWind || 0);
+        const rainLevel = clamp01(frame.weatherRain || 0);
+        setLoop('wind', Math.min(0.85, Math.pow(speedRatio, 1.5) * 0.55 + stormWind * 0.42), 0.8 + speedRatio * 0.5 + stormWind * 0.25);
+        setLoop('tire_wet', Math.min(0.5, (onFoot ? 0 : clamp01(kmh / 110) * 0.22) + (onFoot ? 0 : rainLevel * 0.16 * Math.min(1, kmh / 25))), 0.75 + speedRatio * 0.5);
         setLoop('city_ambience', 0.16 - speedRatio * 0.09, 1);
         // The bavette grinding on the road; lighter when the wheelie just touches.
         setLoop('scrape', frame.bavette ? 0.8 : angleRatio > 0.93 && kmh > 10 ? 0.4 : 0, (frame.bavette ? 1.05 : 0.9) + speedRatio * 0.3);

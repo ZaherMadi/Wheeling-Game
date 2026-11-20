@@ -16,6 +16,7 @@ import { RAINBOW_KEY, createFiguresLand, rainbowUnlocked } from './figures-land.
 import { chosenPose } from './poses.js';
 import { installRacingUI } from '../ui/ui.js';
 import { beginCinematic, cinematicSpeed, endCinematic } from '../cinematic.js';
+import { createFreeRoamWeather } from './weather.js';
 
 const DAY_CYCLE_SECONDS = 600;
 
@@ -44,6 +45,7 @@ export function createRealisticVersion({ scene, renderer, camera, mobile, audio,
     const roam = createFreeRoam({ scene, world, rider, audio, onTurn, playerVoice, fx });
     // Figures Land: one free roam ride in 20 finds it.
     const figuresLand = createFiguresLand({ scene });
+    const weather = createFreeRoamWeather({ scene, world, camera });
     let wasRoaming = false;
     // The player's nickname is printed above the number.
     const riderName = () => {
@@ -98,6 +100,14 @@ export function createRealisticVersion({ scene, renderer, camera, mobile, audio,
     // The event's sky ({ ambience, dusk }, or null: the day cycle).
     let skyOverride = null;
     let skyAmbience = 'golden';
+    function applySky(sky) {
+        if (!sky) return;
+        if (sky.ambience !== skyAmbience) {
+            skyAmbience = sky.ambience;
+            world.setAmbience(skyAmbience);
+        }
+        world.setDusk(sky.dusk);
+    }
     // Session live: someone else's look worn while watching him.
     let wornLook = null;
     const wearOwn = (livery) => rider.setLivery(wornLook || riderLook(livery));
@@ -297,6 +307,7 @@ export function createRealisticVersion({ scene, renderer, camera, mobile, audio,
             patrol.group.visible = false;
         }
         officers.forEach((officer) => { officer.group.visible = false; });
+        weather.stop();
         roam.reset();
         rider.reset();
         fx.clear();
@@ -327,21 +338,27 @@ export function createRealisticVersion({ scene, renderer, camera, mobile, audio,
         }
         lastPosition.copy(bike.position);
 
-        // Golden hour drifting to night and back (the Love&Faith event sets
-        // its own sky: the love bar's).
-        if (skyOverride) {
-            if (skyOverride.ambience !== skyAmbience) {
-                skyAmbience = skyOverride.ambience;
-                world.setAmbience(skyAmbience);
-            }
-            world.setDusk(skyOverride.dusk);
+        // Dynamic Free Roam weather + Love&Faith sky + standard day cycle.
+        const roaming = snapshot.playing && !snapshot.linear;
+        const roamWeatherActive = roaming && !snapshot.loveEvent;
+        if (roamWeatherActive && !wasRoaming) weather.startFreeRoam();
+        if (!roamWeatherActive && wasRoaming) weather.stop();
+        const weatherFrame = roamWeatherActive
+            ? weather.frame(dt, {
+                active: true,
+                focus: roam.focus,
+                speed: (snapshot.kmh || 0) / 3.6,
+                rider,
+                mode: roam.mode,
+                inLove: !!snapshot.loveEvent
+            })
+            : null;
+        const activeSky = skyOverride || weatherFrame?.sky || null;
+        if (activeSky) {
+            applySky(activeSky);
         } else {
-            if (skyAmbience !== 'golden') {
-                skyAmbience = 'golden';
-                world.setAmbience('golden');
-            }
             const phase = (snapshot.gameTime % DAY_CYCLE_SECONDS) / DAY_CYCLE_SECONDS;
-            world.setDusk((0.5 - 0.5 * Math.cos(phase * Math.PI * 2)) * 0.9);
+            applySky({ ambience: 'golden', dusk: (0.5 - 0.5 * Math.cos(phase * Math.PI * 2)) * 0.9 });
         }
 
         // Boost flames: from the bike's exhaust, or the back of the car.
@@ -402,8 +419,7 @@ export function createRealisticVersion({ scene, renderer, camera, mobile, audio,
         camera.position.y -= cameraKick * 0.5;
 
         updatePatrol(dt, snapshot.linear ? snapshot.police : null);
-        const roaming = snapshot.playing && !snapshot.linear;
-        if (roaming) roam.update(dt, bike);
+        if (roaming) roam.update(dt, bike, weather.wind);
         // Figures Land: rolled at the start of each free roam ride.
         if (roaming && !wasRoaming) figuresLand.newRide(params.get('figuresland') === '1');
         if (!roaming && wasRoaming) figuresLand.hide();
@@ -515,6 +531,7 @@ export function createRealisticVersion({ scene, renderer, camera, mobile, audio,
     let showroomZoomFactor = 1.0;
     let showroomTargetZoom = 1.0;
     let showroomHeld = 0;
+    let weatherPreviewId = null;
 
     function frameShowroom(angle) {
         const area = freeArea();
@@ -615,6 +632,10 @@ export function createRealisticVersion({ scene, renderer, camera, mobile, audio,
                 }
                 showroomZoomFactor += (showroomTargetZoom - showroomZoomFactor) * 0.14;
                 frameShowroom(showroomAngle);
+                if (weatherPreviewId) {
+                    applySky(weather.framePreview(0.016, camera));
+                    world.update(camera, rider.bikeGroup.position, { freeMode: false });
+                }
                 if (showroomCar) {
                     showroomCar.userData.animate?.(0.016, { showroom: true, time: performance.now() / 1000 });
                     showroomCar.userData.lod?.update(camera);
@@ -626,6 +647,11 @@ export function createRealisticVersion({ scene, renderer, camera, mobile, audio,
         } else if (!on && showroomFrame !== null) {
             cancelAnimationFrame(showroomFrame);
             showroomFrame = null;
+            weatherPreviewId = null;
+            weather.preview(null);
+            skyAmbience = 'golden';
+            world.setAmbience('golden');
+            world.setDusk(0);
             setStudioLighting(false);
             setShowroomCar(null);
             previewLook = null;
@@ -801,6 +827,24 @@ export function createRealisticVersion({ scene, renderer, camera, mobile, audio,
             previewLook = look || null;
             dressRider();
             if (showroomFrame !== null) renderer.render(scene, camera);
+        },
+        weather,
+        previewWeather(id) {
+            const next = id || null;
+            if (next === weatherPreviewId) return;
+            weatherPreviewId = next;
+            if (weatherPreviewId) {
+                setShowroomCar(null);
+                previewLook = null;
+                dressRider();
+            }
+            weather.preview(weatherPreviewId);
+            if (!weatherPreviewId) applySky({ ambience: 'golden', dusk: 0 });
+            if (showroomFrame !== null) {
+                setStudioLighting(!weatherPreviewId);
+                if (weatherPreviewId) applySky(weather.framePreview(0.016, camera));
+                renderer.render(scene, camera);
+            }
         },
         previewCar(model, colour) {
             setShowroomCar(model, colour);

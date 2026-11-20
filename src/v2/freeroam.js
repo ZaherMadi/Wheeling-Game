@@ -271,13 +271,13 @@ export function createFreeRoam({ scene, world, rider, audio, onTurn, playerVoice
 
     // nx, nz: stick direction (-1..1), nz < 0 is forward.
     // keys: { run, jump } on foot.
-    function move(dt, nx, nz, keys = {}) {
+    function move(dt, nx, nz, keys = {}, wind = null) {
         if (mode === 'glide') {
-            moveGlide(dt, nx);
+            moveGlide(dt, nx, wind);
             return;
         }
         if (mode === 'jet') {
-            moveJet(dt, nx, nz, keys);
+            moveJet(dt, nx, nz, keys, wind);
             return;
         }
         // Stopped by the police: no control until they are done.
@@ -287,6 +287,7 @@ export function createFreeRoam({ scene, world, rider, audio, onTurn, playerVoice
             keys = {};
             if (mode === 'car') drive.speed *= 0.85;
         }
+        const storm = wind ? (wind.storm || 0) : 0;
         if (mode === 'walk') {
             const length = Math.min(1, Math.hypot(nx, nz));
             walker.running = !!keys.run && length > 0.05;
@@ -294,6 +295,11 @@ export function createFreeRoam({ scene, world, rider, audio, onTurn, playerVoice
             if (length > 0.05) walker.yaw = Math.atan2(nx, nz);
             walker.x += Math.sin(walker.yaw) * walker.speed;
             walker.z += Math.cos(walker.yaw) * walker.speed;
+            if (storm > 0.05 && !frozen && (!tow.active || length > 0.05)) {
+                const walkMul = length > 0.05 ? 0.32 : 0.16;
+                walker.x += wind.gustX * walkMul * dt;
+                walker.z += wind.gustZ * walkMul * 0.5 * dt;
+            }
             const ground = walker.roof ? walker.roof.y : 0;
             // Jump: one per press, only from the ground. At the edge of a
             // roof: the hang glider takes him off.
@@ -371,6 +377,18 @@ export function createFreeRoam({ scene, world, rider, audio, onTurn, playerVoice
 
             const group = drive.group;
             const previous = group.position.clone();
+            if (storm > 0.05 && !frozen) {
+                const speedRatio = Math.min(1, Math.abs(drive.speed) / 0.22);
+                drive.yaw += wind.carYawTorque * (dt || 0.016) * (0.2 + 0.8 * speedRatio);
+                group.position.x += wind.gustX * (0.14 + 0.42 * speedRatio) * (dt || 0.016);
+                if (Math.abs(drive.speed) > 0.04 && Math.abs(wind.gustX) > 3.5) {
+                    drive.speed = Math.sign(drive.speed) * Math.max(0.03, Math.abs(drive.speed) - Math.abs(wind.gustX) * 0.002 * (dt || 0.016));
+                }
+                group.rotation.z = Math.max(-0.045, Math.min(0.045, -wind.gustX * 0.005));
+            } else if (Math.abs(group.rotation.z) > 0.001) {
+                group.rotation.z *= Math.exp(-(dt || 0.016) * 8);
+                if (Math.abs(group.rotation.z) <= 0.001) group.rotation.z = 0;
+            }
             group.position.x += Math.sin(drive.yaw) * drive.speed;
             group.position.z += Math.cos(drive.yaw) * drive.speed;
             group.rotation.y = drive.yaw;
@@ -522,7 +540,7 @@ export function createFreeRoam({ scene, world, rider, audio, onTurn, playerVoice
         glide.group.rotation.set(-0.2, glide.yaw, aside * 0.32);
     }
 
-    function moveGlide(dt, nx) {
+    function moveGlide(dt, nx, wind = null) {
         glide.t += dt;
         if (glide.phase === 'fly') {
             glide.yaw -= nx * 0.8 * dt;
@@ -530,6 +548,10 @@ export function createFreeRoam({ scene, world, rider, audio, onTurn, playerVoice
             const before = { x: glide.x, z: glide.z };
             glide.x += Math.sin(glide.yaw) * glide.speed * dt;
             glide.z += Math.cos(glide.yaw) * glide.speed * dt;
+            if (wind && wind.storm > 0.05) {
+                glide.x += wind.gustX * 1.35 * dt;
+                glide.roll += wind.gustX * 0.014 * dt;
+            }
             // Over the street and its buildings; low down, over the street.
             const limit = glide.y < 6 ? 18.5 : GLIDE.reach;
             if (Math.abs(glide.x) > limit) {
@@ -898,7 +920,7 @@ export function createFreeRoam({ scene, world, rider, audio, onTurn, playerVoice
         if (roof) toast('SUR LE TOIT !', 'SAUTER au bord pour repartir en deltaplane, ou reprends le jetpack');
     }
 
-    function moveJet(dt, nx, nz, keys) {
+    function moveJet(dt, nx, nz, keys, wind = null) {
         jet.time += dt;
         const forward = Math.max(-0.4, Math.min(1, -nz));
         const boosting = !jet.out && !jet.landing && !!(keys.run || keys.boost) && forward > 0.1;
@@ -913,6 +935,10 @@ export function createFreeRoam({ scene, world, rider, audio, onTurn, playerVoice
         const before = { x: jet.x, z: jet.z };
         jet.x += Math.sin(jet.yaw) * jet.speed * dt;
         jet.z += Math.cos(jet.yaw) * jet.speed * dt;
+        if (wind && wind.storm > 0.05) {
+            jet.x += wind.gustX * 1.15 * dt;
+            jet.z += wind.gustZ * 0.45 * dt;
+        }
         if (Math.abs(jet.x) > JET.reach) jet.x = Math.sign(jet.x) * JET.reach;
         jet.y = Math.min(JET.ceiling, jet.y + jet.vy * dt);
         // Buildings: over their roofs, never through their walls.
@@ -1110,7 +1136,7 @@ export function createFreeRoam({ scene, world, rider, audio, onTurn, playerVoice
 
     let confiscationShown = false;
     let lastHere = null;
-    function update(dt, bikeGroup) {
+    function update(dt, bikeGroup, wind = null) {
         bike = bikeGroup;
         // No bike while it is confiscated: on foot from the start.
         if (mode === 'bike' && bikeConfiscated() && !patrol.towing) {
@@ -1134,7 +1160,27 @@ export function createFreeRoam({ scene, world, rider, audio, onTurn, playerVoice
         const blockers = [...(aloft ? [] : [{ x: here.x, z: here.z }]), ...patrol.blockers()];
         if (mode !== 'bike') blockers.push({ x: bike.position.x, z: bike.position.z });
         for (const car of dropped) blockers.push({ x: car.group.position.x, z: car.group.position.z });
-        traffic.update(dt, here, blockers);
+        traffic.update(dt, here, blockers, wind);
+        const storm = wind ? (wind.storm || 0) : 0;
+        for (let i = 0; i < dropped.length; i++) {
+            const d = dropped[i];
+            const g = d.group;
+            d.parkX ??= g.position.x;
+            if (storm > 0.05) {
+                const wave = Math.sin((now() * 2.3) + i * 1.9);
+                const swayX = Math.max(-0.35, Math.min(0.35, wind.gustX * 0.045 + wave * 0.16 * storm));
+                g.position.x = Math.max(-8.6, Math.min(8.6, d.parkX + swayX));
+                g.rotation.z = Math.max(-0.04, Math.min(0.04, -(wind.gustX * 0.003 + wave * 0.022) * storm));
+            } else {
+                if (Math.abs(g.position.x - d.parkX) > 0.002) {
+                    g.position.x += (d.parkX - g.position.x) * Math.min(1, (dt || 0.016) * 5);
+                }
+                if (Math.abs(g.rotation.z) > 0.001) {
+                    g.rotation.z *= Math.exp(-(dt || 0.016) * 8);
+                    if (Math.abs(g.rotation.z) <= 0.001) g.rotation.z = 0;
+                }
+            }
+        }
         // Riding past a car fast: a whoosh on that side.
         if (lastHere && dt > 0 && mode !== 'walk') {
             const playerSpeed = Math.hypot(here.x - lastHere.x, here.z - lastHere.z) / dt;

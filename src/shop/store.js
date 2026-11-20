@@ -6,6 +6,7 @@ export const CATEGORIES = [
     { id: 'outfits', name: 'Tenues', icon: '👕' },
     { id: 'cars', name: 'Voitures', icon: '🚗' },
     { id: 'music', name: 'Musiques', icon: '💿' },
+    { id: 'weather', name: 'Météo', icon: '🌦️' },
     { id: 'extras', name: 'Extras', icon: '✨' }
 ];
 

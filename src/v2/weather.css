@@ -1,0 +1,43 @@
+/* Atmospheric weather flashes and storm wind vignette for Free Roam & Showroom preview. */
+.weather-overlay {
+  position: fixed;
+  inset: 0;
+  pointer-events: none;
+  z-index: 45;
+  overflow: hidden;
+}
+
+.weather-overlay__gust {
+  position: absolute;
+  inset: 0;
+  opacity: var(--storm-alpha, 0);
+  background:
+    radial-gradient(ellipse at 50% 45%, transparent 46%, rgba(12, 20, 34, 0.42) 100%),
+    linear-gradient(90deg, rgba(160, 195, 240, 0.1) 0%, transparent 18%, transparent 82%, rgba(160, 195, 240, 0.1) 100%);
+  transition: opacity 0.4s ease;
+}
+
+.weather-overlay__flash {
+  position: absolute;
+  inset: 0;
+  opacity: 0;
+  background: rgba(235, 242, 255, 0.88);
+}
+
+.weather-overlay__flash.is-lightning {
+  animation: weather-lightning 0.55s ease-out;
+}
+
+@keyframes weather-lightning {
+  0% { opacity: 0; }
+  7% { opacity: 0.92; }
+  16% { opacity: 0.16; }
+  25% { opacity: 0.78; }
+  100% { opacity: 0; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .weather-overlay__flash.is-lightning {
+    animation: none !important;
+  }
+}
